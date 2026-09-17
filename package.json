@@ -1,0 +1,11 @@
+{
+  "name": "agent-os-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix agent-studio-os run dev",
+    "build": "npm --prefix agent-studio-os run build",
+    "start": "npm --prefix agent-studio-os run start",
+    "lint": "npm --prefix agent-studio-os run lint"
+  }
+}
