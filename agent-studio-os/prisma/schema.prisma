@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./agent-studio.db"
+}
+
+model Agent {
+  id           String      @id @default(cuid())
+  name         String      @unique
+  displayName  String
+  avatar       String      @default("🤖")
+  systemPrompt String      @default("")
+  model        String?
+  themeColor   String      @default("#6366f1")
+  status       String      @default("offline")
+  profilePath  String?
+  description  String      @default("")
+  role         String      @default("specialist") // orchestrator, manager, specialist, worker
+  department   String      @default("General")
+  reportsToId  String?
+  reportsTo    Agent?      @relation("AgentHierarchy", fields: [reportsToId], references: [id], onDelete: SetNull)
+  subordinates Agent[]     @relation("AgentHierarchy")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  tasks        Task[]
+  tools        AgentTool[]
+  integrations AgentIntegration[]
+  chatMessages ChatMessage[]
+  sessions     ChatSession[]
+  routines     Routine[]
+}
+
+model AgentTool {
+  id      String  @id @default(cuid())
+  agentId String
+  toolId  String
+  enabled Boolean @default(true)
+  agent   Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, toolId])
+}
+
+model AgentIntegration {
+  id       String  @id @default(cuid())
+  agentId  String
+  platform String
+  enabled  Boolean @default(true)
+  config   String? // JSON string for chat_id, channel, webhook URL, etc.
+  agent    Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, platform])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @default("")
+  status      String    @default("backlog")
+  priority    String    @default("medium")
+  position    Int       @default(0)
+  dueDate     DateTime?
+  agentId     String?
+  agent       Agent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  result      String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Setting {
+  key   String @id
+  value String
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  type      String
+  message   String
+  agentId   String?
+  metadata  String?
+  createdAt DateTime @default(now())
+}
+
+model ChatSession {
+  id        String        @id @default(cuid())
+  title     String        @default("New Session")
+  agentId   String
+  agent     Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  model     String?
+  pinned    Boolean       @default(false)
+  summary   String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+
+  @@index([agentId])
+}
+
+model ChatMessage {
+  id        String       @id @default(cuid())
+  role      String
+  content   String
+  model     String?
+  agentId   String?
+  agent     Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  latency   Int?
+  tokens    Int?
+  sessionId String?
+  session   ChatSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@index([sessionId])
+  @@index([agentId])
+}
+
+model Routine {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @default("")
+  prompt      String
+  type        String    @default("daily") // "daily" or "one_time"
+  time        String?   // e.g. "09:00" for daily schedule
+  scheduledAt DateTime? // for one_time schedule
+  enabled     Boolean   @default(true)
+  autoExecute Boolean   @default(true) // execute agent autonomously and move to review
+  priority    String    @default("medium")
+  agentId     String?
+  agent       Agent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
