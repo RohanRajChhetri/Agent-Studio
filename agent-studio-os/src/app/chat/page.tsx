@@ -58,6 +58,10 @@ import { toast } from "sonner";
 import type { AgentProfile, ChatSession } from "@/types";
 import { HermesTerminalModal } from "@/components/agents/hermes-terminal-modal";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
+import { ChatHeader } from "@/components/chat/chat-header";
+import { ChatSidebar } from "@/components/chat/chat-sidebar";
+import { ChatComposer } from "@/components/chat/chat-composer";
+import { DebateArena, type DebateMessage, type DebateVerdict } from "@/components/chat/debate-arena";
 import { timeAgo, formatResponseTime } from "@/lib/utils";
 
 export interface ChatAttachment {
@@ -153,11 +157,12 @@ const STARTER_PROMPTS = [
 function ChatContent() {
   const searchParams = useSearchParams();
   const initialAgentId = searchParams.get("agentId");
+  const initialQuery = searchParams.get("q");
 
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentProfile | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialQuery || "");
   const [model, setModel] = useState("auto/fast");
   const [models, setModels] = useState<string[]>([]);
   const [activeStreamsCount, setActiveStreamsCount] = useState(0);
@@ -176,6 +181,8 @@ function ChatContent() {
   const [roundtableMode, setRoundtableMode] = useState(false);
   const [roundtableAgents, setRoundtableAgents] = useState<string[]>([]);
   const [roundtableLoading, setRoundtableLoading] = useState(false);
+  const [debateMessages, setDebateMessages] = useState<DebateMessage[]>([]);
+  const [debateVerdict, setDebateVerdict] = useState<DebateVerdict | null>(null);
   const [vaultGrounding, setVaultGrounding] = useState(true);
   const [selectedArtifact, setSelectedArtifact] = useState<ActiveArtifact | null>(null);
   const [copiedArtifact, setCopiedArtifact] = useState(false);
@@ -839,6 +846,42 @@ function ChatContent() {
       toast.success("Chat history cleared");
     } catch {
       toast.error("Failed to clear chat");
+    }
+  };
+
+  // Start Structured Arena Debate
+  const handleStartDebate = async ({
+    topic,
+    agentIds,
+    stances,
+    rounds,
+  }: {
+    topic: string;
+    agentIds: string[];
+    stances: Record<string, string>;
+    rounds: number;
+  }) => {
+    setRoundtableLoading(true);
+    try {
+      const res = await fetch("/api/chat/roundtable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          agentIds,
+          stances,
+          rounds,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Debate failed");
+      setDebateMessages(data.messages || []);
+      setDebateVerdict(data.verdict || null);
+      toast.success(`Debate completed with ${data.agentCount} specialists!`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Debate failed");
+    } finally {
+      setRoundtableLoading(false);
     }
   };
 
@@ -1664,624 +1707,99 @@ function ChatContent() {
   });
 
   return (
-    <div className="flex flex-col h-full max-h-full min-h-0 space-y-3 w-full flex-1 overflow-hidden">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 shrink-0">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-foreground tracking-wider uppercase px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-border shrink-0">
-              Interactive Arena
-            </span>
-            {roundtableMode && (
-              <span className="text-[11px] font-semibold text-foreground tracking-wider uppercase px-2.5 py-0.5 rounded-md bg-primary/10 text-primary border border-border flex items-center gap-1 shrink-0">
-                <MessageSquareQuote className="w-3 h-3" />
-                Roundtable Swarm
-              </span>
-            )}
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground mt-0.5">
-            Agent Chat Studio
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Multi-session orchestration & real-time dialogue powered by{" "}
-            <strong className="text-foreground font-semibold">
-              Omniroute Primary Brain
-            </strong>
-          </p>
-        </div>
+    <div className="flex h-[calc(100vh-2.5rem)] max-h-[calc(100vh-2.5rem)] min-h-0 w-full flex-1 overflow-hidden relative rounded-xl border border-border bg-card">
+      {/* Sleek Collapsible Sidebar */}
+      <ChatSidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={(id) => setActiveSessionId(id)}
+        onCreateSession={handleCreateNewSession}
+        onRenameSession={handleRenameSession}
+        onDeleteSession={handleDeleteSession}
+        onTogglePin={(s) => handleTogglePin(s)}
+        onForkSession={handleForkSession}
+        onExportSession={handleExportSession}
+        loadingSessions={loadingSessions}
+        agents={agents}
+        selectedAgent={selectedAgent}
+        onSelectAgent={(agent) => {
+          setSelectedAgent(agent);
+          toast.success(`Active agent: ${agent.displayName}`);
+        }}
+      />
 
-        {/* Header Actions */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
-          {/* Vault Grounding Toggle */}
-          <button
-            onClick={() => {
-              setVaultGrounding(!vaultGrounding);
-              toast.info(vaultGrounding ? "Vault RAG disabled" : "Vault RAG enabled for chat");
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium border transition-all shrink-0 cursor-pointer ${
-              vaultGrounding
-                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shadow-sm"
-                : "border-border text-muted-foreground hover:text-foreground bg-secondary/60"
-            }`}
-          >
-            <Brain className="w-3.5 h-3.5" />
-            <span>Vault RAG: {vaultGrounding ? "ON" : "OFF"}</span>
-          </button>
+      {/* Main Conversation Stream */}
+      <div className="flex-1 min-w-0 flex flex-col h-full min-h-0 overflow-hidden relative bg-card">
+        {/* Unified Sleek Header */}
+        <ChatHeader
+          selectedAgent={selectedAgent}
+          agents={agents}
+          onSelectAgent={(agent) => {
+            setSelectedAgent(agent);
+            toast.success(`Active agent: ${agent.displayName}`);
+          }}
+          activeSession={activeSession}
+          model={model}
+          models={models}
+          onSelectModel={setModel}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          autoTTS={autoTTS}
+          onToggleAutoTTS={toggleAutoTTS}
+          vaultGrounding={vaultGrounding}
+          onToggleVaultGrounding={() => {
+            setVaultGrounding(!vaultGrounding);
+            toast.info(vaultGrounding ? "Vault RAG disabled" : "Vault RAG enabled for chat");
+          }}
+          onOpenSpecs={() => setShowAgentSpecsModal(true)}
+          onOpenTerminal={() => setTerminalOpen(true)}
+          onExportVault={() => {
+            if (activeSession) handleExportSession(activeSession);
+          }}
+          onClearChat={handleClearChat}
+          splitArenaMode={splitArenaMode}
+          onToggleSplitArena={() => {
+            setSplitArenaMode(!splitArenaMode);
+            if (!splitArenaMode) {
+              setCompareMode(false);
+              setRoundtableMode(false);
+            }
+          }}
+          compareMode={compareMode}
+          onToggleCompare={() => {
+            setCompareMode(!compareMode);
+            if (!compareMode) {
+              setRoundtableMode(false);
+              setSplitArenaMode(false);
+            }
+          }}
+          roundtableMode={roundtableMode}
+          onToggleRoundtable={() => {
+            setRoundtableMode(!roundtableMode);
+            if (!roundtableMode) {
+              setCompareMode(false);
+              setSplitArenaMode(false);
+            }
+          }}
+          hasMessages={messages.length > 0}
+        />
 
-          {/* Roundtable Debate Toggle */}
-          <button
-            onClick={() => {
-              setRoundtableMode(!roundtableMode);
-              if (!roundtableMode) setCompareMode(false);
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium transition-all border shrink-0 cursor-pointer ${
-              roundtableMode
-                ? "border-border bg-primary/15 text-primary shadow-sm"
-                : "border-border text-muted-foreground hover:text-foreground bg-secondary/60 hover:bg-secondary/60"
-            }`}
-          >
-            <MessageSquareQuote className="w-3.5 h-3.5" />
-            <span>Roundtable</span>
-          </button>
-
-          {/* Split Arena (Concurrent Dual Models) Toggle */}
-          <button
-            onClick={() => {
-              setSplitArenaMode(!splitArenaMode);
-              if (!splitArenaMode) {
-                setCompareMode(false);
-                setRoundtableMode(false);
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border shrink-0 cursor-pointer ${
-              splitArenaMode
-                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shadow-sm"
-                : "border-border text-muted-foreground hover:text-foreground bg-secondary/60 hover:bg-secondary/60"
-            }`}
-            title="Chat with two different models simultaneously side-by-side"
-          >
-            <Columns3 className="w-3.5 h-3.5 text-foreground" />
-            <span>Split Arena</span>
-          </button>
-
-          {/* Comparison Mode Toggle */}
-          <button
-            onClick={() => {
-              setCompareMode(!compareMode);
-              if (!compareMode) {
-                setRoundtableMode(false);
-                setSplitArenaMode(false);
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium transition-all border shrink-0 cursor-pointer ${
-              compareMode
-                ? "border-border bg-primary/15 text-primary shadow-sm"
-                : "border-border text-muted-foreground hover:text-foreground bg-secondary/60 hover:bg-secondary/60"
-            }`}
-          >
-            <Columns3 className="w-3.5 h-3.5" />
-            <span>Compare</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Multi-Agent Container */}
-      <div className="flex-1 min-h-0 overflow-hidden flex gap-4">
-        {/* Left Sidebar: Sessions & Fleet Switcher */}
-        {sidebarOpen ? (
-          <div className="w-80 md:w-72 lg:w-80 shrink-0 flex flex-col h-full min-h-0 rounded-lg border border-border bg-card/70 backdrop-blur-xl p-3 space-y-2.5 overflow-hidden transition-all">
-          {/* Top Switcher: Sessions vs Fleet + Hide Sidebar Button */}
-          <div className="flex items-center gap-1.5">
-            <div className="flex-1 flex items-center justify-between gap-1 p-1 rounded-xl bg-secondary/80 border border-border text-xs">
-              <button
-                onClick={() => setSidebarTab("sessions")}
-                className={`flex-1 py-1.5 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 ${
-                  sidebarTab === "sessions"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Chats ({sessions.length})</span>
-              </button>
-              <button
-                onClick={() => setSidebarTab("agents")}
-                className={`flex-1 py-1.5 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 ${
-                  sidebarTab === "agents"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Bot className="w-3.5 h-3.5" />
-                <span>Agents ({agents.length})</span>
-              </button>
-            </div>
-
-            {/* Button directly in the sidebar to hide it */}
-            <button
-              onClick={() => setSidebarOpen(false)}
-              title="Hide sidebar"
-              className="p-2 rounded-xl bg-secondary/80 hover:bg-secondary text-muted-foreground hover:text-foreground border border-border transition-colors shrink-0"
-            >
-              <PanelLeftClose className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-            </button>
-          </div>
-
-          {sidebarTab === "sessions" ? (
-            /* Sessions Panel */
-            <div className="flex-1 flex flex-col min-h-0 space-y-2 overflow-hidden">
-              {/* Active Agent Pill & New Chat Button */}
-              <div className="flex items-center justify-between gap-2 pt-0.5">
-                <button
-                  onClick={() => setSidebarTab("agents")}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-border bg-secondary/60 hover:bg-secondary/60 transition-colors text-left flex-1 min-w-0 group"
-                  title="Click to switch agent"
-                >
-                  <span className="text-lg">{selectedAgent?.avatar}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-foreground truncate group-hover:text-foreground transition-colors">
-                      {selectedAgent?.displayName}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      Switch Agent &rarr;
-                    </p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={handleCreateNewSession}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-xs font-medium transition-all shadow-md shadow-indigo-600/20"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>New</span>
-                </button>
-              </div>
-
-              {/* Search Sessions */}
-              <div className="relative">
-                <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={sessionSearch}
-                  onChange={(e) => setSessionSearch(e.target.value)}
-                  placeholder="Search chats..."
-                  className="w-full pl-8 pr-2.5 py-1.5 rounded-xl border border-border bg-secondary/60 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-border"
-                />
-              </div>
-
-              {/* Sessions List (Scrollable) */}
-              <div className="flex-1 overflow-y-auto space-y-1 pr-1">
-                {loadingSessions ? (
-                  <div className="py-8 flex justify-center items-center">
-                    <Loader2 className="w-4 h-4 animate-spin text-foreground" />
-                  </div>
-                ) : filteredSessions.length === 0 ? (
-                  <div className="py-8 text-center border border-dashed border-border rounded-xl text-xs text-muted-foreground">
-                    {sessionSearch ? "No matching sessions" : "No sessions yet"}
-                  </div>
-                ) : (
-                  filteredSessions.map((s) => {
-                    const isActive = s.id === activeSessionId;
-                    return (
-                      <div
-                        key={s.id}
-                        onClick={() => setActiveSessionId(s.id)}
-                        className={`group relative flex flex-col p-2.5 rounded-xl border cursor-pointer transition-all ${
-                          isActive
-                            ? "bg-primary/15 text-primary border-border text-foreground shadow-sm ring-1 ring-indigo-500/30"
-                            : "bg-secondary/30 border-border text-muted-foreground hover:bg-secondary/70 hover:border-border"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            {s.pinned && (
-                              <Star className="w-3 h-3 text-muted-foreground dark:text-muted-foreground fill-amber-400 shrink-0" />
-                            )}
-                            {editingSessionId === s.id ? (
-                              <input
-                                type="text"
-                                value={editingSessionTitle}
-                                onChange={(e) => setEditingSessionTitle(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") handleRenameSession(s.id, editingSessionTitle);
-                                  if (e.key === "Escape") setEditingSessionId(null);
-                                }}
-                                onBlur={() => handleRenameSession(s.id, editingSessionTitle)}
-                                autoFocus
-                                onClick={(e) => e.stopPropagation()}
-                                className="bg-card px-1.5 py-0.5 rounded text-xs font-semibold text-foreground border border-border outline-none w-full"
-                              />
-                            ) : (
-                              <span className="text-xs font-semibold truncate">
-                                {s.title}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-muted-foreground font-mono shrink-0">
-                            {timeAgo(s.updatedAt)}
-                          </span>
-                        </div>
-
-                        {s.lastMessage && (
-                          <p className="text-[11px] text-muted-foreground truncate mt-1 line-clamp-1">
-                            {s.lastMessage}
-                          </p>
-                        )}
-
-                        {/* Session Actions on Hover */}
-                        <div className="flex items-center justify-between pt-1 mt-1 border-t border-border text-[10px] text-muted-foreground">
-                          <span className="font-mono">{s.messageCount || 0} messages</span>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={(e) => handleTogglePin(s, e)}
-                              title={s.pinned ? "Unpin session" : "Pin session to top"}
-                              className="p-1 hover:text-amber-300 hover:bg-secondary/50 rounded transition-colors"
-                            >
-                              <Star
-                                className={`w-3 h-3 ${s.pinned ? "fill-amber-400 text-muted-foreground dark:text-muted-foreground" : ""}`}
-                              />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingSessionId(s.id);
-                                setEditingSessionTitle(s.title);
-                              }}
-                              title="Rename session"
-                              className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={(e) => handleForkSession(s, e)}
-                              title="Branch / Fork conversation"
-                              className="p-1 hover:text-foreground hover:bg-secondary/50 rounded transition-colors"
-                            >
-                              <GitFork className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={(e) => handleExportSession(s, e)}
-                              title="Export to Obsidian Vault"
-                              className="p-1 hover:text-emerald-300 hover:bg-secondary/50 rounded transition-colors"
-                            >
-                              <FolderDown className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteSession(s.id, e)}
-                              title="Delete session"
-                              className="p-1 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          ) : (
-            /* Fleet Selection Panel */
-            <div className="flex-1 flex flex-col min-h-0 space-y-1.5 overflow-hidden">
-              <div className="flex items-center justify-between px-1 pb-1">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  {roundtableMode ? "Debate Swarm" : "Select Agent"}
-                </span>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-                {agents.map((agent) => {
-                  const isSelected = selectedAgent?.id === agent.id;
-                  const inRoundtable = roundtableAgents.includes(agent.id);
-
-                  if (roundtableMode) {
-                    return (
-                      <button
-                        key={agent.id}
-                        onClick={() => {
-                          setRoundtableAgents((prev) =>
-                            prev.includes(agent.id)
-                              ? prev.filter((id) => id !== agent.id)
-                              : [...prev, agent.id]
-                          );
-                        }}
-                        className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-start gap-2.5 ${
-                          inRoundtable
-                            ? "border-border bg-primary/10 text-primary shadow-sm ring-1 ring-purple-500/30"
-                            : "border-border bg-secondary/30 opacity-60 hover:opacity-100"
-                        }`}
-                      >
-                        <span className="text-xl shrink-0 mt-0.5">{agent.avatar}</span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-semibold text-foreground truncate">
-                              {agent.displayName}
-                            </h4>
-                            {inRoundtable && <Check className="w-3 h-3 text-foreground" />}
-                          </div>
-                          <p className="text-[10px] text-muted-foreground truncate">
-                            {agent.role}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  }
-
-                  return (
-                    <button
-                      key={agent.id}
-                      onClick={() => {
-                        setSelectedAgent(agent);
-                        setSidebarTab("sessions");
-                      }}
-                      className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-start gap-2.5 ${
-                        isSelected
-                          ? "border-border bg-primary/10 text-primary shadow-lg ring-1 ring-indigo-500/30"
-                          : "border-border bg-secondary/30 hover:bg-secondary/70 hover:border-border"
-                      }`}
-                    >
-                      <span className="text-xl shrink-0 mt-0.5">{agent.avatar}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-semibold text-foreground truncate">
-                            {agent.displayName}
-                          </h4>
-                          <span className="w-1.5 h-1.5 rounded-md bg-emerald-500 shadow-sm" />
-                        </div>
-                        <p className="text-[10px] text-muted-foreground truncate">
-                          {agent.description || "Specialist Agent"}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Active Agent Footer */}
-          <div className="mt-auto pt-2.5 border-t border-border px-1 space-y-1 text-[10.5px]">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Active Agent:</span>
-              <span className="font-mono text-muted-foreground text-[10px] truncate max-w-[140px]">
-                {selectedAgent ? selectedAgent.displayName : "Default"}
-              </span>
-            </div>
-          </div>
-        </div>
-        ) : (
-          /* Collapsed Sidebar Rail with Show Sidebar Button */
-          <div className="w-12 shrink-0 flex flex-col items-center py-3 px-1.5 h-full min-h-0 rounded-lg border border-border bg-card/70 backdrop-blur-xl space-y-3 transition-all">
-            {/* Button directly in the sidebar to show it */}
-            <button
-              onClick={() => setSidebarOpen(true)}
-              title="Show sidebar"
-              className="p-2 rounded-xl bg-secondary/90 hover:bg-primary/20 text-primary text-muted-foreground hover:text-foreground border border-border hover:border-border transition-all shadow-sm"
-            >
-              <PanelLeftOpen className="w-4 h-4 text-foreground" />
-            </button>
-
-            <div className="w-6 border-t border-border" />
-
-            <button
-              onClick={() => {
-                setSidebarTab("sessions");
-                setSidebarOpen(true);
+          {/* Main Content Area: Debate Arena vs Comparison Mode vs Standard Chat */}
+          {roundtableMode ? (
+            <DebateArena
+              agents={agents}
+              onStartDebate={handleStartDebate}
+              isLoading={roundtableLoading}
+              messages={debateMessages}
+              verdict={debateVerdict}
+              onReset={() => {
+                setDebateMessages([]);
+                setDebateVerdict(null);
               }}
-              title="Open Chats"
-              className="p-2 rounded-xl hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <MessageSquare className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => {
-                setSidebarTab("agents");
-                setSidebarOpen(true);
-              }}
-              title="Open Fleet"
-              className="p-2 rounded-xl hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Bot className="w-4 h-4" />
-            </button>
-
-            <div className="mt-auto">
-              <button
-                onClick={() => {
-                  handleCreateNewSession();
-                  setSidebarOpen(true);
-                }}
-                title="New Chat"
-                className="p-2 rounded-xl bg-primary/20 text-primary hover:bg-primary/90 text-primary hover:text-foreground border border-border transition-all"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Right Chat Column */}
-        <div className="flex-1 min-w-0 flex flex-col h-full min-h-0 rounded-lg border border-border bg-card/70 backdrop-blur-xl overflow-hidden relative transition-all">
-          {/* Active Session & Agent Banner */}
-          {selectedAgent && !roundtableMode && (
-            <div className="px-3 sm:px-5 py-2.5 border-b border-border bg-secondary/40 flex items-center justify-between gap-2.5 shrink-0 min-w-0 overflow-hidden">
-              {/* Agent Persona & Session Title */}
-              <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
-                <span className="text-2xl shrink-0">{selectedAgent.avatar}</span>
-                <div className="min-w-0 flex-1 overflow-hidden">
-                  <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-                    <h3 className="text-sm font-bold text-foreground truncate shrink-0 max-w-[90px] sm:max-w-[130px] md:max-w-[180px]">
-                      {selectedAgent.displayName}
-                    </h3>
-                    <button
-                      onClick={() => setShowAgentSpecsModal(true)}
-                      className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 font-medium flex items-center gap-1 transition-all shrink-0 cursor-pointer"
-                      title="Inspect persona directives & capabilities"
-                    >
-                      <Sliders className="w-2.5 h-2.5" />
-                      <span>Specs</span>
-                    </button>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium items-center gap-1 shrink-0 hidden sm:flex">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Active
-                    </span>
-                  </div>
-
-                  {/* Active Session Title (Smoothly truncates within remaining available width, never overflows) */}
-                  <div className="flex items-center gap-1 mt-0.5 min-w-0 overflow-hidden">
-                    {isEditingActiveTitle ? (
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          if (activeSession) handleRenameSession(activeSession.id, activeTitleInput);
-                        }}
-                        className="flex items-center gap-1 min-w-0 flex-1 max-w-xs"
-                      >
-                        <input
-                          type="text"
-                          value={activeTitleInput}
-                          onChange={(e) => setActiveTitleInput(e.target.value)}
-                          className="px-2 py-0.5 rounded bg-card border border-border text-xs text-foreground font-medium outline-none min-w-0 w-full"
-                          autoFocus
-                          onBlur={() => {
-                            if (activeSession && activeTitleInput.trim()) {
-                              handleRenameSession(activeSession.id, activeTitleInput);
-                            } else {
-                              setIsEditingActiveTitle(false);
-                            }
-                          }}
-                        />
-                      </form>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          if (activeSession) {
-                            setActiveTitleInput(activeSession.title);
-                            setIsEditingActiveTitle(true);
-                          }
-                        }}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground group text-left min-w-0 flex-1 overflow-hidden cursor-pointer"
-                        title="Click to rename session"
-                      >
-                        <span className="font-semibold truncate min-w-0 block flex-1">
-                          {activeSession?.title || "Session Dialogue"}
-                        </span>
-                        <Edit3 className="w-3 h-3 text-muted-foreground group-hover:text-foreground opacity-0 group-hover:opacity-100 transition-all shrink-0" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Session Actions & Model Selector Toolbar */}
-              <div className="flex items-center gap-1 shrink-0 flex-nowrap py-0.5">
-                {/* Model Selector */}
-                <div className="flex items-center gap-1 bg-secondary/80 border border-border rounded-xl px-2 py-1 text-xs shrink-0 max-w-[110px] xs:max-w-[130px] sm:max-w-[160px] md:max-w-[180px] overflow-hidden">
-                  <span className="text-[10px] text-muted-foreground font-semibold uppercase shrink-0 hidden md:inline">Model:</span>
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    aria-label="Select AI model"
-                    className="bg-transparent text-xs text-foreground outline-none font-mono cursor-pointer truncate min-w-0 w-full"
-                  >
-                    {models.map((m) => (
-                      <option key={m} value={m} className="bg-card">
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Auto Audio Read (TTS) Toggle */}
-                <button
-                  onClick={toggleAutoTTS}
-                  className={`flex items-center gap-1 p-1.5 sm:px-2.5 sm:py-1 rounded-xl border text-xs font-medium transition-all shrink-0 cursor-pointer ${
-                    autoTTS
-                      ? "border-primary bg-primary/20 text-primary font-semibold shadow-sm"
-                      : "border-border hover:border-border bg-secondary/80 hover:bg-secondary text-muted-foreground hover:text-foreground"
-                  }`}
-                  title={autoTTS ? "Auto-Read (TTS) is ON" : "Turn ON Auto-Read (TTS)"}
-                >
-                  {autoTTS ? (
-                    <Volume2 className="w-3.5 h-3.5 text-primary animate-pulse shrink-0" />
-                  ) : (
-                    <VolumeX className="w-3.5 h-3.5 shrink-0" />
-                  )}
-                  <span className="text-[11px] hidden xl:inline">{autoTTS ? "TTS ON" : "TTS"}</span>
-                </button>
-
-                {/* Branch / Fork */}
-                {activeSession && (
-                  <button
-                    onClick={() => handleForkSession(activeSession)}
-                    className="flex items-center gap-1 p-1.5 sm:px-2 sm:py-1 rounded-xl border border-border bg-secondary/80 hover:bg-secondary text-muted-foreground hover:text-foreground text-xs font-medium transition-all shrink-0 cursor-pointer"
-                    title="Fork / branch this conversation session"
-                  >
-                    <GitFork className="w-3.5 h-3.5 text-foreground shrink-0" />
-                    <span className="text-[11px] hidden xl:inline">Fork</span>
-                  </button>
-                )}
-
-                {/* Export to Vault */}
-                {activeSession && (
-                  <button
-                    onClick={() => handleExportSession(activeSession)}
-                    className="flex items-center gap-1 p-1.5 sm:px-2 sm:py-1 rounded-xl border border-border bg-secondary/80 hover:bg-secondary text-muted-foreground hover:text-foreground text-xs font-medium transition-all shrink-0 cursor-pointer"
-                    title="Export transcript to Obsidian Vault"
-                  >
-                    <FolderDown className="w-3.5 h-3.5 text-foreground shrink-0" />
-                    <span className="text-[11px] hidden xl:inline">Vault</span>
-                  </button>
-                )}
-
-                {/* Hermes CLI */}
-                <button
-                  onClick={() => setTerminalOpen(true)}
-                  className="flex items-center gap-1 p-1.5 sm:px-2 sm:py-1 rounded-xl border border-border bg-secondary/80 hover:bg-secondary text-muted-foreground hover:text-foreground text-xs font-medium transition-all shrink-0 cursor-pointer"
-                  title="Open Hermes CLI Terminal"
-                >
-                  <Terminal className="w-3.5 h-3.5 text-foreground shrink-0" />
-                  <span className="text-[11px] hidden xl:inline">CLI</span>
-                </button>
-
-                {/* Clear Chat */}
-                {messages.length > 0 && (
-                  <button
-                    onClick={handleClearChat}
-                    className="flex items-center gap-1 p-1.5 sm:px-2 sm:py-1 rounded-xl border border-border hover:border-red-500/30 bg-secondary/80 hover:bg-red-500/10 text-muted-foreground hover:text-red-400 text-xs font-medium transition-all shrink-0 cursor-pointer"
-                    title="Clear current session messages"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                    <span className="text-[11px] hidden xl:inline">Clear</span>
-                  </button>
-                )}
-
-                {/* Live Stream Indicator */}
-                {sending && (
-                  <div className="flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 text-xs font-mono font-medium animate-pulse shrink-0">
-                    <Loader2 className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
-                    <span className="hidden sm:inline">Streaming</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {roundtableMode && (
-            <div className="px-5 py-3 border-b border-border bg-purple-950/20 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs text-purple-300">
-                <MessageSquareQuote className="w-4 h-4 text-foreground" />
-                <span className="font-semibold">Roundtable Swarm Active:</span>
-                <span>
-                  {roundtableAgents.length} specialists selected for debate.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Comparison Mode vs Standard Chat */}
-          {compareMode ? (
+            />
+          ) : compareMode ? (
             <div className="flex-1 min-h-0 p-5 overflow-y-auto space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {compareModels.map((m, idx) => (
@@ -2587,36 +2105,13 @@ function ChatContent() {
                     </div>
                   </div>
 
-                  {/* 4 Quick Starter Prompt Cards */}
-                  <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 text-left">
-                    {STARTER_PROMPTS.map((sp, sIdx) => (
-                      <button
-                        key={sIdx}
-                        onClick={() => {
-                          setInput(sp.prompt);
-                          textareaRef.current?.focus();
-                          toast.info(`Loaded prompt: ${sp.title}`);
-                        }}
-                        className="p-3.5 rounded-lg bg-secondary/60 hover:bg-secondary/80 border border-border hover:border-border transition-all text-left group flex flex-col justify-between space-y-2 hover:shadow-lg hover:shadow-indigo-500/5 cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary/20 transition-colors">
-                            <sp.icon className="w-4 h-4" />
-                          </div>
-                          <span className="text-[9px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 transition-colors">
-                            {sp.tag}
-                          </span>
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-semibold text-foreground group-hover:text-foreground transition-colors">
-                            {sp.title}
-                          </h4>
-                          <p className="text-[11px] text-muted-foreground group-hover:text-muted-foreground transition-colors line-clamp-2 mt-0.5">
-                            {sp.desc}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
+                  {/* Minimalist, Clean Hint without preset clutter */}
+                  <div className="pt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground select-none">
+                    <span>💡 Type your message below, click</span>
+                    <span className="font-semibold text-foreground px-2 py-0.5 rounded-lg bg-secondary border border-border">🎙️ Mic</span>
+                    <span>to dictate, or</span>
+                    <span className="font-semibold text-foreground px-2 py-0.5 rounded-lg bg-secondary border border-border font-mono">/</span>
+                    <span>for quick commands.</span>
                   </div>
                 </div>
               ) : (
@@ -2631,17 +2126,17 @@ function ChatContent() {
                       }`}
                     >
                       {msg.role === "assistant" && (
-                        <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-border flex items-center justify-center shrink-0 mt-0.5 text-base">
+                        <div className="w-7 h-7 rounded-lg bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/20 flex items-center justify-center shrink-0 mt-0.5 text-sm">
                           {selectedAgent?.avatar || "🤖"}
                         </div>
                       )}
 
                       <div className="space-y-1.5 max-w-[85%]">
                         <div
-                          className={`p-4 rounded-2xl text-xs leading-relaxed ${
+                          className={`p-3.5 rounded-lg text-xs leading-relaxed ${
                             msg.role === "user"
-                              ? "bg-primary text-white rounded-tr-sm shadow-md shadow-primary/25 font-normal"
-                              : "bg-card border border-border text-foreground rounded-tl-sm shadow-sm"
+                              ? "bg-primary text-primary-foreground font-normal"
+                              : "bg-card border border-border text-foreground"
                           }`}
                         >
                           {renderMessageContent(msg)}
@@ -2807,285 +2302,109 @@ function ChatContent() {
             </div>
           )}
 
-          {/* Message Input Box with STT Voice Mic & Slash Commands */}
-          <div className="p-4 border-t border-border bg-card/80 backdrop-blur-xl shrink-0">
-            {/* Slash Commands Palette */}
-            {input.startsWith("/") && (
-              <div className="mb-2 p-2 rounded-xl border border-border bg-secondary/95 backdrop-blur-xl shadow-xl space-y-1">
-                <div className="px-2 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-foreground" />
-                  <span>Quick Commands</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                  {SLASH_COMMANDS.filter((sc) =>
-                    sc.cmd.startsWith(input.split(" ")[0])
-                  ).map((sc) => (
-                    <button
-                      key={sc.cmd}
-                      type="button"
-                      onClick={() => {
-                        if (sc.cmd === "/help") {
-                          sendMessage("/help");
-                        } else if (sc.cmd === "/vault") {
-                          setVaultGrounding((v) => !v);
-                          setInput("");
-                          toast.info(!vaultGrounding ? "Vault RAG Grounding Enabled" : "Vault RAG Disabled");
-                        } else if (sc.cmd === "/clear") {
-                          handleClearChat();
-                          setInput("");
-                        } else if (sc.cmd === "/hermes") {
-                          setTerminalOpen(true);
-                          setInput("");
-                        } else if (sc.cmd === "/reset") {
-                          handleCreateNewSession();
-                          setInput("");
-                        } else {
-                          setInput(`${sc.cmd} `);
-                          if (textareaRef.current) textareaRef.current.focus();
-                        }
-                      }}
-                      className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 text-left transition-colors group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-foreground group-hover:text-foreground">
-                          {sc.cmd}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground truncate">{sc.desc}</span>
-                      </div>
-                      <span className="text-[9px] text-muted-foreground font-mono hidden sm:inline">
-                        {sc.usage}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Attached Files & Audio Preview Tray */}
-            {attachments.length > 0 && (
-              <div className="mb-2.5 flex flex-wrap gap-2 items-center max-h-32 overflow-y-auto p-2 rounded-xl bg-secondary/60 border border-border">
-                {attachments.map((att) => (
-                  <div
-                    key={att.id}
-                    className="flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-lg bg-secondary/80 border border-border text-xs text-foreground group shadow-sm"
+          {/* Split Arena Target Selector Bar if in Split Mode */}
+          {splitArenaMode && (
+            <div className="px-4 py-2 bg-secondary/40 border-t border-border flex items-center justify-between text-xs shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground font-medium">Send Target:</span>
+                <div className="flex items-center gap-1 bg-secondary/90 p-0.5 rounded-xl border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setSplitArenaTarget("both")}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      splitArenaTarget === "both"
+                        ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40 shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
                   >
-                    {att.type === "audio" ? (
-                      <Music className="w-3.5 h-3.5 text-muted-foreground dark:text-muted-foreground shrink-0" />
-                    ) : att.type === "image" ? (
-                      <ImageIcon className="w-3.5 h-3.5 text-foreground shrink-0" />
-                    ) : att.type === "code" ? (
-                      <FileCode className="w-3.5 h-3.5 text-foreground shrink-0" />
-                    ) : att.type === "data" ? (
-                      <FileSpreadsheet className="w-3.5 h-3.5 text-foreground shrink-0" />
-                    ) : (
-                      <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    )}
-                    <span className="truncate max-w-[140px] font-medium text-[11px]">{att.name}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      {(att.size / 1024).toFixed(0)}KB
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
-                      className="p-0.5 rounded text-muted-foreground hover:text-red-400 hover:bg-secondary/50 transition-colors"
-                      title="Remove attachment"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Hidden File Input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              multiple
-              className="hidden"
-              accept="audio/*,image/*,text/*,.pdf,.doc,.docx,.json,.csv,.ts,.tsx,.js,.jsx,.py,.md,.sql,.yaml,.yml"
-            />
-
-            {/* Split Arena Target Selector */}
-            {splitArenaMode && (
-              <div className="w-full flex items-center justify-between pb-2.5 mb-2 border-b border-border text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground font-medium">Send Target:</span>
-                  <div className="flex items-center gap-1 bg-secondary/90 p-0.5 rounded-xl border border-border">
-                    <button
-                      type="button"
-                      onClick={() => setSplitArenaTarget("both")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                        splitArenaTarget === "both"
-                          ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-emerald-300 border border-emerald-500/40 shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <Zap className="w-3 h-3 text-foreground" />
-                      <span>Both Models (Simultaneous)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSplitArenaTarget("left")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                        splitArenaTarget === "left"
-                          ? "bg-primary/20 text-primary border border-border shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <span>Model A Only</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSplitArenaTarget("right")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                        splitArenaTarget === "right"
-                          ? "bg-primary/20 text-primary border border-border shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <span>Model B Only</span>
-                    </button>
-                  </div>
+                    <Zap className="w-3 h-3 text-foreground" />
+                    <span>Both Models</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSplitArenaTarget("left")}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      splitArenaTarget === "left"
+                        ? "bg-primary/20 text-primary border border-border shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span>Model A Only</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSplitArenaTarget("right")}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      splitArenaTarget === "right"
+                        ? "bg-primary/20 text-primary border border-border shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span>Model B Only</span>
+                  </button>
                 </div>
-                <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline">
-                  ⚡ Concurrently stream responses side-by-side
-                </span>
               </div>
-            )}
+              <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline">
+                ⚡ Side-by-side concurrent streams
+              </span>
+            </div>
+          )}
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (roundtableMode) handleRoundtableDebate();
-                else if (compareMode) handleCompare();
-                else if (splitArenaMode) handleSplitArenaSend();
-                else sendMessage();
-              }}
-              className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0"
-            >
-              {/* File Attachment Button */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach files (Documents, Code, Data, Audio, Images)"
-                className="shrink-0 p-2.5 rounded-xl border border-border bg-secondary/70 text-muted-foreground hover:text-foreground hover:border-border transition-all cursor-pointer"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
-
-              {/* Slash Command Palette Trigger Button */}
+          {/* Stop Audio Playback Bar if voice is currently playing */}
+          {speakingMsgId && (
+            <div className="px-4 py-2 bg-red-500/10 border-t border-red-500/20 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 text-xs text-red-400 font-medium">
+                <Volume2 className="w-4 h-4 animate-pulse" />
+                <span>Audio narration in progress...</span>
+              </div>
               <button
                 type="button"
                 onClick={() => {
-                  if (input.startsWith("/")) {
-                    setInput("");
-                  } else {
-                    setInput("/");
-                    if (textareaRef.current) textareaRef.current.focus();
-                  }
+                  stopAudioPlayback();
+                  toast.info("Audio playback stopped");
                 }}
-                title="Browse slash commands (/help, /swarm, /compare, /vault, /hermes...)"
-                className={`shrink-0 p-2.5 rounded-xl border transition-all text-xs font-mono font-bold cursor-pointer ${
-                  input.startsWith("/")
-                    ? "border-primary bg-primary/20 text-primary"
-                    : "border-border bg-secondary/70 text-muted-foreground hover:text-foreground hover:border-border"
-                }`}
+                className="px-3 py-1 rounded-lg border border-red-500/40 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
               >
-                /
+                <Square className="w-3 h-3 fill-red-400 text-red-400" />
+                <span>Stop Audio</span>
               </button>
+            </div>
+          )}
 
-              {/* Voice Memo Recording Button */}
-              <button
-                type="button"
-                onClick={isRecordingAudio ? stopAudioRecording : startAudioRecording}
-                title={isRecordingAudio ? "Stop recording voice memo" : "Record audio voice memo"}
-                className={`shrink-0 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                  isRecordingAudio
-                    ? "border-red-500 bg-red-500/20 text-red-400 ring-2 ring-red-500/40 animate-pulse"
-                    : "border-border bg-secondary/70 text-muted-foreground hover:text-amber-300 hover:border-border"
-                }`}
-              >
-                {isRecordingAudio ? (
-                  <div className="flex items-center gap-1">
-                    <Square className="w-3.5 h-3.5 fill-red-400 text-red-400" />
-                    <span className="text-[10px] font-mono font-bold text-red-400">
-                      {recordingDuration}s
-                    </span>
-                  </div>
-                ) : (
-                  <Music className="w-4 h-4" />
-                )}
-              </button>
-
-              <textarea
-                ref={textareaRef}
-                value={input}
-                rows={1}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    if (roundtableMode) handleRoundtableDebate();
-                    else if (compareMode) handleCompare();
-                    else if (splitArenaMode) handleSplitArenaSend();
-                    else sendMessage();
-                  }
-                }}
-                placeholder={
-                  roundtableMode
-                    ? "Enter debate prompt or problem statement for specialists..."
-                    : compareMode
-                    ? "Enter prompt to compare models..."
-                    : splitArenaMode
-                    ? `Send to ${splitArenaTarget === "both" ? "Both Models simultaneously" : splitArenaTarget === "left" ? `Model A (${model})` : `Model B (${modelB})`}... (Enter to send, double-text supported)`
-                    : selectedAgent
-                    ? `Message ${selectedAgent.displayName}... (Enter to send, Shift+Enter for newline, / for commands)`
-                    : "Type a prompt... (Enter to send, double-text anytime, / for commands)"
-                }
-                disabled={comparing || roundtableLoading}
-                className="flex-1 min-w-0 px-3.5 sm:px-4 py-2.5 rounded-xl border border-border bg-card text-xs outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-foreground placeholder:text-muted-foreground transition-all resize-none min-h-[40px] max-h-32"
-              />
-
-              <button
-                type="submit"
-                disabled={(!input.trim() && attachments.length === 0) || comparing || roundtableLoading}
-                className="shrink-0 flex items-center gap-1.5 px-3.5 sm:px-4 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-xs font-semibold hover:shadow-lg hover:shadow-indigo-500/25 disabled:opacity-40 disabled:hover:shadow-none transition-all cursor-pointer"
-              >
-                {comparing || roundtableLoading ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Send className="w-3.5 h-3.5" />
-                )}
-                <span>
-                  {roundtableMode ? "Debate" : compareMode ? "Compare" : splitArenaMode ? (splitArenaTarget === "both" ? "Send Both" : "Send") : "Send"}
-                </span>
-              </button>
-
-              {/* Stop Audio Playback Button below chat */}
-              {speakingMsgId && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    stopAudioPlayback();
-                    toast.info("Audio playback stopped");
-                  }}
-                  className="shrink-0 px-3 sm:px-3.5 py-2.5 rounded-xl border border-red-500/50 bg-red-500/20 hover:bg-red-500/30 text-red-300 flex items-center gap-1.5 text-xs font-semibold animate-pulse transition-all cursor-pointer shadow-lg shadow-red-500/20"
-                  title="Stop audio playback"
-                >
-                  <Square className="w-3.5 h-3.5 fill-red-400 text-red-400" />
-                  <span className="hidden sm:inline">Stop Audio</span>
-                </button>
-              )}
-            </form>
-          </div>
+          {/* Modern Chat Composer (hidden when Debate Arena is active) */}
+          {!roundtableMode && (
+          <ChatComposer
+            input={input}
+            setInput={setInput}
+            onSend={() => {
+              if (roundtableMode) handleRoundtableDebate();
+              else if (compareMode) handleCompare();
+              else if (splitArenaMode) handleSplitArenaSend();
+              else sendMessage();
+            }}
+            isSending={sending || comparing || roundtableLoading}
+            attachments={attachments}
+            onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+            onFileUpload={handleFileUpload}
+            isRecordingAudio={isRecordingAudio}
+            recordingDuration={recordingDuration}
+            onStartAudioRecording={startAudioRecording}
+            onStopAudioRecording={stopAudioRecording}
+            slashCommands={SLASH_COMMANDS}
+            placeholder={
+              roundtableMode
+                ? "Enter debate prompt or problem statement for specialists..."
+                : compareMode
+                ? "Enter prompt to compare models..."
+                : splitArenaMode
+                ? `Send to ${splitArenaTarget === "both" ? "Both Models" : splitArenaTarget === "left" ? `Model A (${model})` : `Model B (${modelB})`}... (Enter to send)`
+                : selectedAgent
+                ? `Message ${selectedAgent.displayName}... (Enter to send, / for commands)`
+                : "Type a prompt... (Enter to send, / for commands)"
+            }
+            disabled={comparing || roundtableLoading}
+          />
+          )}
 
           {/* Interactive Slide-Out Artifact Drawer */}
           <AnimatePresence>
@@ -3250,7 +2569,6 @@ function ChatContent() {
             )}
           </AnimatePresence>
         </div>
-      </div>
 
       <HermesTerminalModal
         agent={selectedAgent}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -33,6 +33,15 @@ import {
   ShieldCheck,
   ChevronDown,
   Zap,
+  EyeOff,
+  Smartphone,
+  CheckCircle2,
+  RefreshCw,
+  Radio,
+  Send,
+  Key,
+  ChevronRight,
+  Crown,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -41,185 +50,34 @@ import { TOOL_DEFINITIONS, INTEGRATION_DEFINITIONS } from "@/types";
 import { slugify } from "@/lib/utils";
 import { HermesTerminalModal } from "@/components/agents/hermes-terminal-modal";
 import { AgentHierarchyView } from "@/components/agents/agent-hierarchy-view";
+import { AgentPipelineBuilder } from "@/components/agents/agent-pipeline-builder";
+import { A2AMissionModal } from "@/components/agents/a2a-mission-modal";
+import { AgentPacksModal } from "@/components/agents/agent-packs-modal";
 
 const iconMap: Record<string, React.ElementType> = {
   Terminal, Globe, Search, Eye, Code, Brain, FileText, Image,
   Users, Monitor, Music, ListTodo, BookOpen, Volume2,
 };
 
-const ALL_AVATAR_CATEGORIES = [
-  {
-    name: "Robots",
-    emojis: ["🤖", "🦾", "🦿", "👾", "🛸", "🚀", "⚙️", "🕹️", "⚡", "🔮"],
-  },
-  {
-    name: "Tech",
-    emojis: ["🧠", "💡", "📡", "💻", "🖥️", "🛡️", "🔌", "🌐", "📱", "💾"],
-  },
-  {
-    name: "Research",
-    emojis: ["🔬", "📊", "📈", "🧭", "📚", "📝", "🔭", "🧬", "📐", "🔍"],
-  },
-  {
-    name: "Creative",
-    emojis: ["🎨", "🎭", "🎬", "🎪", "🪄", "🎵", "📸", "🖌️", "✨", "🌟"],
-  },
-  {
-    name: "Creatures",
-    emojis: ["🦊", "🐙", "🦅", "🐋", "🐺", "🦉", "🐉", "🦁", "🐯", "🦄"],
-  },
-  {
-    name: "Personas",
-    emojis: ["👑", "🧑‍💼", "👨‍💻", "👩‍🔬", "🧙", "🥷", "🦸", "🧑‍🚀", "🕵️", "👨‍🏫"],
-  },
-];
-
-const PRESET_COLORS = [
-  "#6366f1", "#8b5cf6", "#06b6d4", "#10b981",
-  "#f59e0b", "#ef4444", "#ec4899", "#3b82f6",
-];
-
 const ROLE_OPTIONS = [
-  { value: "orchestrator", label: "Orchestrator", desc: "Directs overall goals and planning", color: "#f59e0b" },
-  { value: "manager", label: "Manager", desc: "Coordinates milestones and delegates", color: "#818cf8" },
-  { value: "specialist", label: "Specialist", desc: "Domain expert — code, research, analysis", color: "#06b6d4" },
-  { value: "worker", label: "Worker", desc: "Executes routines and tool calls", color: "#10b981" },
-];
-
-const QUICK_DEPTS = ["Engineering", "Research", "Operations", "Design", "Intelligence", "Executive"];
-
-interface AgentTemplate {
-  id: string;
-  label: string;
-  icon: string;
-  badge: string;
-  name: string;
-  description: string;
-  avatar: string;
-  themeColor: string;
-  role: string;
-  department: string;
-  model: string;
-  tools: string[];
-  integrations: string[];
-  systemPrompt: string;
-}
-
-const AGENT_TEMPLATES: AgentTemplate[] = [
-  {
-    id: "fullstack",
-    label: "Full-Stack Engineer",
-    icon: "💻",
-    badge: "Autonomous Code",
-    name: "DevCore",
-    description: "Builds web apps, refactors codebases, and executes terminal workflows.",
-    avatar: "👨‍💻",
-    themeColor: "#6366f1",
-    role: "specialist",
-    department: "Engineering",
-    model: "anthropic/claude-3-5-sonnet-20241022",
-    tools: ["terminal", "file", "web", "code", "search"],
-    integrations: ["webhook"],
-    systemPrompt: `You are an autonomous Senior Full-Stack Software Engineer and System Architect.
-- Autonomously inspect codebases, execute diagnostics, and write clean, type-safe code.
-- Adhere strictly to production-grade patterns, idiomatic conventions, and rigorous testing.
-- Verify changes with unit tests or dry-run terminal outputs before confirming completion.
-- Provide structured explanations with code diffs and actionable reasoning.`,
-  },
-  {
-    id: "researcher",
-    label: "Deep Researcher",
-    icon: "🔬",
-    badge: "Intelligence",
-    name: "Scout",
-    description: "Synthesizes documents, searches the web, and compiles structured briefs.",
-    avatar: "🔬",
-    themeColor: "#06b6d4",
-    role: "specialist",
-    department: "Research",
-    model: "google/gemini-1.5-pro",
-    tools: ["web", "search", "file", "memory"],
-    integrations: ["telegram"],
-    systemPrompt: `You are a Lead Research Analyst and Intelligence Operative.
-- Synthesize technical literature, market trends, and real-time web intelligence.
-- Rigorously fact-check findings, cross-reference sources, and provide citations.
-- Structure deliverables into executive summaries with key takeaways and supporting data.
-- Remain objective, analytical, and unambiguous.`,
-  },
-  {
-    id: "orchestrator",
-    label: "Fleet Orchestrator",
-    icon: "👑",
-    badge: "Coordination",
-    name: "Atlas",
-    description: "Decomposes complex objectives, delegates subtasks, and tracks milestones.",
-    avatar: "🧠",
-    themeColor: "#f59e0b",
-    role: "orchestrator",
-    department: "Executive",
-    model: "openai/gpt-4o",
-    tools: ["web", "file", "terminal"],
-    integrations: ["slack", "webhook"],
-    systemPrompt: `You are the Chief Fleet Orchestrator.
-- Deconstruct complex user goals into atomic, parallelizable subtasks.
-- Delegate tasks to specialist agents, monitor routine progression, and unblock bottlenecks.
-- Enforce strict quality standards across all agent deliverables.
-- Maintain high-level fleet situational awareness and synthesize end-to-end results.`,
-  },
-  {
-    id: "omnichannel",
-    label: "Omnichannel Dispatcher",
-    icon: "📱",
-    badge: "Messaging",
-    name: "Echo",
-    description: "Monitors WhatsApp, Telegram, Discord, and dispatches requests.",
-    avatar: "🤖",
-    themeColor: "#10b981",
-    role: "worker",
-    department: "Operations",
-    model: "groq/llama-3.3-70b-versatile",
-    tools: ["web", "file"],
-    integrations: ["whatsapp", "telegram", "discord", "webhook"],
-    systemPrompt: `You are the Omnichannel Communications and Dispatch Specialist.
-- Listen for inbound messages across WhatsApp, Telegram, Discord, and Webhooks.
-- Respond with prompt, courteous, and accurate answers.
-- Classify incoming intent, resolve common inquiries, and dispatch specialist routines.
-- Maintain formatting optimized for chat and mobile screens.`,
-  },
-  {
-    id: "sre",
-    label: "DevOps & SRE",
-    icon: "⚙️",
-    badge: "Infrastructure",
-    name: "Sentry",
-    description: "Monitors runtime health, infrastructure telemetry, and automated healing.",
-    avatar: "🛡️",
-    themeColor: "#ef4444",
-    role: "specialist",
-    department: "Operations",
-    model: "deepseek/deepseek-coder",
-    tools: ["terminal", "file", "web"],
-    integrations: ["webhook", "slack"],
-    systemPrompt: `You are the Lead Site Reliability and Infrastructure Engineer.
-- Monitor service health, inspect real-time log streams, and diagnose anomalies.
-- Safely manage deployments and container routines with dry-run verifications.
-- Handle system alerts with immediate root-cause mitigation protocols.
-- Document postmortems with clear timelines, causes, and preventative measures.`,
-  },
+  { value: "specialist", label: "Specialist", desc: "Domain expert — code, research, analysis" },
+  { value: "orchestrator", label: "Orchestrator", desc: "Directs overall goals and planning" },
+  { value: "manager", label: "Manager", desc: "Coordinates milestones and delegates" },
+  { value: "worker", label: "Worker", desc: "Executes routines and tool calls" },
 ];
 
 const POPULAR_MODELS = [
-  { id: "", label: "Default Router (OmniRoute Cascade)", provider: "Auto", badge: "Smart" },
-  { id: "anthropic/claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet", provider: "Anthropic", badge: "Fast & SOTA" },
-  { id: "anthropic/claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku", provider: "Anthropic", badge: "Ultra Fast" },
-  { id: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI", badge: "Flagship" },
-  { id: "openai/gpt-4o-mini", label: "GPT-4o Mini", provider: "OpenAI", badge: "Lightweight" },
-  { id: "google/gemini-1.5-pro", label: "Gemini 1.5 Pro", provider: "Google", badge: "1M Context" },
-  { id: "google/gemini-1.5-flash", label: "Gemini 1.5 Flash", provider: "Google", badge: "Low Latency" },
-  { id: "deepseek/deepseek-chat", label: "DeepSeek V3", provider: "DeepSeek", badge: "Reasoning" },
-  { id: "deepseek/deepseek-coder", label: "DeepSeek Coder", provider: "DeepSeek", badge: "Code" },
-  { id: "groq/llama-3.3-70b-versatile", label: "Llama 3.3 70B (Groq)", provider: "Groq", badge: "Instant" },
-  { id: "ollama/llama3.2", label: "Llama 3.2 (Local)", provider: "Ollama", badge: "Offline" },
+  { id: "", label: "Default Router (OmniRoute Cascade)", provider: "Auto" },
+  { id: "anthropic/claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet", provider: "Anthropic" },
+  { id: "anthropic/claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku", provider: "Anthropic" },
+  { id: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI" },
+  { id: "openai/gpt-4o-mini", label: "GPT-4o Mini", provider: "OpenAI" },
+  { id: "google/gemini-1.5-pro", label: "Gemini 1.5 Pro", provider: "Google" },
+  { id: "google/gemini-1.5-flash", label: "Gemini 1.5 Flash", provider: "Google" },
+  { id: "deepseek/deepseek-chat", label: "DeepSeek V3", provider: "DeepSeek" },
+  { id: "deepseek/deepseek-coder", label: "DeepSeek Coder", provider: "DeepSeek" },
+  { id: "groq/llama-3.3-70b-versatile", label: "Llama 3.3 70B (Groq)", provider: "Groq" },
+  { id: "ollama/llama3.2", label: "Llama 3.2 (Local)", provider: "Ollama" },
 ];
 
 function AgentFormModal({
@@ -228,39 +86,38 @@ function AgentFormModal({
   onSaved,
   existingAgents,
   editAgent,
+  onDelete,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSaved: () => void;
   existingAgents: AgentProfile[];
   editAgent?: (AgentProfile & { taskCount?: number; hermesLinked?: boolean }) | null;
+  onDelete?: (agent: AgentProfile) => void;
 }) {
   const isEditMode = !!editAgent;
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState("🤖");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [model, setModel] = useState("");
-  const [themeColor, setThemeColor] = useState("#6366f1");
   const [description, setDescription] = useState("");
   const [role, setRole] = useState("specialist");
   const [department, setDepartment] = useState("Engineering");
-  const [reportsToId, setReportsToId] = useState<string>("");
+  const [reportsToId, setReportsToId] = useState<string>("" );
   const [selectedTools, setSelectedTools] = useState<string[]>(["terminal", "file", "web"]);
   const [selectedIntegrations, setSelectedIntegrations] = useState<string[]>([]);
-  const [activeAvatarTab, setActiveAvatarTab] = useState(0);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [modalTab, setModalTab] = useState<"config" | "directive" | "playground">("config");
-  const [customModelMode, setCustomModelMode] = useState(false);
   const [availableModels, setAvailableModels] = useState(POPULAR_MODELS);
 
-  // Playground states
-  const [testPrompt, setTestPrompt] = useState("");
-  const [testResponse, setTestResponse] = useState("");
-  const [testRunning, setTestRunning] = useState(false);
-  const [testLatency, setTestLatency] = useState<number | null>(null);
+  // Channel direct connection states
+  const [channelConfigs, setChannelConfigs] = useState<Record<string, any>>({});
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [testingChannel, setTestingChannel] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
+  const [waState, setWaState] = useState<{ qrDataUrl?: string; hasSession?: boolean }>({});
+  const [waPairing, setWaPairing] = useState(false);
 
-  // Fetch live configured models from /api/models on open
   useEffect(() => {
     if (!isOpen) return;
     fetch("/api/models")
@@ -275,7 +132,6 @@ function AgentFormModal({
                 id: m.id,
                 label: m.name || m.id,
                 provider: m.provider || "Configured",
-                badge: "Active",
               });
             }
           });
@@ -285,99 +141,12 @@ function AgentFormModal({
       .catch(() => {});
   }, [isOpen]);
 
-  // Apply Blueprint Starter Template
-  const handleApplyTemplate = (tpl: AgentTemplate) => {
-    setName(tpl.name);
-    setAvatar(tpl.avatar);
-    setThemeColor(tpl.themeColor);
-    setRole(tpl.role);
-    setDepartment(tpl.department);
-    setModel(tpl.model);
-    setDescription(tpl.description);
-    setSelectedTools(tpl.tools);
-    setSelectedIntegrations(tpl.integrations);
-    setSystemPrompt(tpl.systemPrompt);
-    toast.success(`Loaded "${tpl.label}" starter blueprint!`);
-  };
-
-  // Auto-Generate System Directive
-  const handleAutoGenerateDirective = () => {
-    const roleDesc = ROLE_OPTIONS.find((r) => r.value === role)?.desc || role;
-    const toolsList = selectedTools.join(", ") || "core analytical reasoning";
-    const newDirective = `You are ${name || "an autonomous AI operative"}, functioning as the ${role.toUpperCase()} in the ${department} department.
-Primary objective: ${description || "Execute assigned directives with maximum reliability, precision, and efficiency."}
-
-Operational Directives:
-- Role & Profile: ${role} (${roleDesc}).
-- Toolset Capabilities: Leverage your active tools (${toolsList}) to explore, diagnose, implement, and verify tasks.
-- Deliverables: Provide structured, unambiguous outputs with clear steps and actionable conclusions.
-- Collaboration: When coordinating across the agent fleet, maintain concise contracts and clear milestone updates.
-
-Quality Standards:
-- Never assume ambiguous parameters; inspect environment context or request clarification first.
-- Maintain high agency, systematic verification, and zero conversational fluff.`;
-    setSystemPrompt(newDirective);
-    toast.success("Drafted tailored system directive!");
-  };
-
-  // Append guideline snippet
-  const handleAppendDirectiveSnippet = (snippet: string) => {
-    setSystemPrompt((prev) => {
-      const clean = prev.trim();
-      return clean ? `${clean}\n\n${snippet}` : snippet;
-    });
-    toast.success("Added guideline to directive");
-  };
-
-  // Run test prompt in Playground
-  const handleRunTestPrompt = async () => {
-    if (!testPrompt.trim()) {
-      toast.error("Enter a test prompt first");
-      return;
-    }
-    setTestRunning(true);
-    setTestResponse("");
-    setTestLatency(null);
-    const start = Date.now();
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: testPrompt.trim(),
-          model: model.trim() || undefined,
-          agentId: editAgent?.id || undefined,
-        }),
-      });
-
-      const data = await res.json();
-      const elapsed = Date.now() - start;
-      setTestLatency(elapsed);
-
-      if (res.ok && data.message) {
-        setTestResponse(typeof data.message === "string" ? data.message : data.message.content || JSON.stringify(data.message));
-        toast.success(`Received test response in ${elapsed}ms`);
-      } else {
-        setTestResponse(data.error || "Execution failed");
-        toast.error(data.error || "Failed to get test response");
-      }
-    } catch (err) {
-      setTestResponse("Failed to connect to agent execution runtime.");
-      toast.error("Error communicating with model");
-    } finally {
-      setTestRunning(false);
-    }
-  };
-
-  // Populate fields when editing or reset on open
   useEffect(() => {
     if (editAgent) {
       setName(editAgent.displayName || "");
       setAvatar(editAgent.avatar || "🤖");
       setSystemPrompt(editAgent.systemPrompt || "");
       setModel(editAgent.model || "");
-      setThemeColor(editAgent.themeColor || "#6366f1");
       setDescription(editAgent.description || "");
       setRole(editAgent.role || "specialist");
       setDepartment(editAgent.department || "Engineering");
@@ -388,27 +157,163 @@ Quality Standards:
       setSelectedIntegrations(
         editAgent.integrations?.filter((i) => i.enabled).map((i) => i.platform) || []
       );
-      setCustomModelMode(Boolean(editAgent.model && !POPULAR_MODELS.some((m) => m.id === editAgent.model)));
+
+      // Fetch saved channel credentials
+      fetch(`/api/integrations?agentId=${editAgent.id}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            const configs: Record<string, any> = {};
+            data.forEach((item: any) => {
+              if (item.currentConfig) {
+                configs[item.id] = { ...item.currentConfig };
+              }
+            });
+            setChannelConfigs(configs);
+          }
+        })
+        .catch(() => {});
+
+      // Fetch whatsapp status
+      fetch(`/api/integrations/whatsapp?agentId=${editAgent.id}`)
+        .then((r) => r.json())
+        .then((data) => {
+          setWaState({ hasSession: Boolean(data.hasSession) });
+        })
+        .catch(() => {});
     } else {
-      // Reset for create mode
       setName("");
       setAvatar("🤖");
       setSystemPrompt("");
       setModel("");
-      setThemeColor("#6366f1");
       setDescription("");
       setRole("specialist");
       setDepartment("Engineering");
       setReportsToId("");
       setSelectedTools(["terminal", "file", "web"]);
       setSelectedIntegrations([]);
-      setCustomModelMode(false);
+      setChannelConfigs({});
+      setWaState({});
+      setTestResults({});
     }
-    setModalTab("config");
-    setTestResponse("");
-    setTestPrompt("");
-    setTestLatency(null);
+    setShowAvatarPicker(false);
   }, [editAgent, isOpen]);
+
+  // WhatsApp QR status poller
+  useEffect(() => {
+    if (!waState.qrDataUrl || waState.hasSession) return;
+    const targetId = editAgent?.id || "temp-pair";
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch("/api/integrations/whatsapp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "check_status", agentId: targetId }),
+        });
+        const data = await res.json();
+        if (data.hasSession || data.state?.status === "connected") {
+          setWaState((prev) => ({ ...prev, qrDataUrl: undefined, hasSession: true }));
+          toast.success("WhatsApp paired successfully!");
+        }
+      } catch {}
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [waState.qrDataUrl, waState.hasSession, editAgent?.id]);
+
+  const handleConfigChange = (platform: string, field: string, value: any) => {
+    setChannelConfigs((prev) => ({
+      ...prev,
+      [platform]: {
+        ...(prev[platform] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleTestChannel = async (platform: string) => {
+    setTestingChannel(platform);
+    const cfg = channelConfigs[platform] || {};
+    try {
+      const res = await fetch("/api/integrations/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, config: cfg }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const msg = data.details?.statusText || data.details?.username || "Verified";
+        setTestResults((prev) => ({ ...prev, [platform]: { success: true, message: msg } }));
+        toast.success(`${platform.toUpperCase()} connection verified: ${msg}`);
+      } else {
+        setTestResults((prev) => ({ ...prev, [platform]: { success: false, message: data.error || "Failed" } }));
+        toast.error(data.error || `Failed to verify ${platform}`);
+      }
+    } catch {
+      toast.error(`Verification error for ${platform}`);
+    } finally {
+      setTestingChannel(null);
+    }
+  };
+
+  const handleStartWaPair = async () => {
+    const targetId = editAgent?.id || "temp-pair";
+    setWaPairing(true);
+    try {
+      const res = await fetch("/api/integrations/whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "start_pair",
+          agentId: targetId,
+          mode: "self-chat",
+          force: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.status === "qr_ready" && data.qrDataUrl) {
+        setWaState((prev) => ({ ...prev, qrDataUrl: data.qrDataUrl }));
+        toast.info("Scan the QR code with WhatsApp on your phone");
+      } else if (data.status === "connected" || data.hasSession) {
+        setWaState((prev) => ({ ...prev, hasSession: true, qrDataUrl: undefined }));
+        toast.success("WhatsApp is already connected for this agent");
+      } else {
+        toast.error(data.error || "Failed to generate pairing QR");
+      }
+    } catch {
+      toast.error("Error initiating WhatsApp pairing");
+    } finally {
+      setWaPairing(false);
+    }
+  };
+
+  const handleDisconnectWa = async () => {
+    const targetId = editAgent?.id || "temp-pair";
+    try {
+      await fetch("/api/integrations/whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear_session", agentId: targetId }),
+      });
+      setWaState({ hasSession: false, qrDataUrl: undefined });
+      toast.success("WhatsApp disconnected");
+    } catch {
+      toast.error("Failed to disconnect WhatsApp");
+    }
+  };
+
+  const handleAutoGenerateDirective = () => {
+    const roleDesc = ROLE_OPTIONS.find((r) => r.value === role)?.desc || role;
+    const toolsList = selectedTools.join(", ") || "core analytical reasoning";
+    const newDirective = `You are ${name || "an autonomous AI operative"}, functioning as the ${role.toUpperCase()} in the ${department} department.
+Primary objective: ${description || "Execute assigned directives with maximum reliability, precision, and efficiency."}
+
+Operational Directives:
+- Role & Profile: ${role} (${roleDesc}).
+- Toolset Capabilities: Leverage your active tools (${toolsList}) to explore, diagnose, implement, and verify tasks.
+- Deliverables: Provide structured, unambiguous outputs with clear steps and actionable conclusions.`;
+    setSystemPrompt(newDirective);
+    toast.success("Drafted tailored system directive!");
+  };
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -417,54 +322,85 @@ Quality Standards:
     }
     setSaving(true);
     try {
-      if (isEditMode && editAgent) {
-        // PUT request for edit
-        const res = await fetch(`/api/agents/${editAgent.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            displayName: name.trim(),
-            avatar,
-            systemPrompt,
-            model: model.trim() || null,
-            themeColor,
-            description: description.trim(),
-            role,
-            department: department.trim() || null,
-            reportsToId: reportsToId || null,
-            integrations: selectedIntegrations,
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Failed to update agent");
-        }
-        toast.success(`Agent "${name}" updated`);
-      } else {
-        // POST request for create
-        const res = await fetch("/api/agents", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            displayName: name.trim(),
-            avatar,
-            systemPrompt,
-            model: model.trim() || null,
-            themeColor,
-            description: description.trim(),
-            role,
-            department: department.trim() || null,
-            reportsToId: reportsToId || null,
-            tools: selectedTools,
-            integrations: selectedIntegrations,
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Failed to create agent");
-        }
-        toast.success(`Agent "${name}" created`);
+      const payload = {
+        displayName: name.trim(),
+        avatar,
+        systemPrompt,
+        model: model.trim() || null,
+        description: description.trim(),
+        role,
+        department: department.trim() || null,
+        reportsToId: reportsToId || null,
+        tools: selectedTools,
+        integrations: selectedIntegrations,
+      };
+
+      const url = isEditMode && editAgent ? `/api/agents/${editAgent.id}` : "/api/agents";
+      const method = isEditMode && editAgent ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save agent");
       }
+
+      const savedAgent = await res.json();
+      const targetAgentId = savedAgent.id || editAgent?.id;
+
+      if (targetAgentId) {
+        // Save channel connection configurations
+        for (const platform of selectedIntegrations) {
+          const cfg = channelConfigs[platform] || {};
+          try {
+            await fetch("/api/integrations", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                platform,
+                agentId: targetAgentId,
+                enabled: true,
+                config: cfg,
+              }),
+            });
+            if (platform === "telegram" && cfg.botToken) {
+              fetch("/api/integrations/telegram", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "start_poller" }),
+              }).catch(() => {});
+            }
+          } catch (e) {
+            console.error(`Failed to save integration for ${platform}:`, e);
+          }
+        }
+
+        // If editing, disable removed integrations
+        if (editAgent?.integrations) {
+          const removed = editAgent.integrations
+            .filter((i) => i.enabled && !selectedIntegrations.includes(i.platform))
+            .map((i) => i.platform);
+          for (const platform of removed) {
+            try {
+              await fetch("/api/integrations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  platform,
+                  agentId: targetAgentId,
+                  enabled: false,
+                }),
+              });
+            } catch {}
+          }
+        }
+      }
+
+      toast.success(isEditMode ? `Agent "${name}" updated` : `Agent "${name}" created with channel connections`);
       onSaved();
       onClose();
     } catch (error) {
@@ -476,10 +412,7 @@ Quality Standards:
 
   if (!isOpen) return null;
 
-  const agentSlug = slugify(name || "agent");
-  const activeRoleObj = ROLE_OPTIONS.find((r) => r.value === role) || ROLE_OPTIONS[2];
-  const charCount = systemPrompt.length;
-  const wordCount = systemPrompt.trim() ? systemPrompt.trim().split(/\s+/).length : 0;
+  const EMOJI_PRESETS = ["🤖", "🧠", "💻", "🔬", "⚡", "🎨", "👑", "🛡️", "🚀", "📝", "🔍", "🕵️"];
 
   return (
     <AnimatePresence>
@@ -487,730 +420,613 @@ Quality Standards:
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-center justify-center p-3 md:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto"
         onClick={onClose}
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.97, y: 12 }}
+          initial={{ opacity: 0, scale: 0.98, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.97, y: 12 }}
-          transition={{ type: "spring", damping: 28, stiffness: 350 }}
-          className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden my-auto"
+          exit={{ opacity: 0, scale: 0.98, y: 10 }}
+          className="w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-xl my-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/60 backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-xl border shadow-sm transition-all"
-                style={{ backgroundColor: `${themeColor}20`, borderColor: `${themeColor}50` }}
-              >
-                {avatar}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-foreground">
-                    {isEditMode ? "Agent Configuration Studio" : "Agent Provisioning Studio"}
-                  </h2>
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
-                    {isEditMode ? "Edit Mode" : "New Operative"}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {isEditMode
-                    ? `Updating parameters for @${agentSlug}`
-                    : "Design persona, intelligence models, system directives, and channel connections"}
-                </p>
-              </div>
+          <div className="flex items-center justify-between pb-4 border-b border-border">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">
+                {isEditMode ? "Edit Agent" : "New Agent"}
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isEditMode ? `Update configuration and channel connections for ${name || "agent"}` : "Configure an autonomous specialist and connect communication channels"}
+              </p>
             </div>
-
-            <div className="flex items-center gap-3">
-              {/* Tabs */}
-              <div className="flex items-center gap-1 bg-secondary/50 p-1 rounded-xl border border-border">
-                <button
-                  type="button"
-                  onClick={() => setModalTab("config")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    modalTab === "config"
-                      ? "bg-card text-foreground shadow-sm font-bold border border-border"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Cpu className="w-3.5 h-3.5" />
-                  <span>Basics &amp; Model</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModalTab("directive")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    modalTab === "directive"
-                      ? "bg-card text-foreground shadow-sm font-bold border border-border"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Wand2 className="w-3.5 h-3.5 text-primary" />
-                  <span>Directive Studio</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModalTab("playground")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    modalTab === "playground"
-                      ? "bg-card text-foreground shadow-sm font-bold border border-border"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Prompt Lab</span>
-                </button>
-              </div>
-
-              <button
-                onClick={onClose}
-                className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          {/* Scrollable Body: Split Pane with Live Preview Card */}
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* Left Column: Interactive Form Tabs */}
-              <div className="lg:col-span-8 space-y-6">
-                {modalTab === "config" && (
-                  <>
-                    {/* Starter Templates (Create mode only) */}
-                    {!isEditMode && (
-                      <div className="space-y-2 pb-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-primary" />
-                            Starter Blueprints (One-Click Setup)
-                          </label>
-                          <span className="text-[11px] text-muted-foreground">Click to autofill recommended settings</span>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {AGENT_TEMPLATES.map((tpl) => (
-                            <button
-                              key={tpl.id}
-                              type="button"
-                              onClick={() => handleApplyTemplate(tpl)}
-                              className="text-left p-2.5 rounded-xl border border-border bg-secondary/30 hover:bg-secondary/70 hover:border-primary/40 transition-all group cursor-pointer"
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-base group-hover:scale-110 transition-transform">
-                                  {tpl.icon}
-                                </span>
-                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20 font-semibold">
-                                  {tpl.badge}
-                                </span>
-                              </div>
-                              <p className="text-xs font-semibold text-foreground truncate">{tpl.label}</p>
-                              <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">{tpl.description}</p>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Identity Section */}
-                    <div className="space-y-3 pt-2 border-t border-border">
-                      <label className="text-xs font-bold text-foreground uppercase tracking-wider">
-                        Agent Identity &amp; Aesthetics
-                      </label>
-                      <div className="grid grid-cols-12 gap-4">
-                        <div className="col-span-3 flex flex-col items-center justify-center p-3 rounded-xl border border-border bg-secondary/40">
-                          <button
-                            type="button"
-                            onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-                            className="w-14 h-14 rounded-2xl border-2 flex items-center justify-center text-2xl transition-transform hover:scale-105 shadow-inner cursor-pointer"
-                            style={{ borderColor: themeColor, backgroundColor: `${themeColor}20` }}
-                          >
-                            {avatar}
-                          </button>
-                          <span className="text-[10px] text-muted-foreground mt-1.5 font-medium">Click to Change</span>
-                        </div>
-
-                        <div className="col-span-9 space-y-2">
-                          <div className="relative">
-                            <input
-                              type="text"
-                              placeholder="Agent name (e.g. Nexus, Scout, CodeWeaver)..."
-                              value={name}
-                              onChange={(e) => setName(e.target.value)}
-                              className="w-full px-4 py-2.5 rounded-xl border border-border bg-secondary/40 text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                            />
-                            {name && (
-                              <span className="absolute right-3 top-2.5 text-[11px] font-mono text-muted-foreground">
-                                @{agentSlug}
-                              </span>
-                            )}
-                          </div>
-                          <input
-                            type="text"
-                            placeholder="Brief mission description (e.g. Autonomous Full-Stack engineer)..."
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            className="w-full px-4 py-2 rounded-xl border border-border bg-secondary/40 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                          />
-                          <div className="flex items-center gap-2 pt-1">
-                            <span className="text-[11px] text-muted-foreground">Theme:</span>
-                            {PRESET_COLORS.map((c) => (
-                              <button
-                                key={c}
-                                type="button"
-                                onClick={() => setThemeColor(c)}
-                                className={`w-5 h-5 rounded-md transition-transform cursor-pointer ${
-                                  themeColor === c ? "scale-125 ring-2 ring-white ring-offset-2 ring-offset-zinc-950" : "hover:scale-110 opacity-80"
-                                }`}
-                                style={{ backgroundColor: c }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Avatar Picker popover */}
-                      <AnimatePresence>
-                        {showAvatarPicker && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-xl"
-                          >
-                            <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
-                              {ALL_AVATAR_CATEGORIES.map((cat, idx) => (
-                                <button
-                                  key={cat.name}
-                                  type="button"
-                                  onClick={() => setActiveAvatarTab(idx)}
-                                  className={`px-2.5 py-1 rounded-lg text-xs transition-all whitespace-nowrap cursor-pointer ${
-                                    activeAvatarTab === idx
-                                      ? "bg-secondary text-foreground font-semibold"
-                                      : "text-muted-foreground hover:text-foreground"
-                                  }`}
-                                >
-                                  {cat.name}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="grid grid-cols-10 gap-1.5 max-h-32 overflow-y-auto">
-                              {ALL_AVATAR_CATEGORIES[activeAvatarTab].emojis.map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  type="button"
-                                  onClick={() => { setAvatar(emoji); setShowAvatarPicker(false); }}
-                                  className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-all cursor-pointer ${
-                                    avatar === emoji
-                                      ? "bg-primary/20 text-primary border border-primary"
-                                      : "hover:bg-secondary border border-transparent"
-                                  }`}
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    {/* Role & Hierarchy */}
-                    <div className="space-y-3 pt-2 border-t border-border">
-                      <label className="text-xs font-bold text-foreground uppercase tracking-wider block">
-                        Organizational Role &amp; Hierarchy
-                      </label>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {ROLE_OPTIONS.map((r) => (
-                          <button
-                            key={r.value}
-                            type="button"
-                            onClick={() => setRole(r.value)}
-                            className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
-                              role === r.value
-                                ? "border-primary bg-primary/10 shadow-sm"
-                                : "border-border hover:border-border/80 bg-secondary/30"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: r.color }} />
-                              <span className={`text-xs font-bold ${role === r.value ? "text-foreground" : "text-muted-foreground"}`}>
-                                {r.label}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{r.desc}</p>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 pt-1">
-                        <div>
-                          <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Department</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Engineering"
-                            value={department}
-                            onChange={(e) => setDepartment(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl border border-border bg-secondary/40 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                          />
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {QUICK_DEPTS.map((d) => (
-                              <button
-                                key={d}
-                                type="button"
-                                onClick={() => setDepartment(d)}
-                                className={`text-[10px] px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
-                                  department === d
-                                    ? "bg-primary/20 text-primary border-primary/40 font-semibold"
-                                    : "text-muted-foreground border-border hover:text-foreground"
-                                }`}
-                              >
-                                {d}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Reports To (Manager)</label>
-                          <select
-                            value={reportsToId}
-                            onChange={(e) => setReportsToId(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl border border-border bg-card text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
-                          >
-                            <option value="">None (Top-Level Agent)</option>
-                            {existingAgents
-                              .filter((a) => !editAgent || a.id !== editAgent.id)
-                              .map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  {a.avatar} {a.displayName} ({a.role})
-                                </option>
-                              ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Model Intelligence Selector */}
-                    <div className="space-y-3 pt-2 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                          <Cpu className="w-3.5 h-3.5 text-primary" />
-                          Model Intelligence
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setCustomModelMode(!customModelMode)}
-                          className="text-[11px] text-primary hover:underline font-medium cursor-pointer"
-                        >
-                          {customModelMode ? "Switch to Preset Dropdown" : "Custom Model String..."}
-                        </button>
-                      </div>
-
-                      {customModelMode ? (
-                        <div className="space-y-1">
-                          <input
-                            type="text"
-                            placeholder="Enter any model identifier: e.g. openai/gpt-4o, anthropic/claude-3-5-sonnet..."
-                            value={model}
-                            onChange={(e) => setModel(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-secondary/40 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                          />
-                          <p className="text-[10px] text-muted-foreground">
-                            Leave blank to utilize OmniRoute Cascade default router.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 gap-2">
-                          <select
-                            value={model}
-                            onChange={(e) => setModel(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-card text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer"
-                          >
-                            {availableModels.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.label} &mdash; [{m.provider}] {m.badge ? `(${m.badge})` : ""}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tools Capability Matrix */}
-                    <div className="space-y-2 pt-2 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-foreground uppercase tracking-wider">
-                          Autonomous Tools ({selectedTools.length} enabled)
-                        </label>
-                        <span className="text-[11px] text-muted-foreground">Checked tools are accessible in runtime</span>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                        {TOOL_DEFINITIONS.map((tool) => {
-                          const isSelected = selectedTools.includes(tool.id);
-                          return (
-                            <button
-                              key={tool.id}
-                              type="button"
-                              onClick={() =>
-                                setSelectedTools((prev) =>
-                                  isSelected ? prev.filter((t) => t !== tool.id) : [...prev, tool.id]
-                                )
-                              }
-                              className={`px-3 py-2 rounded-xl border text-xs text-left transition-all cursor-pointer flex items-center justify-between ${
-                                isSelected
-                                  ? "border-primary/40 bg-primary/10 text-foreground font-semibold"
-                                  : "border-border text-muted-foreground hover:text-foreground hover:border-border/80 bg-secondary/30"
-                              }`}
-                            >
-                              <span>{tool.label}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-primary" />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Integrations & Channels Section */}
-                    <div className="space-y-2 pt-2 border-t border-border">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-foreground uppercase tracking-wider">
-                          Devices &amp; Communication Channels ({selectedIntegrations.length} active)
-                        </label>
-                        <Link
-                          href="/settings?tab=devices"
-                          className="text-[11px] text-primary hover:underline font-semibold"
-                        >
-                          Configure Tokens &rarr;
-                        </Link>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {INTEGRATION_DEFINITIONS.map((integ) => {
-                          const isSelected = selectedIntegrations.includes(integ.id);
-                          return (
-                            <button
-                              key={integ.id}
-                              type="button"
-                              onClick={() =>
-                                setSelectedIntegrations((prev) =>
-                                  isSelected ? prev.filter((i) => i !== integ.id) : [...prev, integ.id]
-                                )
-                              }
-                              className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
-                                isSelected
-                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                                  : "border-border hover:border-border/80 bg-secondary/30 text-muted-foreground"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-0.5">
-                                <span className={`text-xs font-bold ${isSelected ? "text-emerald-400" : "text-foreground"}`}>
-                                  {integ.label}
-                                </span>
-                                {isSelected && <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm" />}
-                              </div>
-                              <p className="text-[10px] text-muted-foreground line-clamp-1">{integ.description}</p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {modalTab === "directive" && (
-                  /* Directive Studio View */
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-xl border border-border bg-primary/5 flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                          <Wand2 className="w-3.5 h-3.5" />
-                          System Directive Studio
-                        </h3>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Directives define the core persona, logic contracts, tool guidelines, and guardrails for <span className="text-foreground font-semibold">{name || "this agent"}</span>.
-                        </p>
-                      </div>
+          {/* Form */}
+          <div className="space-y-4 py-4 max-h-[72vh] overflow-y-auto pr-1">
+            {/* Name & Emoji */}
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarPicker(!showAvatarPicker)}
+                  className="w-10 h-10 rounded-lg border border-border bg-secondary/40 flex items-center justify-center text-xl hover:bg-secondary transition cursor-pointer"
+                  title="Choose emoji"
+                >
+                  {avatar}
+                </button>
+                {showAvatarPicker && (
+                  <div className="absolute top-12 left-0 z-50 p-2 rounded-lg border border-border bg-card shadow-lg grid grid-cols-6 gap-1 w-52">
+                    {EMOJI_PRESETS.map((e) => (
                       <button
+                        key={e}
                         type="button"
-                        onClick={handleAutoGenerateDirective}
-                        className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0"
+                        onClick={() => {
+                          setAvatar(e);
+                          setShowAvatarPicker(false);
+                        }}
+                        className="w-7 h-7 rounded flex items-center justify-center text-base hover:bg-muted cursor-pointer"
                       >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Auto-Draft Directive</span>
+                        {e}
                       </button>
-                    </div>
-
-                    {/* Quick Guideline Enhancers */}
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-muted-foreground">Quick Directive Enhancers (Click to append)</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleAppendDirectiveSnippet("Reasoning Protocol:\n- Think step-by-step through complex requests.\n- Analyze potential edge cases and performance impacts before executing changes.")}
-                          className="px-2.5 py-1 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-[11px] text-foreground font-medium transition-colors cursor-pointer"
-                        >
-                          + Chain of Thought
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAppendDirectiveSnippet("Safety Guardrails:\n- Never execute destructive or irreversible shell commands without dry-running or verifying environment flags.\n- Never leak sensitive keys or credentials in logs.")}
-                          className="px-2.5 py-1 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-[11px] text-foreground font-medium transition-colors cursor-pointer"
-                        >
-                          + Strict Safety &amp; Guardrails
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAppendDirectiveSnippet("Multi-Agent Protocol:\n- Deconstruct complex deliverables into atomic subtasks.\n- Maintain clear, typed status handoffs for orchestrators and subordinates.")}
-                          className="px-2.5 py-1 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-[11px] text-foreground font-medium transition-colors cursor-pointer"
-                        >
-                          + Multi-Agent Protocol
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleAppendDirectiveSnippet("Output Style:\n- Be direct, factual, and concise.\n- Prioritize bullet points, diffs, and structured tables over verbose conversational text.")}
-                          className="px-2.5 py-1 rounded-lg border border-border bg-secondary/50 hover:bg-secondary text-[11px] text-foreground font-medium transition-colors cursor-pointer"
-                        >
-                          + Concise &amp; No Fluff
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Directive Textarea */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-                        <span>System Directive Text</span>
-                        <span className="font-mono text-[10px]">
-                          {charCount} chars &bull; ~{wordCount} words
-                        </span>
-                      </div>
-                      <textarea
-                        rows={12}
-                        value={systemPrompt}
-                        onChange={(e) => setSystemPrompt(e.target.value)}
-                        placeholder="Define agent identity, behavioral standards, operational constraints, and domain expertise..."
-                        className="w-full px-4 py-3 rounded-xl border border-border bg-secondary/30 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary leading-relaxed resize-y"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {modalTab === "playground" && (
-                  /* Live Prompt Lab & Persona Simulator */
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-xl border border-border bg-primary/5 flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          Live Persona Simulator
-                        </h3>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Execute test prompts against <span className="text-foreground font-semibold">{name || "this agent"}</span> to evaluate reasoning latency and output structure.
-                        </p>
-                      </div>
-                      {testLatency !== null && (
-                        <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-primary/20 text-primary border border-primary/30 shrink-0">
-                          ⚡ {testLatency}ms
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Quick Test Templates */}
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-muted-foreground">Test Templates</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[
-                          "Introduce yourself and state your primary capabilities.",
-                          "Analyze a deadlock scenario between two async worker routines.",
-                          "Draft an executive report on multi-agent swarm optimization.",
-                        ].map((tpl) => (
-                          <button
-                            key={tpl}
-                            type="button"
-                            onClick={() => setTestPrompt(tpl)}
-                            className="px-2.5 py-1 rounded-lg border border-border bg-secondary/40 hover:bg-secondary text-[11px] text-muted-foreground hover:text-foreground transition-all text-left truncate max-w-[300px] cursor-pointer"
-                          >
-                            {tpl}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Test Prompt Input */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-medium text-muted-foreground">Prompt Simulation</label>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          Target Model: {model || "Auto-Cascade Router"}
-                        </span>
-                      </div>
-                      <textarea
-                        rows={3}
-                        value={testPrompt}
-                        onChange={(e) => setTestPrompt(e.target.value)}
-                        placeholder="Enter a test prompt or challenge to see the agent's live reaction..."
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-secondary/40 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none font-sans"
-                      />
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={handleRunTestPrompt}
-                          disabled={testRunning || !testPrompt.trim()}
-                          className="px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 text-xs font-semibold flex items-center gap-2 shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
-                        >
-                          {testRunning ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Simulating Execution...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="w-3.5 h-3.5" />
-                              <span>Run Test Prompt</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Output Box */}
-                    {testResponse && (
-                      <div className="space-y-1.5 pt-2 border-t border-border">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                            <Bot className="w-3.5 h-3.5 text-primary" />
-                            Agent Output
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(testResponse);
-                              toast.success("Response copied to clipboard");
-                            }}
-                            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                          >
-                            <Copy className="w-3 h-3" />
-                            <span>Copy</span>
-                          </button>
-                        </div>
-                        <div className="p-4 rounded-xl border border-border bg-secondary/50 text-xs text-foreground leading-relaxed font-sans whitespace-pre-wrap max-h-60 overflow-y-auto">
-                          {testResponse}
-                        </div>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
+              <div className="flex-1">
+                <label className="text-xs font-medium text-foreground block mb-1">Name</label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. CodeWeaver, Scout, Atlas"
+                  className="w-full px-3 py-1.5 rounded-lg border border-border bg-secondary/30 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
 
-              {/* Right Column: Live Operative Preview Card */}
-              <div className="lg:col-span-4 space-y-4 sticky top-0">
-                <div className="p-1 rounded-2xl bg-gradient-to-b from-border/80 via-border/30 to-border/80">
-                  <div className="p-5 rounded-[15px] bg-card/90 backdrop-blur-xl border border-border/50 space-y-4 shadow-xl relative overflow-hidden">
-                    {/* Ambient Glow */}
-                    <div
-                      className="absolute -top-12 -right-12 w-32 h-32 rounded-full blur-3xl pointer-events-none opacity-25"
-                      style={{ backgroundColor: themeColor }}
-                    />
+            {/* Role & Department */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-foreground block mb-1">Role</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
+                >
+                  <option value="specialist">Specialist</option>
+                  <option value="orchestrator">Orchestrator</option>
+                  <option value="manager">Manager</option>
+                  <option value="worker">Worker</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-foreground block mb-1">Department</label>
+                <input
+                  type="text"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  placeholder="e.g. Engineering, Research"
+                  className="w-full px-3 py-1.5 rounded-lg border border-border bg-secondary/30 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
 
-                    {/* Card Header */}
-                    <div className="flex items-start justify-between">
-                      <div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl border shadow-md"
-                        style={{
-                          backgroundColor: `${themeColor}20`,
-                          borderColor: `${themeColor}50`,
-                          boxShadow: `0 0 20px ${themeColor}25`,
-                        }}
-                      >
-                        {avatar}
-                      </div>
-                      <div className="text-right">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          Ready
-                        </span>
-                        <p className="text-[10px] text-muted-foreground font-mono mt-1">@{agentSlug}</p>
-                      </div>
-                    </div>
+            {/* Manager Reports To */}
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">Reports To (Optional)</label>
+              <select
+                value={reportsToId}
+                onChange={(e) => setReportsToId(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
+              >
+                <option value="">None (Top-Level Agent)</option>
+                {existingAgents
+                  .filter((a) => !editAgent || a.id !== editAgent.id)
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.avatar} {a.displayName} ({a.role})
+                    </option>
+                  ))}
+              </select>
+            </div>
 
-                    {/* Name & Desc */}
-                    <div>
-                      <h3 className="text-base font-bold text-foreground truncate">
-                        {name || "Unnamed Operative"}
-                      </h3>
-                      <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                        {description || "Autonomous agent ready for mission dispatch."}
-                      </p>
-                    </div>
+            {/* Model */}
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">Model</label>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
+              >
+                {availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} ({m.provider})
+                  </option>
+                ))}
+              </select>
+            </div>
 
-                    {/* Role & Dept Badges */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span
-                        className="px-2.5 py-0.5 rounded-lg text-xs font-semibold text-foreground border shadow-xs"
-                        style={{ backgroundColor: `${activeRoleObj.color}20`, borderColor: `${activeRoleObj.color}40` }}
-                      >
-                        {activeRoleObj.label}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-secondary text-muted-foreground border border-border">
-                        {department || "General"}
-                      </span>
-                    </div>
+            {/* Description */}
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">Description</label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Brief mission statement or responsibilities"
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-secondary/30 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
 
-                    {/* Model Pill */}
-                    <div className="p-2.5 rounded-xl bg-secondary/40 border border-border/80 text-xs flex items-center justify-between">
-                      <span className="text-muted-foreground font-medium flex items-center gap-1.5">
-                        <Cpu className="w-3.5 h-3.5 text-primary" />
-                        Model
-                      </span>
-                      <span className="font-mono text-foreground font-semibold text-[11px] truncate max-w-[150px]">
-                        {model ? (availableModels.find((m) => m.id === model)?.label || model) : "OmniRoute Cascade"}
-                      </span>
-                    </div>
+            {/* System Instructions */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-foreground">System Instructions</label>
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateDirective}
+                  className="text-[11px] text-primary hover:underline font-medium cursor-pointer"
+                >
+                  Auto-Draft
+                </button>
+              </div>
+              <textarea
+                rows={3}
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                placeholder="Persona guidelines, response formatting, and task execution rules..."
+                className="w-full px-3 py-2 rounded-lg border border-border bg-secondary/30 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-y font-mono"
+              />
+            </div>
 
-                    {/* Capabilities Summary */}
-                    <div className="space-y-2 pt-1 border-t border-border/60">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Enabled Tools:</span>
-                        <span className="font-semibold text-foreground">{selectedTools.length} of 14</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Connected Channels:</span>
-                        <span className="font-semibold text-emerald-400">{selectedIntegrations.length} of 7</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Directive Size:</span>
-                        <span className="font-mono text-muted-foreground text-[11px]">
-                          {charCount > 0 ? `${charCount} chars` : "Default"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Quick Switch to Prompt Lab */}
+            {/* Tools */}
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1.5">Enabled Tools</label>
+              <div className="flex flex-wrap gap-1.5">
+                {TOOL_DEFINITIONS.map((tool) => {
+                  const isSelected = selectedTools.includes(tool.id);
+                  return (
                     <button
+                      key={tool.id}
                       type="button"
-                      onClick={() => setModalTab("playground")}
-                      className="w-full py-2 rounded-xl border border-border bg-secondary/50 hover:bg-secondary text-xs font-medium text-foreground flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      onClick={() =>
+                        setSelectedTools((prev) =>
+                          isSelected ? prev.filter((t) => t !== tool.id) : [...prev, tool.id]
+                        )
+                      }
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
+                        isSelected
+                          ? "bg-[#e6f3fe] border-[#0075de]/30 text-[#0075de]"
+                          : "bg-card border-border text-muted-foreground hover:text-foreground"
+                      }`}
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Test in Prompt Lab &rarr;</span>
+                      {tool.label}
                     </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Connected Channels & Inline Configuration */}
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1.5">Connected Channels</label>
+              <div className="flex flex-wrap gap-1.5">
+                {INTEGRATION_DEFINITIONS.map((integ) => {
+                  const isSelected = selectedIntegrations.includes(integ.id);
+                  return (
+                    <button
+                      key={integ.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedIntegrations((prev) =>
+                          isSelected ? prev.filter((i) => i !== integ.id) : [...prev, integ.id]
+                        )
+                      }
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
+                        isSelected
+                          ? "bg-[#e6f3fe] border-[#0075de]/30 text-[#0075de] font-semibold"
+                          : "bg-card border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {integ.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Inline Direct Channel Connections */}
+              {selectedIntegrations.length > 0 && (
+                <div className="mt-3 space-y-3 pt-3 border-t border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Radio className="w-3.5 h-3.5 text-primary" />
+                      Configure Channel Connections
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Connect directly from here
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedIntegrations.map((platform) => {
+                      const def = INTEGRATION_DEFINITIONS.find((i) => i.id === platform);
+                      const isTesting = testingChannel === platform;
+                      const testResult = testResults[platform];
+                      const cfg = channelConfigs[platform] || {};
+                      const showSecret = Boolean(showSecrets[platform]);
+
+                      return (
+                        <div
+                          key={platform}
+                          className="p-3 rounded-xl border border-border bg-secondary/20 space-y-2.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-xs text-foreground">
+                                {def?.label || platform}
+                              </span>
+                              {testResult?.success && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium">
+                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                  {testResult.message}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedIntegrations((prev) => prev.filter((i) => i !== platform))
+                              }
+                              className="text-[11px] text-muted-foreground hover:text-red-500 transition cursor-pointer"
+                            >
+                              Disconnect
+                            </button>
+                          </div>
+
+                          {/* 1. Telegram Config */}
+                          {platform === "telegram" && (
+                            <div className="space-y-2">
+                              <div>
+                                <label className="text-[11px] text-muted-foreground block mb-1">
+                                  Telegram Bot Token (from @BotFather)
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type={showSecret ? "text" : "password"}
+                                    value={cfg.botToken || ""}
+                                    onChange={(e) =>
+                                      handleConfigChange("telegram", "botToken", e.target.value)
+                                    }
+                                    placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                                    className="w-full pl-3 pr-8 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setShowSecrets((prev) => ({ ...prev, telegram: !showSecret }))
+                                    }
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
+                                  >
+                                    {showSecret ? (
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between gap-2 pt-1">
+                                <input
+                                  type="text"
+                                  value={cfg.chatId || ""}
+                                  onChange={(e) =>
+                                    handleConfigChange("telegram", "chatId", e.target.value)
+                                  }
+                                  placeholder="Default Chat ID / Channel (optional)"
+                                  className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestChannel("telegram")}
+                                  disabled={isTesting || !cfg.botToken}
+                                  className="px-3 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                  {isTesting && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  <span>Test Token</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 2. WhatsApp Personal (QR Bridge) */}
+                          {platform === "whatsapp" && (
+                            <div className="space-y-2 text-xs">
+                              {waState.hasSession ? (
+                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                    <span className="font-medium text-xs">
+                                      WhatsApp Device Connected
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={handleDisconnectWa}
+                                    className="text-xs text-red-500 hover:underline cursor-pointer"
+                                  >
+                                    Disconnect
+                                  </button>
+                                </div>
+                              ) : waState.qrDataUrl ? (
+                                <div className="flex flex-col items-center gap-2 p-3 rounded-lg bg-card border border-border text-center">
+                                  <img
+                                    src={waState.qrDataUrl}
+                                    alt="WhatsApp QR Code"
+                                    className="w-36 h-36 rounded-lg bg-white p-2 border shadow-xs"
+                                  />
+                                  <p className="text-[11px] text-muted-foreground">
+                                    Open WhatsApp &rarr; <b>Linked Devices</b> &rarr; <b>Link a Device</b> &rarr; Scan QR
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setWaState((prev) => ({ ...prev, qrDataUrl: undefined }))
+                                    }
+                                    className="text-[11px] text-muted-foreground hover:text-foreground underline cursor-pointer"
+                                  >
+                                    Cancel QR
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between p-2 rounded-lg bg-card border border-border">
+                                  <span className="text-xs text-muted-foreground">
+                                    Link your phone via QR code
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={handleStartWaPair}
+                                    disabled={waPairing}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    {waPairing && <Loader2 className="w-3 h-3 animate-spin" />}
+                                    <span>Pair via QR Code</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 3. Discord */}
+                          {platform === "discord" && (
+                            <div className="space-y-2">
+                              <label className="text-[11px] text-muted-foreground block mb-0.5">
+                                Discord Bot Token or Webhook URL
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                  <input
+                                    type={showSecret ? "text" : "password"}
+                                    value={cfg.botToken || cfg.webhookUrl || ""}
+                                    onChange={(e) =>
+                                      handleConfigChange("discord", "botToken", e.target.value)
+                                    }
+                                    placeholder="Bot Token or https://discord.com/api/webhooks/..."
+                                    className="w-full pl-3 pr-8 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setShowSecrets((prev) => ({ ...prev, discord: !showSecret }))
+                                    }
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
+                                  >
+                                    {showSecret ? (
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestChannel("discord")}
+                                  disabled={isTesting || (!cfg.botToken && !cfg.webhookUrl)}
+                                  className="px-3 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition cursor-pointer disabled:opacity-50 shrink-0 flex items-center gap-1.5"
+                                >
+                                  {isTesting && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  <span>Test</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 4. Slack */}
+                          {platform === "slack" && (
+                            <div className="space-y-2">
+                              <label className="text-[11px] text-muted-foreground block mb-0.5">
+                                Slack Bot Token or Incoming Webhook URL
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                  <input
+                                    type={showSecret ? "text" : "password"}
+                                    value={cfg.botToken || cfg.webhookUrl || ""}
+                                    onChange={(e) =>
+                                      handleConfigChange("slack", "botToken", e.target.value)
+                                    }
+                                    placeholder="xoxb-... or https://hooks.slack.com/services/..."
+                                    className="w-full pl-3 pr-8 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setShowSecrets((prev) => ({ ...prev, slack: !showSecret }))
+                                    }
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
+                                  >
+                                    {showSecret ? (
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestChannel("slack")}
+                                  disabled={isTesting || (!cfg.botToken && !cfg.webhookUrl)}
+                                  className="px-3 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition cursor-pointer disabled:opacity-50 shrink-0 flex items-center gap-1.5"
+                                >
+                                  {isTesting && <Loader2 className="w-3 h-3 animate-spin" />}
+                                  <span>Test</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 5. Webhook */}
+                          {platform === "webhook" && (
+                            <div className="space-y-2">
+                              <div>
+                                <label className="text-[11px] text-muted-foreground block mb-0.5">
+                                  Webhook Endpoint URL
+                                </label>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="url"
+                                    value={cfg.webhookUrl || ""}
+                                    onChange={(e) =>
+                                      handleConfigChange("webhook", "webhookUrl", e.target.value)
+                                    }
+                                    placeholder="https://api.yourdomain.com/events/agent"
+                                    className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTestChannel("webhook")}
+                                    disabled={isTesting || !cfg.webhookUrl}
+                                    className="px-3 py-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition cursor-pointer disabled:opacity-50 shrink-0 flex items-center gap-1.5"
+                                  >
+                                    {isTesting && <Loader2 className="w-3 h-3 animate-spin" />}
+                                    <span>Ping</span>
+                                  </button>
+                                </div>
+                              </div>
+                              <input
+                                type="text"
+                                value={cfg.secretToken || ""}
+                                onChange={(e) =>
+                                  handleConfigChange("webhook", "secretToken", e.target.value)
+                                }
+                                placeholder="Optional Secret Token or Authorization header"
+                                className="w-full px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                              />
+                            </div>
+                          )}
+
+                          {/* 6. WhatsApp Cloud API */}
+                          {platform === "whatsapp_cloud" && (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={cfg.phoneNumberId || ""}
+                                onChange={(e) =>
+                                  handleConfigChange("whatsapp_cloud", "phoneNumberId", e.target.value)
+                                }
+                                placeholder="Phone Number ID from Meta Developer Console"
+                                className="w-full px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                              />
+                              <div className="relative">
+                                <input
+                                  type={showSecret ? "text" : "password"}
+                                  value={cfg.accessToken || ""}
+                                  onChange={(e) =>
+                                    handleConfigChange("whatsapp_cloud", "accessToken", e.target.value)
+                                  }
+                                  placeholder="Meta System User Access Token"
+                                  className="w-full pl-3 pr-8 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setShowSecrets((prev) => ({ ...prev, whatsapp_cloud: !showSecret }))
+                                  }
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
+                                >
+                                  {showSecret ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 7. Signal */}
+                          {platform === "signal" && (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={cfg.phoneNumber || ""}
+                                onChange={(e) =>
+                                  handleConfigChange("signal", "phoneNumber", e.target.value)
+                                }
+                                placeholder="Signal Registered Phone Number (e.g. +1234567890)"
+                                className="w-full px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                              />
+                              <input
+                                type="text"
+                                value={cfg.gatewayUrl || ""}
+                                onChange={(e) =>
+                                  handleConfigChange("signal", "gatewayUrl", e.target.value)
+                                }
+                                placeholder="Signal Gateway URL (e.g. http://127.0.0.1:8080)"
+                                className="w-full px-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary font-mono"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-card/60 backdrop-blur-xl">
-            <p className="text-xs text-muted-foreground hidden sm:block">
-              {isEditMode ? "Modifications apply across all active routines and channels." : "New agent will automatically be provisioned with Hermes profile and database records."}
-            </p>
-            <div className="flex items-center gap-3 ml-auto">
+          <div className="flex items-center justify-between gap-2 pt-4 border-t border-border mt-2">
+            {isEditMode && editAgent && onDelete ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onDelete(editAgent);
+                }}
+                className="px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-medium transition cursor-pointer flex items-center gap-1.5"
+                title="Delete this agent"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Agent</span>
+              </button>
+            ) : (
+              <div />
+            )}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
               >
                 Cancel
               </button>
@@ -1218,10 +1034,10 @@ Quality Standards:
                 type="button"
                 onClick={handleSave}
                 disabled={saving || !name.trim()}
-                className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer flex items-center gap-2"
+                className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 text-xs font-medium transition cursor-pointer flex items-center gap-1.5"
               >
                 {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>{saving ? (isEditMode ? "Saving Changes..." : "Provisioning Agent...") : (isEditMode ? "Save Changes" : "Create Agent")}</span>
+                <span>{isEditMode ? "Update Agent" : "Create Agent"}</span>
               </button>
             </div>
           </div>
@@ -1231,7 +1047,7 @@ Quality Standards:
   );
 }
 
-function AgentCard({
+function AgentRow({
   agent,
   managerName,
   onDelete,
@@ -1241,132 +1057,133 @@ function AgentCard({
 }: {
   agent: AgentProfile & { taskCount?: number; hermesLinked?: boolean };
   managerName?: string;
-  onDelete: (id: string) => void;
+  onDelete: (agent: AgentProfile) => void;
   onOpenHermes: (agent: AgentProfile) => void;
   onOpenMemories: (agent: AgentProfile) => void;
   onEdit: (agent: AgentProfile & { taskCount?: number; hermesLinked?: boolean }) => void;
 }) {
   const enabledTools = agent.tools?.filter((t) => t.enabled) || [];
   const enabledIntegrations = agent.integrations?.filter((i) => i.enabled) || [];
-  const roleColor = ROLE_OPTIONS.find((r) => r.value === agent.role)?.color || "#6b7280";
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, scale: 0.97 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.97 }}
-      whileHover={{ y: -2 }}
-      className="group relative rounded-lg border border-border glass overflow-hidden hover:border-border transition-all duration-300"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 hover:bg-muted/40 transition-colors"
     >
-      <div
-        className="absolute top-0 left-0 right-0 h-[2px]"
-        style={{ backgroundColor: agent.themeColor || "#6366f1" }}
-      />
-
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center text-xl border shrink-0"
-              style={{
-                borderColor: `${agent.themeColor || "#6366f1"}30`,
-                backgroundColor: `${agent.themeColor || "#6366f1"}10`,
-              }}
-            >
-              {agent.avatar}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <h3 className="font-semibold text-sm text-foreground truncate" title={agent.displayName}>
-                  {agent.displayName}
-                </h3>
-                <span className={`w-1.5 h-1.5 rounded-md shrink-0 ${agent.status === "online" ? "bg-emerald-500" : "bg-secondary dark:bg-secondary"}`} />
-              </div>
-              <div className="flex items-center gap-2 mt-0.5 min-w-0">
-                <span className="text-[11px] text-muted-foreground flex items-center gap-1 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-md" style={{ backgroundColor: roleColor }} />
-                  {agent.role || "worker"}
-                </span>
-                {agent.department && (
-                  <span className="text-[11px] text-muted-foreground truncate" title={agent.department}>
-                    {agent.department}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(agent);
-              }}
-              className="p-1.5 rounded-lg bg-secondary/50 hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-all"
-              title="Edit agent profile"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (confirm(`Delete agent "${agent.displayName}"?`)) onDelete(agent.id);
-              }}
-              className="p-1.5 rounded-lg bg-secondary/50 hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-all"
-              title={`Delete ${agent.displayName}`}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
+      {/* Left: Avatar, Name, Status, Role, Dept */}
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="w-9 h-9 rounded-lg bg-secondary/50 border border-border flex items-center justify-center text-base shrink-0">
+          {agent.avatar || "🤖"}
         </div>
 
-        {managerName && (
-          <p className="text-[11px] text-muted-foreground mb-2">
-            ↳ Reports to {managerName}
-          </p>
-        )}
-
-        {agent.description && (
-          <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{agent.description}</p>
-        )}
-
-        {/* Compact info line */}
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground mb-3">
-          {enabledTools.length > 0 && <span>{enabledTools.length} tools</span>}
-          {enabledIntegrations.length > 0 && (
-            <span className="text-foreground/80">
-              {enabledIntegrations.map((i) => i.platform).join(", ")}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs sm:text-sm font-semibold text-foreground truncate">
+              {agent.displayName}
             </span>
-          )}
-          {agent.model && (
-            <span className="font-mono text-[10px] text-muted-foreground truncate max-w-[100px]">{agent.model}</span>
-          )}
-        </div>
 
-        <div className="flex items-center justify-between gap-1.5 pt-2.5 border-t border-border">
-          <Link
-            href={`/chat?agentId=${agent.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="text-xs text-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-primary/10 text-primary transition-all flex items-center gap-1"
-          >
-            <MessageSquare className="w-3 h-3" />
-            <span>Chat</span>
-          </Link>
-          <button
-            onClick={(e) => { e.stopPropagation(); onOpenMemories(agent); }}
-            className="text-xs text-foreground hover:text-purple-200 px-2 py-1 rounded-lg hover:bg-primary/10 text-primary transition-all flex items-center gap-1"
-            title="Inspect learned rules & episodic memory"
-          >
-            <Brain className="w-3 h-3" />
-            <span>Memory</span>
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onOpenHermes(agent); }}
-            className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-secondary/50 transition-all"
-          >
-            Hermes CLI
-          </button>
+            <span
+              className={`px-2 py-0.5 rounded-md text-[10px] font-medium border ${
+                agent.role === "orchestrator"
+                  ? "bg-[#e6f3fe] text-[#0075de] border-[#0075de]/20"
+                  : agent.role === "manager"
+                  ? "bg-secondary text-foreground border-border"
+                  : agent.role === "worker"
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                  : "bg-purple-500/10 text-purple-600 dark:text-purple-300 border-purple-500/20"
+              }`}
+            >
+              {agent.role || "specialist"}
+            </span>
+
+            {agent.department && (
+              <span className="hidden sm:inline-block px-2 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border text-[10px] font-medium">
+                {agent.department}
+              </span>
+            )}
+
+            {managerName && (
+              <span className="hidden md:inline-block text-[11px] text-muted-foreground">
+                reports to <span className="text-foreground font-medium">{managerName}</span>
+              </span>
+            )}
+          </div>
+
+          {agent.description && (
+            <p className="text-xs text-muted-foreground truncate max-w-sm sm:max-w-md lg:max-w-lg mt-0.5">
+              {agent.description}
+            </p>
+          )}
         </div>
+      </div>
+
+      {/* Middle: Capabilities summary */}
+      <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+        {agent.model && (
+          <span className="font-mono text-[11px] bg-secondary/50 px-2 py-0.5 rounded border border-border/50 max-w-[120px] truncate">
+            {agent.model.split("/").pop()}
+          </span>
+        )}
+
+        {enabledTools.length > 0 && (
+          <span className="text-[11px]">
+            {enabledTools.length} {enabledTools.length === 1 ? "tool" : "tools"}
+          </span>
+        )}
+
+        {enabledIntegrations.length > 0 && (
+          <span className="inline-flex items-center gap-1 text-[11px] text-[#0075de] bg-[#e6f3fe] px-2 py-0.5 rounded-full border border-[#0075de]/20">
+            <Radio className="w-2.5 h-2.5" />
+            {enabledIntegrations.length} {enabledIntegrations.length === 1 ? "channel" : "channels"}
+          </span>
+        )}
+      </div>
+
+      {/* Right: Actions */}
+      <div className="flex items-center gap-1.5 shrink-0 justify-end">
+        <Link
+          href={`/chat?agentId=${agent.id}`}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-secondary hover:bg-secondary/80 text-foreground border border-border transition cursor-pointer"
+          title="Chat with agent"
+        >
+          <MessageSquare className="w-3 h-3" />
+          <span className="hidden sm:inline">Chat</span>
+        </Link>
+
+        <button
+          onClick={() => onOpenHermes(agent)}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary border border-border transition cursor-pointer"
+          title="Hermes Terminal"
+        >
+          <Terminal className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          onClick={() => onOpenMemories(agent)}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary border border-border transition cursor-pointer"
+          title="Knowledge & Memories"
+        >
+          <Brain className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          onClick={() => onEdit(agent)}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary border border-border transition cursor-pointer"
+          title="Edit agent & connections"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          onClick={() => onDelete(agent)}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 border border-border transition cursor-pointer"
+          title="Delete agent"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
       </div>
     </motion.div>
   );
@@ -1377,220 +1194,145 @@ function AgentMemoryModal({
   isOpen,
   onClose,
 }: {
-  agent: (AgentProfile & { taskCount?: number; hermesLinked?: boolean }) | null;
+  agent: AgentProfile | null;
   isOpen: boolean;
   onClose: () => void;
 }) {
-  const [loading, setLoading] = useState(true);
-  const [memoryItem, setMemoryItem] = useState<{
-    agentName: string;
-    vaultPath: string;
-    rawMarkdown: string;
-    extractedDirectives: string[];
-    lastUpdated?: string;
-  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [memoryItem, setMemoryItem] = useState<any>(null);
   const [viewTab, setViewTab] = useState<"directives" | "raw">("directives");
 
-  const loadMemories = useCallback(async () => {
-    if (!agent) return;
-    setLoading(true);
-    try {
-      const res = await fetch("/api/agents/memories");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.memories)) {
-        const found = data.memories.find(
-          (m: { agentName: string }) =>
-            m.agentName?.toLowerCase() === agent.displayName.toLowerCase() ||
-            m.agentName?.toLowerCase() === agent.id.toLowerCase()
-        );
-        if (found) {
-          const rawMarkdown = found.rawMarkdown || found.content || "";
-          const lines = rawMarkdown.split("\n");
-          const directives: string[] = [];
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-              directives.push(trimmed.slice(2).trim());
-            }
-          }
-          setMemoryItem({
-            agentName: found.agentName || agent.displayName,
-            vaultPath: found.vaultPath || `.agent-os/vault/memories/${(found.agentName || agent.displayName).toLowerCase().replace(/\s+/g, "-")}.md`,
-            rawMarkdown,
-            extractedDirectives: Array.isArray(found.extractedDirectives)
-              ? found.extractedDirectives
-              : directives.length > 0
-              ? directives
-              : ["Prioritize clear, production-ready deliverables."],
-            lastUpdated: found.updatedAt,
-          });
-        } else {
-          setMemoryItem({
-            agentName: agent.displayName,
-            vaultPath: `.agent-os/vault/memories/${agent.displayName.toLowerCase().replace(/\s+/g, "-")}.md`,
-            rawMarkdown: `# Episodic Memory: ${agent.displayName}\n\n## Learned Rules & Directives\n- Prioritize clear, production-ready deliverables.\n\n## Iteration & Reflection History\n*No reflection logs yet. Tasks revised with feedback will record insights here automatically.*`,
-            extractedDirectives: ["Prioritize clear, production-ready deliverables."],
-          });
-        }
-      }
-    } catch {
-      toast.error("Failed to fetch agent memories");
-    } finally {
-      setLoading(false);
-    }
-  }, [agent]);
-
   useEffect(() => {
-    if (isOpen) {
-      loadMemories();
-    }
-  }, [isOpen, loadMemories]);
+    if (!isOpen || !agent) return;
+    setLoading(true);
+    fetch(`/api/agents/${agent.id}/memory`)
+      .then((r) => r.json())
+      .then((data) => {
+        setMemoryItem(data);
+      })
+      .catch(() => {
+        toast.error("Failed to load agent memories from vault");
+      })
+      .finally(() => setLoading(false));
+  }, [isOpen, agent]);
 
   if (!isOpen || !agent) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-2xl rounded-lg border border-border bg-card p-6 space-y-4 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border pb-4">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-xl border"
-              style={{
-                borderColor: `${agent.themeColor || "#a855f7"}30`,
-                backgroundColor: `${agent.themeColor || "#a855f7"}15`,
-              }}
-            >
-              {agent.avatar}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-sm text-foreground">
-                  {agent.displayName} &mdash; Episodic Memory
-                </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-md bg-primary/15 text-primary border border-border">
-                  Grounding Active
-                </span>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.98, y: 10 }}
+          className="w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-xl space-y-4 max-h-[80vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-border">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">{agent.avatar || "🤖"}</span>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">
+                  {agent.displayName} Memory Vault
+                </h2>
+                <p className="text-[11px] text-muted-foreground font-mono">
+                  {memoryItem?.vaultPath || "Obsidian Shared Memory Layer"}
+                </p>
               </div>
-              <p className="text-[11px] text-muted-foreground font-mono">
-                {memoryItem?.vaultPath || "Vault Episodic File"}
-              </p>
             </div>
+            <button
+              onClick={onClose}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
-        {/* View Switcher */}
-        <div className="flex items-center gap-2 border-b border-border pb-2 text-xs">
-          <button
-            onClick={() => setViewTab("directives")}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              viewTab === "directives"
-                ? "bg-primary/20 text-primary border border-border font-medium"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Learned Directives ({memoryItem?.extractedDirectives?.length ?? 0})
-          </button>
-          <button
-            onClick={() => setViewTab("raw")}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              viewTab === "raw"
-                ? "bg-primary/20 text-primary border border-border font-medium"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Raw Vault Note
-          </button>
-        </div>
+          {/* View Tab Switcher */}
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border w-fit text-xs">
+            <button
+              onClick={() => setViewTab("directives")}
+              className={`px-3 py-1 rounded-md transition cursor-pointer ${
+                viewTab === "directives" ? "bg-card text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Learned Directives ({memoryItem?.extractedDirectives?.length || 0})
+            </button>
+            <button
+              onClick={() => setViewTab("raw")}
+              className={`px-3 py-1 rounded-md transition cursor-pointer ${
+                viewTab === "raw" ? "bg-card text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Raw Vault Note
+            </button>
+          </div>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto min-h-[250px] space-y-3">
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin text-foreground" />
-            </div>
-          ) : viewTab === "directives" ? (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                These dynamic rules were distilled from human feedback, self-reflection loops, and past task executions. They are automatically injected into this agent&apos;s system prompt during all chat completions and swarm runs:
-              </p>
-              {(memoryItem?.extractedDirectives?.length ?? 0) > 0 ? (
-                <div className="space-y-2 pt-1">
-                  {memoryItem?.extractedDirectives?.map((directive, idx) => (
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto space-y-3 min-h-[220px]">
+            {loading ? (
+              <div className="flex items-center justify-center h-44 text-muted-foreground text-xs">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                Loading vault memories...
+              </div>
+            ) : viewTab === "directives" ? (
+              <div className="space-y-2">
+                {memoryItem?.extractedDirectives && memoryItem.extractedDirectives.length > 0 ? (
+                  memoryItem.extractedDirectives.map((dir: string, idx: number) => (
                     <div
                       key={idx}
-                      className="flex items-start gap-2.5 p-3 rounded-xl bg-secondary/50 border border-border text-xs text-foreground"
+                      className="p-2.5 rounded-lg border border-border bg-secondary/30 text-xs text-foreground flex items-start gap-2"
                     >
-                      <span className="w-5 h-5 rounded-md bg-primary/20 text-primary flex items-center justify-center text-[10px] shrink-0 font-bold">
-                        {idx + 1}
-                      </span>
-                      <span className="leading-relaxed">{directive}</span>
+                      <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                      <span>{dir}</span>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground italic py-6 text-center">
-                  No explicit directives extracted yet. Run task revisions or chat with this agent to automatically generate memory rules.
-                </div>
-              )}
-            </div>
-          ) : (
-            <pre className="p-4 rounded-xl bg-secondary/50 border border-border font-mono text-xs text-foreground whitespace-pre-wrap leading-relaxed">
-              {memoryItem?.rawMarkdown || "No vault file content found."}
-            </pre>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-border pt-3 text-xs">
-          <span className="text-muted-foreground text-[11px]">
-            Changes synchronize automatically with your shared Obsidian vault
-          </span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-secondary/50 hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-all"
-          >
-            Close
-          </button>
-        </div>
+                  ))
+                ) : (
+                  <div className="p-6 text-center text-xs text-muted-foreground border border-dashed border-border rounded-lg">
+                    No directives extracted yet. Converse with this agent to build episodic memory.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <pre className="p-3 rounded-lg border border-border bg-secondary/30 text-xs font-mono text-muted-foreground whitespace-pre-wrap overflow-x-auto">
+                {memoryItem?.rawContent || "// No vault entry written yet for this agent"}
+              </pre>
+            )}
+          </div>
+        </motion.div>
       </motion.div>
-    </div>
+    </AnimatePresence>
   );
 }
 
 export default function AgentsPage() {
-  const [agents, setAgents] = useState<
-    (AgentProfile & { taskCount?: number; hermesLinked?: boolean })[]
-  >([]);
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<
-    (AgentProfile & { taskCount?: number; hermesLinked?: boolean }) | null
-  >(null);
+  const [editingAgent, setEditingAgent] = useState<(AgentProfile & { taskCount?: number; hermesLinked?: boolean }) | null>(null);
   const [terminalAgent, setTerminalAgent] = useState<AgentProfile | null>(null);
-  const [selectedMemoryAgent, setSelectedMemoryAgent] = useState<
-    (AgentProfile & { taskCount?: number; hermesLinked?: boolean }) | null
-  >(null);
-  const [viewMode, setViewMode] = useState<"grid" | "hierarchy">("grid");
+  const [selectedMemoryAgent, setSelectedMemoryAgent] = useState<AgentProfile | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"directory" | "hierarchy" | "pipeline">("directory");
+  const [showA2AModal, setShowA2AModal] = useState(false);
+  const [showPacksModal, setShowPacksModal] = useState(false);
 
   const fetchAgents = useCallback(async () => {
     try {
       const res = await fetch("/api/agents");
-      const data = await res.json();
-      setAgents(data);
-    } catch (error) {
-      console.error("Error fetching agents:", error);
+      if (res.ok) {
+        const data = await res.json();
+        setAgents(Array.isArray(data) ? data : data.agents || []);
+      }
+    } catch {
+      toast.error("Failed to load agents");
     } finally {
       setLoading(false);
     }
@@ -1598,62 +1340,145 @@ export default function AgentsPage() {
 
   useEffect(() => {
     fetchAgents();
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "pipeline" || tabParam === "hierarchy" || tabParam === "directory") {
+        setViewMode(tabParam);
+      }
+      if (params.get("new") === "true") {
+        setShowCreate(true);
+      }
+      if (params.get("a2a") === "true") {
+        setShowA2AModal(true);
+      }
+      if (params.get("packs") === "true") {
+        setShowPacksModal(true);
+      }
+    }
   }, [fetchAgents]);
 
-  const handleDelete = async (id: string) => {
+  const [agentToDelete, setAgentToDelete] = useState<AgentProfile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleConfirmDelete = async () => {
+    if (!agentToDelete) return;
+    setIsDeleting(true);
     try {
-      const res = await fetch(`/api/agents/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/agents/${agentToDelete.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast.success("Agent deleted");
-        fetchAgents();
+        toast.success(`Agent "${agentToDelete.displayName}" deleted`);
+        setAgents((prev) => prev.filter((a) => a.id !== agentToDelete.id));
+        setAgentToDelete(null);
+        if (editingAgent?.id === agentToDelete.id) {
+          setEditingAgent(null);
+        }
       } else {
-        toast.error("Failed to delete agent");
+        toast.error(data.error || "Failed to delete agent");
       }
-    } catch {
-      toast.error("Failed to delete agent");
+    } catch (err: any) {
+      toast.error(err?.message || "Error deleting agent");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const agentNameMap = new Map<string, string>();
-  agents.forEach((a) => agentNameMap.set(a.id, `${a.avatar} ${a.displayName}`));
+  const agentNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    agents.forEach((a) => map.set(a.id, a.displayName));
+    return map;
+  }, [agents]);
+
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("all");
+
+  const filteredAgents = useMemo(() => {
+    let list = agents;
+    if (selectedRoleFilter !== "all") {
+      list = list.filter((a) => (a.role || "specialist") === selectedRoleFilter);
+    }
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase();
+    return list.filter(
+      (a) =>
+        a.displayName.toLowerCase().includes(q) ||
+        (a.role && a.role.toLowerCase().includes(q)) ||
+        (a.department && a.department.toLowerCase().includes(q)) ||
+        (a.description && a.description.toLowerCase().includes(q))
+    );
+  }, [agents, searchQuery, selectedRoleFilter]);
 
   return (
-    <div className="space-y-5 w-full">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-6 w-full">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-foreground bg-primary/10 text-primary px-2.5 py-0.5 rounded-md border border-border inline-flex items-center gap-1.5">
-              <Bot className="w-3 h-3" />
-              Fleet Orchestration
+            <span className="text-[11px] font-medium text-[#0075de] bg-[#e6f3fe] px-2.5 py-0.5 rounded-full border border-[#0075de]/20 inline-flex items-center gap-1.5">
+              <Bot className="w-3 h-3 text-[#0075de]" />
+              Autonomous Workforce
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {agents.length} Agents Configured
             </span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Agent Studio</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Create, configure, and orchestrate multi-agent hierarchies
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Agents</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+            Directory and organizational hierarchy of autonomous personas
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center p-0.5 rounded-lg border border-border bg-secondary/50 text-xs">
+
+        {/* View Mode Switch & Actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border text-xs">
             <button
-              onClick={() => setViewMode("grid")}
-              className={`px-3 py-1.5 rounded-md transition-all ${
-                viewMode === "grid" ? "bg-secondary/50 text-foreground" : "text-muted-foreground hover:text-foreground"
+              onClick={() => setViewMode("directory")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === "directory" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Grid
+              Directory
             </button>
             <button
               onClick={() => setViewMode("hierarchy")}
-              className={`px-3 py-1.5 rounded-md transition-all ${
-                viewMode === "hierarchy" ? "bg-secondary/50 text-foreground" : "text-muted-foreground hover:text-foreground"
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === "hierarchy" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Hierarchy
             </button>
+            <button
+              onClick={() => setViewMode("pipeline")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === "pipeline" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Pipeline
+            </button>
           </div>
+
+          <button
+            onClick={() => setShowA2AModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground border border-border text-xs font-medium transition cursor-pointer"
+            title="Launch an autonomous A2A chain of command mission"
+          >
+            <Crown className="w-3.5 h-3.5 text-[#0075de]" />
+            <span>A2A Mission</span>
+          </button>
+
+          <button
+            onClick={() => setShowPacksModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 text-xs font-semibold transition cursor-pointer"
+            title="1-Click deploy specialized agent fleets"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Starter Packs</span>
+          </button>
+
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium transition cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Agent</span>
@@ -1661,25 +1486,91 @@ export default function AgentsPage() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-          {[...Array(5)].map((_, i) => (
-            <div
-              key={i}
-              className="p-5 rounded-2xl border border-border bg-card/60 animate-pulse space-y-4"
+      {/* Uncongested Search Bar & Role Filters (hidden in Pipeline view) */}
+      {viewMode !== "pipeline" && (
+        <div className="w-full max-w-xl mx-auto space-y-2.5">
+        <div className="relative">
+          <Search className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search agents by name, role, department..."
+            className="w-full pl-10 pr-9 py-2 rounded-xl border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition shadow-xs"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
             >
-              <div className="flex items-center justify-between">
-                <div className="w-10 h-10 rounded-xl bg-secondary/80" />
-                <div className="w-16 h-5 rounded-md bg-secondary/60" />
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Role Filter Pills */}
+        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+          {[
+            { id: "all", label: "All" },
+            { id: "orchestrator", label: "Orchestrators" },
+            { id: "manager", label: "Managers" },
+            { id: "specialist", label: "Specialists" },
+            { id: "worker", label: "Workers" },
+          ].map((tab) => {
+            const count =
+              tab.id === "all"
+                ? agents.length
+                : agents.filter((a) => (a.role || "specialist") === tab.id).length;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedRoleFilter(tab.id)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                  selectedRoleFilter === tab.id
+                    ? "bg-[#e6f3fe] text-[#0075de] font-semibold border border-[#0075de]/30"
+                    : "bg-card border border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className="opacity-60 text-[10px] font-mono">({count})</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Results Counter if Filtered */}
+        {(searchQuery || selectedRoleFilter !== "all") && (
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground px-2 pt-0.5">
+            <span>
+              Showing {filteredAgents.length} of {agents.length} agents
+            </span>
+            <button
+              onClick={() => {
+                setSearchQuery("");
+                setSelectedRoleFilter("all");
+              }}
+              className="text-[#0075de] hover:underline cursor-pointer"
+            >
+              Reset filters
+            </button>
+          </div>
+        )}
+      </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden animate-pulse">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-secondary/80" />
+                <div className="space-y-1.5">
+                  <div className="w-32 h-3.5 rounded bg-secondary/80" />
+                  <div className="w-48 h-2.5 rounded bg-secondary/50" />
+                </div>
               </div>
-              <div className="space-y-2">
-                <div className="w-3/4 h-4 rounded bg-secondary/80" />
-                <div className="w-full h-3 rounded bg-secondary/50" />
-              </div>
-              <div className="pt-2 flex items-center justify-between border-t border-border/50">
-                <div className="w-20 h-4 rounded bg-secondary/60" />
-                <div className="w-14 h-4 rounded bg-secondary/60" />
-              </div>
+              <div className="w-24 h-6 rounded bg-secondary/60" />
             </div>
           ))}
         </div>
@@ -1687,37 +1578,51 @@ export default function AgentsPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col items-center justify-center h-[50vh] text-center"
+          className="flex flex-col items-center justify-center h-[40vh] text-center"
         >
-          <h2 className="text-lg font-semibold mb-1">No agents yet</h2>
-          <p className="text-sm text-muted-foreground mb-6 max-w-sm">
-            Create your first AI agent with custom tools, integrations, and organizational hierarchy
+          <h2 className="text-base font-semibold mb-1">No agents yet</h2>
+          <p className="text-xs text-muted-foreground mb-4 max-w-sm">
+            Create your first AI agent with custom tools and communication channels
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-sm font-medium transition-colors"
+            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium transition cursor-pointer"
           >
             + Create Your First Agent
           </button>
         </motion.div>
       ) : viewMode === "hierarchy" ? (
-        <AgentHierarchyView agents={agents} onOpenHermes={setTerminalAgent} onRefresh={fetchAgents} />
+        <AgentHierarchyView
+          agents={filteredAgents}
+          onOpenHermes={setTerminalAgent}
+          onRefresh={fetchAgents}
+          onEdit={(a) => setEditingAgent(a)}
+          onDelete={(a) => setAgentToDelete(a)}
+        />
+      ) : viewMode === "pipeline" ? (
+        <AgentPipelineBuilder agents={agents} />
       ) : (
-        <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden shadow-xs">
           <AnimatePresence mode="popLayout">
-            {agents.map((agent) => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                managerName={agent.reportsToId ? agentNameMap.get(agent.reportsToId) : undefined}
-                onDelete={handleDelete}
-                onOpenHermes={setTerminalAgent}
-                onOpenMemories={(a) => setSelectedMemoryAgent(a)}
-                onEdit={(a) => setEditingAgent(a)}
-              />
-            ))}
+            {filteredAgents.length === 0 ? (
+              <div className="p-8 text-center text-xs text-muted-foreground">
+                No agents found matching &ldquo;{searchQuery}&rdquo;
+              </div>
+            ) : (
+              filteredAgents.map((agent) => (
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  managerName={agent.reportsToId ? agentNameMap.get(agent.reportsToId) : undefined}
+                  onDelete={(a) => setAgentToDelete(a)}
+                  onOpenHermes={setTerminalAgent}
+                  onOpenMemories={(a) => setSelectedMemoryAgent(a)}
+                  onEdit={(a) => setEditingAgent(a)}
+                />
+              ))
+            )}
           </AnimatePresence>
-        </motion.div>
+        </div>
       )}
 
       {/* Create Modal */}
@@ -1735,6 +1640,7 @@ export default function AgentsPage() {
         onSaved={fetchAgents}
         existingAgents={agents}
         editAgent={editingAgent}
+        onDelete={(a) => setAgentToDelete(a)}
       />
 
       <HermesTerminalModal
@@ -1750,6 +1656,71 @@ export default function AgentsPage() {
         isOpen={!!selectedMemoryAgent}
         onClose={() => setSelectedMemoryAgent(null)}
       />
+
+      <A2AMissionModal
+        isOpen={showA2AModal}
+        onClose={() => setShowA2AModal(false)}
+        agents={agents}
+      />
+
+      <AgentPacksModal
+        isOpen={showPacksModal}
+        onClose={() => setShowPacksModal(false)}
+        onPackDeployed={fetchAgents}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {agentToDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Delete Agent &ldquo;{agentToDelete.displayName}&rdquo;?
+                  </h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Are you sure you want to delete this agent? Subordinate agents will be unlinked to become top-level orchestrators, and tasks will remain safely preserved in your backlog.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setAgentToDelete(null)}
+                  className="px-3.5 py-1.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isDeleting ? "Deleting..." : "Delete Agent"}</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

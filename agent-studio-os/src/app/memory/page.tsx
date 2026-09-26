@@ -35,6 +35,7 @@ import type { VaultFile } from "@/types";
 import type { GalaxyData } from "@/lib/vault";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { ObsidianGraph } from "@/components/memory/obsidian-graph";
+import { useTheme } from "@/components/theme-provider";
 
 interface FileTreeNodeProps {
   file: VaultFile;
@@ -186,6 +187,7 @@ function FileTreeNode({
 }
 
 export default function MemoryPage() {
+  const { resolvedTheme } = useTheme();
   const [files, setFiles] = useState<VaultFile[]>([]);
   const [galaxyData, setGalaxyData] = useState<GalaxyData | null>(null);
   const [selectedPath, setSelectedPath] = useState<string>("");
@@ -542,27 +544,27 @@ Start writing notes, research findings, or agent context here. You can cross-ref
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-foreground bg-primary/10 text-primary px-2.5 py-0.5 rounded-md border border-border inline-flex items-center gap-1.5">
-              <Brain className="w-3 h-3" />
+            <span className="text-[11px] font-medium text-[#0075de] bg-[#e6f3fe] px-2.5 py-0.5 rounded-full border border-[#0075de]/20 inline-flex items-center gap-1.5">
+              <Brain className="w-3 h-3 text-[#0075de]" />
               Obsidian Knowledge Base
             </span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Shared Memory & Knowledge Galaxy
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             Single shared Obsidian vault synchronized across all autonomous agents
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           {/* View Mode Switcher: Workspace vs Obsidian Graph */}
-          <div className="flex items-center p-0.5 rounded-xl border border-border bg-secondary/50 text-xs">
+          <div className="flex items-center p-0.5 rounded-lg border border-border bg-muted text-xs">
             <button
               onClick={() => setViewMode("workspace")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors cursor-pointer ${
                 viewMode === "workspace"
-                  ? "bg-card text-foreground font-semibold shadow-sm border border-border/50"
+                  ? "bg-card text-foreground font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -571,9 +573,9 @@ Start writing notes, research findings, or agent context here. You can cross-ref
             </button>
             <button
               onClick={() => setViewMode("graph")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors cursor-pointer ${
                 viewMode === "graph"
-                  ? "bg-card text-foreground font-semibold shadow-sm border border-border/50"
+                  ? "bg-card text-foreground font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -586,7 +588,7 @@ Start writing notes, research findings, or agent context here. You can cross-ref
           <button
             onClick={handleOpenObsidian}
             title="Open local Obsidian desktop app"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary/15 text-primary hover:bg-primary/25 border border-border text-xs font-semibold shadow-sm transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#e6f3fe] text-[#0075de] hover:bg-[#d8ecfd] border border-[#0075de]/20 text-xs font-medium transition-colors cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Open in Obsidian</span>
@@ -595,10 +597,10 @@ Start writing notes, research findings, or agent context here. You can cross-ref
           {/* Synchronize Vault */}
           <button
             onClick={() => setShowSyncModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-foreground hover:bg-muted border border-border text-xs font-medium transition-colors cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 text-white" />
-            <span>Synchronize Vault</span>
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span>Sync Vault</span>
           </button>
 
           {/* New Folder */}
@@ -608,7 +610,7 @@ Start writing notes, research findings, or agent context here. You can cross-ref
               setNewFolderName("");
               setShowFolderModal(true);
             }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-secondary hover:bg-secondary dark:bg-secondary text-foreground border border-border text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-foreground hover:bg-muted border border-border text-xs font-medium transition-colors cursor-pointer"
           >
             <FolderPlus className="w-3.5 h-3.5 text-foreground" />
             <span>New Folder</span>
@@ -620,7 +622,7 @@ Start writing notes, research findings, or agent context here. You can cross-ref
               setNewNoteFolder("research");
               setShowNewModal(true);
             }}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-xs font-semibold shadow-lg shadow-indigo-500/20 transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Note</span>
@@ -641,14 +643,14 @@ Start writing notes, research findings, or agent context here. You can cross-ref
               loadFile(notePath);
               setViewMode("workspace");
             }}
-            isDark={true}
+            isDark={resolvedTheme === "dark"}
           />
         </div>
       ) : (
         /* File Explorer & Human-Readable Markdown Preview / Editor Mode */
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 h-[calc(100vh-14rem)] min-h-[580px]">
           {/* File Tree Left Column */}
-          <div className="md:col-span-4 lg:col-span-3 rounded-lg border border-border bg-card p-3 flex flex-col overflow-hidden shadow-xl">
+          <div className="md:col-span-4 lg:col-span-3 rounded-xl border border-border bg-card p-3 flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-2 pb-2 mb-2 border-b border-border">
               <div className="flex items-center gap-1.5">
                 <FolderTree className="w-3.5 h-3.5 text-foreground" />
@@ -726,11 +728,11 @@ Start writing notes, research findings, or agent context here. You can cross-ref
           </div>
 
           {/* Editor & Rendered Markdown Preview Right Column */}
-          <div className="md:col-span-8 lg:col-span-9 rounded-lg border border-border bg-card/70 backdrop-blur-xl flex flex-col overflow-hidden shadow-xl">
+          <div className="md:col-span-8 lg:col-span-9 rounded-xl border border-border bg-card flex flex-col overflow-hidden">
             {selectedPath ? (
               <>
                 {/* Header with Preview / Edit / Raw Tabs */}
-                <div className="px-5 py-3 border-b border-border glass flex flex-wrap items-center justify-between gap-3">
+                <div className="px-4 py-2.5 border-b border-border bg-card flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <FileText className="w-4 h-4 text-foreground shrink-0" />
                     <span className="font-mono text-xs font-semibold text-foreground truncate">

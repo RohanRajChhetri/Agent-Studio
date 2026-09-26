@@ -8,14 +8,29 @@ export interface RoundtableMessage {
   displayName: string;
   avatar: string;
   themeColor: string;
+  roleTitle?: string;
+  stance?: string;
   round: number;
+  rebuttalTarget?: string;
   content: string;
   latency: number;
 }
 
+export interface DebateVerdict {
+  summary: string;
+  consensusPoints: string[];
+  winningStance: string;
+  recommendedAction: string;
+}
+
 export async function POST(request: Request) {
   try {
-    const { topic, agentIds, rounds = 1 } = await request.json();
+    const {
+      topic,
+      agentIds,
+      stances = {},
+      rounds = 2,
+    } = await request.json();
 
     if (!topic || !topic.trim()) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
@@ -23,10 +38,12 @@ export async function POST(request: Request) {
 
     // 1. Resolve agents
     let agents: any[] = [];
-    if (agentIds && agentIds.length > 0) {
+    if (agentIds && Array.isArray(agentIds) && agentIds.length > 0) {
       agents = await prisma.agent.findMany({
         where: { id: { in: agentIds } },
       });
+      // Maintain order requested by user
+      agents.sort((a, b) => agentIds.indexOf(a.id) - agentIds.indexOf(b.id));
     }
 
     if (agents.length < 2) {
@@ -38,23 +55,45 @@ export async function POST(request: Request) {
     }
 
     const conversationHistory: RoundtableMessage[] = [];
-    let runningContext = `TOPIC OF DISCUSSION: "${topic}"\n\n`;
+    let runningContext = `DEBATE TOPIC / MOTION: "${topic}"\n\nPARTICIPANTS & ROLES:\n` +
+      agents.map((a) => `- ${a.displayName} (${stances[a.id] || a.role}): ${a.description || a.role}`).join("\n") +
+      "\n\n";
 
-    // 2. Multi-turn debate/roundtable
-    for (let r = 1; r <= Math.min(rounds, 2); r++) {
-      for (const agent of agents) {
+    const totalRounds = Math.min(Math.max(1, rounds), 3);
+
+    // 2. Multi-turn structured debate
+    for (let r = 1; r <= totalRounds; r++) {
+      for (let i = 0; i < agents.length; i++) {
+        const agent = agents[i];
+        const assignedStance = stances[agent.id] || (i === 0 ? "Proponent" : i === 1 ? "Skeptic / Challenger" : "Pragmatist");
+        const prevAgent = i > 0 ? agents[i - 1] : agents[agents.length - 1];
+        const rebuttalTarget = r > 1 ? prevAgent.displayName : (i > 0 ? prevAgent.displayName : undefined);
+
         const start = Date.now();
 
-        const debatePrompt = `You are participating in an autonomous executive roundtable debate with fellow AI specialists.
+        let roundDirective = "";
+        if (r === 1) {
+          roundDirective = `ROUND 1 (Opening Position): State your core thesis clearly from your assigned stance ("${assignedStance}"). Present 2-3 compelling arguments backed by technical and operational reasoning.`;
+        } else if (r === 2) {
+          roundDirective = `ROUND 2 (Cross-Examination & Rebuttal): Directly challenge the points made by ${rebuttalTarget || "the previous speaker"}. Poke holes in their assumptions, highlight failure modes, and defend your position with sharp counter-arguments.`;
+        } else {
+          roundDirective = `ROUND 3 (Closing Arguments & Synthesis): Deliver your closing statement. Acknowledge valid points from your peers, clarify your bottom-line requirement, and propose a concrete path forward.`;
+        }
+
+        const debatePrompt = `You are an elite AI specialist competing in a high-stakes executive debate.
 ${runningContext}
 
 YOUR IDENTITY: ${agent.displayName} (${agent.role})
-YOUR EXPERTISE: ${agent.description || agent.systemPrompt.slice(0, 150)}
+ASSIGNED STANCE: ${assignedStance}
+ROUND: ${r} of ${totalRounds}
 
-INSTRUCTIONS:
-1. Address the topic directly, build on previous agents' points, offer counterpoints or technical critique, and contribute your specialized domain expertise.
-2. Keep your response focused, punchy, and under 3-4 paragraphs.
-3. Conclude with 1 actionable recommendation or provocative question.`;
+${roundDirective}
+
+GUIDELINES:
+1. Maintain your distinct persona and assigned stance vigorously.
+2. Directly quote or address opposing points to create genuine debate tension and intellectual rigor.
+3. Be punchy, structured, and avoid boilerplate intro text. Begin directly with your argument.
+4. Keep within 2-3 tightly reasoned paragraphs.`;
 
         const res = await executeChatCompletion({
           prompt: debatePrompt,
@@ -71,20 +110,23 @@ INSTRUCTIONS:
           displayName: agent.displayName,
           avatar: agent.avatar,
           themeColor: agent.themeColor,
+          roleTitle: agent.role,
+          stance: assignedStance,
           round: r,
+          rebuttalTarget,
           content: res.content,
           latency: Date.now() - start,
         };
 
         conversationHistory.push(entry);
-        runningContext += `${agent.displayName} (Round ${r}):\n${res.content}\n\n`;
+        runningContext += `${agent.displayName} [${assignedStance}] (Round ${r}):\n${res.content}\n\n`;
 
         // Persist message to database
         try {
           await prisma.chatMessage.create({
             data: {
               role: "assistant",
-              content: `**[Roundtable Round ${r}]**\n\n${res.content}`,
+              content: `**[Debate Round ${r} - ${assignedStance}]**\n\n${res.content}`,
               agentId: agent.id,
               model: agent.model || "auto/fast",
               latency: Date.now() - start,
@@ -96,10 +138,49 @@ INSTRUCTIONS:
       }
     }
 
+    // 3. Generate Executive Verdict & Synthesis
+    let verdict: DebateVerdict = {
+      summary: `The specialists conducted a ${totalRounds}-round debate on "${topic}".`,
+      consensusPoints: [
+        "Identified core trade-offs between performance and architectural simplicity.",
+        "Highlighted critical edge cases and resilience requirements."
+      ],
+      winningStance: "Pragmatic Hybrid Approach",
+      recommendedAction: "Adopt incremental rollout with automated benchmark verification."
+    };
+
+    try {
+      const verdictPrompt = `You are an impartial Chief Technology Officer / Executive Arbiter reviewing the following debate:
+${runningContext}
+
+Provide an Executive Verdict JSON object with the following fields:
+{
+  "summary": "1-2 sentence executive summary of the debate outcome",
+  "consensusPoints": ["Point 1 of agreement or synthesis", "Point 2 of agreement"],
+  "winningStance": "Which stance or argument was most persuasive and well-defended",
+  "recommendedAction": "1 clear, actionable decision/next step for the team"
+}
+Output only valid JSON.`;
+
+      const verdictRes = await executeChatCompletion({
+        prompt: verdictPrompt,
+        model: "auto/fast",
+        systemPrompt: "You are an objective executive arbiter who synthesizes debates into crisp actionable decisions. Output only valid JSON.",
+      });
+
+      const parsed = JSON.parse(verdictRes.content.replace(/```json/g, "").replace(/```/g, "").trim());
+      if (parsed.summary && parsed.consensusPoints) {
+        verdict = parsed;
+      }
+    } catch (e) {
+      console.warn("[Roundtable Verdict] Could not parse AI verdict, using fallback:", e);
+    }
+
     return NextResponse.json({
       success: true,
       topic,
       messages: conversationHistory,
+      verdict,
       agentCount: agents.length,
     });
   } catch (error) {

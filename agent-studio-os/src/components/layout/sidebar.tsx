@@ -14,6 +14,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Mic,
+  Coins,
+  Search,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -39,11 +42,11 @@ export function Sidebar() {
         initial={false}
         animate={{ width: collapsed ? 72 : 240 }}
         transition={{ duration: 0.2, ease: "easeInOut" }}
-        className="fixed left-0 top-0 bottom-0 z-50 flex flex-col bg-card/90 backdrop-blur-xl border-r border-border"
+        className="fixed left-0 top-0 bottom-0 z-50 flex flex-col bg-card border-r border-border"
       >
         {/* Logo Brand Header */}
         <div className="flex items-center gap-3 px-4 h-16 border-b border-border shrink-0">
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-md shadow-primary/20 shrink-0">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-primary-foreground font-bold text-xs shrink-0">
             <Sparkles className="w-4 h-4" />
           </div>
           {!collapsed && (
@@ -53,18 +56,18 @@ export function Sidebar() {
               exit={{ opacity: 0, x: -8 }}
               className="overflow-hidden"
             >
-              <h1 className="font-bold text-sm text-foreground tracking-tight whitespace-nowrap">
+              <h1 className="font-semibold text-sm text-foreground tracking-tight whitespace-nowrap">
                 Agent Studio
               </h1>
               <p className="text-[10px] text-muted-foreground font-mono whitespace-nowrap">
-                v1.0.0 &bull; Autonomous OS
+                Autonomous OS
               </p>
             </motion.div>
           )}
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 py-3 px-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 py-3 px-2.5 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive =
               item.href === "/"
@@ -75,20 +78,20 @@ export function Sidebar() {
               <Link key={item.href} href={item.href}>
                 <div
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all relative group cursor-pointer",
+                    "flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors relative group cursor-pointer",
                     isActive
-                      ? "text-primary bg-primary/10 border border-primary/20 shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                      ? "text-primary bg-secondary border border-primary/20 font-semibold"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
                 >
                   <item.icon
                     className={cn(
-                      "w-4 h-4 shrink-0 transition-transform group-hover:scale-110",
+                      "w-4 h-4 shrink-0 transition-transform",
                       isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
                     )}
                   />
                   {!collapsed && (
-                    <span className="whitespace-nowrap font-medium">
+                    <span className="whitespace-nowrap">
                       {item.label}
                     </span>
                   )}
@@ -101,6 +104,43 @@ export function Sidebar() {
           })}
         </nav>
 
+        {/* Quick Cockpit Tools: Voice Orb, Command Palette, Cost Tracker */}
+        <div className="px-2.5 py-2 border-t border-border space-y-1">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-voice-cockpit"))}
+            className="flex items-center gap-2.5 px-3 py-1.5 w-full rounded-lg text-xs font-semibold text-foreground bg-[#e6f3fe] dark:bg-primary/10 border border-[#0075de]/30 text-[#0075de] dark:text-primary hover:bg-[#e6f3fe]/80 transition cursor-pointer"
+            title="Launch Gemini Live Voice Cockpit (Alt+V)"
+          >
+            <Mic className="w-4 h-4 shrink-0 text-primary" />
+            {!collapsed && <span className="truncate">Live Voice</span>}
+          </button>
+
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-command-palette"))}
+            className="flex items-center justify-between px-3 py-1.5 w-full rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
+            title="Command Palette (Ctrl+K)"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Search className="w-4 h-4 shrink-0" />
+              {!collapsed && <span className="truncate">Commands</span>}
+            </div>
+            {!collapsed && (
+              <kbd className="text-[10px] font-mono px-1 rounded bg-secondary border border-border">
+                ⌘K
+              </kbd>
+            )}
+          </button>
+
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-cost-tracker"))}
+            className="flex items-center gap-2.5 px-3 py-1.5 w-full rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
+            title="Token & Cost Telemetry"
+          >
+            <Coins className="w-4 h-4 shrink-0" />
+            {!collapsed && <span className="truncate">Cost & Usage</span>}
+          </button>
+        </div>
+
         {/* Color Theme Switcher */}
         <div className="px-3 py-3 border-t border-border">
           <ThemeToggle collapsed={collapsed} />
@@ -110,7 +150,7 @@ export function Sidebar() {
         <div className="px-3 py-2.5 border-t border-border">
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="flex items-center justify-center w-full py-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+            className="flex items-center justify-center w-full py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? (

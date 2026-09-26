@@ -1,0 +1,17 @@
+{
+  "name": "Agent Studio OS",
+  "short_name": "Agent OS",
+  "description": "Production-Grade Autonomous AI Agent Platform for Business & Daily Life Automation",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f5f4",
+  "theme_color": "#0075de",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

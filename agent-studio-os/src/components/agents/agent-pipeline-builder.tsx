@@ -36,50 +36,6 @@ interface AgentPipelineBuilderProps {
   agents: AgentProfile[];
 }
 
-const PRESET_PIPELINES: Array<{
-  name: string;
-  description: string;
-  stages: Array<{ name: string; agentRole: string; prompt: string }>;
-}> = [
-  {
-    name: "Full Feature Autonomous Delivery",
-    description: "Multi-agent chain: Deep research -> Architecture -> DevOps Implementation -> Documentation",
-    stages: [
-      {
-        name: "Stage 1: Research & Specifications",
-        agentRole: "specialist",
-        prompt: "Analyze the technical requirements, edge-cases, and API schemas for this feature. Produce a structured research brief.",
-      },
-      {
-        name: "Stage 2: Implementation & DevOps",
-        agentRole: "developer",
-        prompt: "Based on the research: {{previous_output}}\n\nImplement the production-ready code with complete error handling and unit tests.",
-      },
-      {
-        name: "Stage 3: Documentation & Executive Brief",
-        agentRole: "copywriter",
-        prompt: "Review the implementation: {{previous_output}}\n\nWrite concise developer documentation, release highlights, and deployment checklist.",
-      },
-    ],
-  },
-  {
-    name: "Autonomous Security & Code Health Audit",
-    description: "Static inspection -> Vulnerability analysis -> Automated patch generation",
-    stages: [
-      {
-        name: "Stage 1: Vulnerability Scan",
-        agentRole: "specialist",
-        prompt: "Inspect code patterns for injection vulnerabilities, unauthorized access risks, and resource leaks.",
-      },
-      {
-        name: "Stage 2: Remediation & Patching",
-        agentRole: "devops",
-        prompt: "Given audit findings: {{previous_output}}\n\nProvide hardened code patches and architectural recommendations to eliminate risks.",
-      },
-    ],
-  },
-];
-
 export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
   const [pipelineName, setPipelineName] = useState("Autonomous Feature Delivery");
   const [stages, setStages] = useState<PipelineStage[]>([
@@ -143,26 +99,7 @@ export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
     setStages(copy);
   };
 
-  // Load preset
-  const handleLoadPreset = (preset: typeof PRESET_PIPELINES[0]) => {
-    setPipelineName(preset.name);
-    const newStages: PipelineStage[] = preset.stages.map((stg, i) => {
-      const matchAgent = agents.find((a) =>
-        `${a.role || ""} ${a.name} ${a.displayName}`.toLowerCase().includes(stg.agentRole.toLowerCase())
-      ) || agents[i % agents.length] || agents[0];
 
-      return {
-        id: "stg-" + Date.now() + "-" + i,
-        name: stg.name,
-        agentId: matchAgent?.id || agents[0]?.id || "",
-        prompt: stg.prompt,
-      };
-    });
-    setStages(newStages);
-    setStageOutputs({});
-    setSavedToVault(null);
-    toast.success(`Loaded preset: ${preset.name}`);
-  };
 
   // Execute Pipeline Sequential Runner
   const handleRunPipeline = async () => {
@@ -172,6 +109,7 @@ export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
     setSavedToVault(null);
 
     let previousOutput = "";
+    const executedOutputs: Record<string, { text: string; latency: number }> = {};
 
     try {
       for (let i = 0; i < stages.length; i++) {
@@ -198,8 +136,9 @@ export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
 
         if (!res.ok) throw new Error(data.error || `Stage ${i + 1} failed`);
 
-        const outputText = data.response || "Stage executed successfully.";
+        const outputText = data.content || data.response || "Stage executed successfully.";
         previousOutput = outputText;
+        executedOutputs[stage.id] = { text: outputText, latency };
 
         setStageOutputs((prev) => ({
           ...prev,
@@ -215,8 +154,8 @@ export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
           title: `Pipeline_${pipelineName.replace(/\s+/g, "_")}`,
           folder: "swarms",
           tags: ["pipeline", "multi-agent", "deliverable"],
-          content: `# Multi-Agent Pipeline: ${pipelineName}\n\nGenerated autonomously across ${stages.length} specialist stages.\n\n${Object.entries(stageOutputs)
-            .map(([_, out], idx) => `### Stage ${idx + 1}\n${out.text}\n`)
+          content: `# Multi-Agent Pipeline: ${pipelineName}\n\nGenerated autonomously across ${stages.length} specialist stages.\n\n${stages
+            .map((s, idx) => `### Stage ${idx + 1}: ${s.name}\n${executedOutputs[s.id]?.text || "Completed"}\n`)
             .join("\n---\n\n")}\n\n### Final Deliverable\n${previousOutput}`,
         }),
       });
@@ -254,32 +193,17 @@ export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
             type="text"
             value={pipelineName}
             onChange={(e) => setPipelineName(e.target.value)}
-            className="text-lg sm:text-xl font-bold bg-transparent text-foreground outline-none border-b border-transparent hover:border-border focus:border-amber-600 transition-colors w-full max-w-md"
+            className="text-lg sm:text-xl font-bold bg-transparent text-foreground outline-none border-b border-transparent hover:border-border focus:border-primary transition-colors w-full max-w-md"
             title="Click to rename pipeline"
           />
         </div>
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Preset templates */}
-          <div className="flex items-center gap-1.5">
-            {PRESET_PIPELINES.map((p, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleLoadPreset(p)}
-                disabled={running}
-                className="px-2.5 py-1.5 rounded-xl border border-border hover:border-border bg-secondary/50 text-xs text-muted-foreground hover:text-foreground transition-all"
-                title={p.description}
-              >
-                <span>Template: {p.name.split(" ")[0]}</span>
-              </button>
-            ))}
-          </div>
-
           <button
             onClick={handleAddStage}
             disabled={running}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-semibold transition-all shadow-sm cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Stage</span>
@@ -288,7 +212,7 @@ export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
           <button
             onClick={handleRunPipeline}
             disabled={running || stages.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-xs font-semibold shadow-lg shadow-indigo-500/25 transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-lg shadow-primary/20 transition-all disabled:opacity-50 cursor-pointer"
           >
             {running ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -302,14 +226,14 @@ export function AgentPipelineBuilder({ agents }: AgentPipelineBuilderProps) {
 
       {/* Saved to Vault Notification */}
       {savedToVault && (
-        <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-emerald-300 flex items-center justify-between text-xs">
+        <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-foreground shrink-0" />
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>Deliverable archived to Obsidian Vault: <strong>{savedToVault}</strong></span>
           </div>
           <a
             href="/memory"
-            className="text-foreground hover:underline font-semibold text-xs"
+            className="text-primary hover:underline font-semibold text-xs"
           >
             View in Memory Galaxy &rarr;
           </a>

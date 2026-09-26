@@ -16,20 +16,17 @@ import {
   Edit2,
   RefreshCw,
   Power,
-  ChevronRight,
   ChevronDown,
-  Sliders,
+  X,
   FileText,
+  ExternalLink,
   Zap,
-  Layers,
+  FolderDown,
 } from "lucide-react";
-import Link from "next/link";
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
+import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { WebhookSimulator } from "@/components/routines/webhook-simulator";
-import { DagPipelineBuilder } from "@/components/routines/dag-pipeline-builder";
-import { formatResponseTime } from "@/lib/utils";
-
 
 interface RoutineItem {
   id: string;
@@ -49,44 +46,27 @@ interface RoutineItem {
   createdAt: string;
 }
 
-const TEMPLATES = [
-  {
-    title: "Daily Competitor & Market Scan",
-    prompt: "Scan latest competitor releases, pricing changes, and top AI developer tooling trends. Generate a bulleted synthesis in shared memory.",
-    type: "daily",
-    time: "09:00",
-    priority: "high",
-  },
-  {
-    title: "Morning Codebase Health Check",
-    prompt: "Review recent commits, test suites, and open issues. Write a structured morning audit report with high-priority action items.",
-    type: "daily",
-    time: "08:30",
-    priority: "medium",
-  },
-  {
-    title: "Weekly Growth & Content Drafts",
-    prompt: "Synthesize key product milestones from this week into 3 engaging Twitter/X threads and 1 LinkedIn breakdown.",
-    type: "daily",
-    time: "17:00",
-    priority: "medium",
-  },
-];
+interface RoutineExecutionResult {
+  routineTitle: string;
+  agentName: string;
+  agentAvatar: string;
+  timestamp: string;
+  deliverable: string;
+  modelUsed?: string;
+  vaultFile?: string;
+}
 
 export default function RoutinesPage() {
   const [routines, setRoutines] = useState<RoutineItem[]>([]);
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState<"all" | "daily" | "one_time">("all");
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"routines" | "webhooks">("routines");
 
-  // Webhook & Pipeline State
-  const [activeTab, setActiveTab] = useState<"routines" | "webhooks" | "pipelines">("routines");
-  const [webhookEventType, setWebhookEventType] = useState<"github_push" | "cron_routine" | "generic_task">("github_push");
-  const [simulatingWebhook, setSimulatingWebhook] = useState(false);
-  const [webhookResult, setWebhookResult] = useState<any>(null);
+  // Deliverable Viewer Modal
+  const [activeDeliverable, setActiveDeliverable] = useState<RoutineExecutionResult | null>(null);
 
-  // Modal State
+  // Create / Edit Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoutine, setEditingRoutine] = useState<RoutineItem | null>(null);
   const [formTitle, setFormTitle] = useState("");
@@ -95,9 +75,10 @@ export default function RoutinesPage() {
   const [formTime, setFormTime] = useState("09:00");
   const [formScheduledAt, setFormScheduledAt] = useState("");
   const [formAgentId, setFormAgentId] = useState("");
-  const [formPriority, setFormPriority] = useState("medium");
-  const [formAutoExecute, setFormAutoExecute] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Cached deliverables from recent runs
+  const [recentOutputs, setRecentOutputs] = useState<Record<string, string>>({});
 
   const fetchRoutines = async () => {
     try {
@@ -118,7 +99,7 @@ export default function RoutinesPage() {
       const res = await fetch("/api/agents");
       if (res.ok) {
         const data = await res.json();
-        const agentList: AgentProfile[] = Array.isArray(data) ? data : (data.agents || []);
+        const agentList: AgentProfile[] = Array.isArray(data) ? data : data.agents || [];
         setAgents(agentList);
         if (agentList.length > 0 && !formAgentId) {
           setFormAgentId(agentList[0].id);
@@ -132,6 +113,23 @@ export default function RoutinesPage() {
   useEffect(() => {
     fetchRoutines();
     fetchAgents();
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "webhooks" || window.location.hash === "#webhooks") {
+        setViewMode("webhooks");
+      }
+      if (params.get("new") === "true") {
+        setIsModalOpen(true);
+      }
+    }
+
+    // Check due routines in background every 30s
+    const interval = setInterval(() => {
+      fetchRoutines();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const openCreateModal = () => {
@@ -140,59 +138,40 @@ export default function RoutinesPage() {
     setFormPrompt("");
     setFormType("daily");
     setFormTime("09:00");
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(9, 0, 0, 0);
-    setFormScheduledAt(tomorrow.toISOString().slice(0, 16));
-    setFormPriority("medium");
-    setFormAutoExecute(true);
+    setFormScheduledAt("");
     if (agents.length > 0) setFormAgentId(agents[0].id);
     setIsModalOpen(true);
   };
 
-  const openEditModal = (routine: RoutineItem) => {
-    setEditingRoutine(routine);
-    setFormTitle(routine.title);
-    setFormPrompt(routine.prompt);
-    setFormType(routine.type);
-    setFormTime(routine.time || "09:00");
-    setFormScheduledAt(
-      routine.scheduledAt
-        ? new Date(routine.scheduledAt).toISOString().slice(0, 16)
-        : ""
-    );
-    setFormAgentId(routine.agentId || (agents[0]?.id ?? ""));
-    setFormPriority(routine.priority);
-    setFormAutoExecute(routine.autoExecute);
+  const openEditModal = (r: RoutineItem) => {
+    setEditingRoutine(r);
+    setFormTitle(r.title);
+    setFormPrompt(r.prompt);
+    setFormType(r.type);
+    setFormTime(r.time || "09:00");
+    setFormScheduledAt(r.scheduledAt ? new Date(r.scheduledAt).toISOString().slice(0, 16) : "");
+    setFormAgentId(r.agentId || (agents[0]?.id ?? ""));
     setIsModalOpen(true);
-  };
-
-  const applyTemplate = (t: typeof TEMPLATES[0]) => {
-    setFormTitle(t.title);
-    setFormPrompt(t.prompt);
-    setFormType(t.type as "daily");
-    setFormTime(t.time);
-    setFormPriority(t.priority);
   };
 
   const handleSaveRoutine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim() || !formPrompt.trim()) {
-      toast.error("Please enter a title and prompt");
+      toast.error("Please enter a title and goal instructions");
       return;
     }
 
     setIsSubmitting(true);
     try {
       const payload = {
-        title: formTitle,
-        prompt: formPrompt,
+        title: formTitle.trim(),
+        prompt: formPrompt.trim(),
         type: formType,
         time: formType === "daily" ? formTime : null,
-        scheduledAt: formType === "one_time" ? formScheduledAt : null,
+        scheduledAt: formType === "one_time" && formScheduledAt ? formScheduledAt : null,
         agentId: formAgentId || null,
-        priority: formPriority,
-        autoExecute: formAutoExecute,
+        autoExecute: true,
+        priority: "medium",
       };
 
       if (editingRoutine) {
@@ -202,7 +181,7 @@ export default function RoutinesPage() {
           body: JSON.stringify(payload),
         });
         if (res.ok) {
-          toast.success("Routine updated successfully");
+          toast.success("Routine updated");
           setIsModalOpen(false);
           fetchRoutines();
         } else {
@@ -215,14 +194,14 @@ export default function RoutinesPage() {
           body: JSON.stringify(payload),
         });
         if (res.ok) {
-          toast.success("Routine created successfully");
+          toast.success("New routine created and activated");
           setIsModalOpen(false);
           fetchRoutines();
         } else {
           toast.error("Failed to create routine");
         }
       }
-    } catch (err) {
+    } catch {
       toast.error("Error saving routine");
     } finally {
       setIsSubmitting(false);
@@ -238,7 +217,7 @@ export default function RoutinesPage() {
         body: JSON.stringify({ enabled: nextState }),
       });
       if (res.ok) {
-        toast.success(`Routine ${nextState ? "activated" : "paused"}`);
+        toast.success(nextState ? `Routine activated` : `Routine paused`);
         fetchRoutines();
       }
     } catch {
@@ -261,394 +240,324 @@ export default function RoutinesPage() {
 
   const handleTriggerRoutine = async (routine: RoutineItem) => {
     setTriggeringId(routine.id);
-    const toastId = toast.loading(`Triggering routine "${routine.title}" with ${routine.agent?.displayName || "Agent"}...`);
+    const toastId = toast.loading(`Executing "${routine.title}" via ${routine.agent?.displayName || "Agent"}...`);
+
     try {
       const res = await fetch(`/api/routines/${routine.id}/trigger`, {
         method: "POST",
       });
       const data = await res.json();
+
       if (res.ok) {
-        toast.success(`Task executed! Deliverable ready in Review on Kanban board.`, { id: toastId });
+        toast.success(`Completed! Deliverable generated and saved.`, { id: toastId });
+
+        const deliverableText = data.executionResult?.content || data.task?.result || "Task completed successfully.";
+        
+        // Cache output locally
+        setRecentOutputs((prev) => ({
+          ...prev,
+          [routine.id]: deliverableText,
+        }));
+
+        // Open deliverable viewer immediately so the user sees the work done
+        setActiveDeliverable({
+          routineTitle: routine.title,
+          agentName: routine.agent?.displayName || "Agent",
+          agentAvatar: routine.agent?.avatar || "🤖",
+          timestamp: new Date().toLocaleTimeString(),
+          deliverable: deliverableText,
+          modelUsed: data.executionResult?.modelUsed,
+        });
+
         fetchRoutines();
       } else {
-        toast.error(data.error || "Failed to trigger routine", { id: toastId });
+        toast.error(data.error || "Execution failed", { id: toastId });
       }
-    } catch (err) {
-      toast.error("Execution failed", { id: toastId });
+    } catch {
+      toast.error("Routine execution failed", { id: toastId });
     } finally {
       setTriggeringId(null);
     }
   };
 
-  const handleSimulateWebhook = async () => {
-    setSimulatingWebhook(true);
-    setWebhookResult(null);
-    let payload: any = {};
-    if (webhookEventType === "github_push") {
-      payload = {
-        repository: { name: "agent-studio-os" },
-        commits: [
-          {
-            message: "feat: add multi-agent delegation & sandbox tools",
-            author: { name: "Rohan" },
-            modified: ["src/lib/rag.ts", "src/lib/tools-engine.ts"],
-          },
-        ],
-        agent: "vulcan-devops",
-      };
-    } else if (webhookEventType === "cron_routine") {
-      payload = {
-        title: "Daily Autonomous Infrastructure Audit",
-        description: "Audit agent latencies, memory store health, and system routes.",
-        priority: "high",
-        agent: "vulcan-devops",
-      };
-    } else {
-      payload = {
-        title: "Automated Competitor Feature Alert",
-        description: "Analyze new LLM gateway updates released today.",
-        priority: "medium",
-        agent: "athena",
-      };
-    }
-
-    try {
-      const res = await fetch("/api/webhooks/default-secret", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+  const handleViewDeliverable = (routine: RoutineItem) => {
+    const cached = recentOutputs[routine.id];
+    if (cached) {
+      setActiveDeliverable({
+        routineTitle: routine.title,
+        agentName: routine.agent?.displayName || "Agent",
+        agentAvatar: routine.agent?.avatar || "🤖",
+        timestamp: routine.lastRunAt ? new Date(routine.lastRunAt).toLocaleTimeString() : "Recent",
+        deliverable: cached,
       });
-      const data = await res.json();
-      if (res.ok) {
-        setWebhookResult(data);
-        toast.success(`Webhook triggered! Task executed via ${data.task?.agent?.displayName || "Agent"}`);
-      } else {
-        toast.error(data.error || "Webhook simulation failed");
-      }
-    } catch {
-      toast.error("Failed to fire webhook event");
-    } finally {
-      setSimulatingWebhook(false);
+    } else {
+      // Trigger a run if no cached output exists yet
+      handleTriggerRoutine(routine);
     }
   };
 
-  const filteredRoutines = routines.filter((r) => {
-    if (filterType === "all") return true;
-    return r.type === filterType;
-  });
-
-  const dailyCount = routines.filter((r) => r.type === "daily").length;
-  const oneTimeCount = routines.filter((r) => r.type === "one_time").length;
-  const activeCount = routines.filter((r) => r.enabled).length;
-
   return (
-    <div className="space-y-5 w-full">
-      {/* Top Banner */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-foreground bg-primary/10 text-primary px-2.5 py-0.5 rounded-md border border-border inline-flex items-center gap-1.5">
-              <CalendarClock className="w-3 h-3" />
-              Autonomous Engine
-            </span>
+    <div className="space-y-6 w-full max-w-6xl mx-auto pb-12">
+      {/* Sleek, Clean Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-5">
+        <div className="space-y-1">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#e6f3fe] border border-[#0075de]/20 text-[#0075de] text-xs font-medium">
+            <CalendarClock className="w-3.5 h-3.5 text-[#0075de]" />
+            <span>Autonomous Background Engine</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Routines & Scheduled Tasks
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Automated Routines
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Schedule recurring daily routines or one-time tasks executed autonomously by your agent fleet.
+          <p className="text-xs sm:text-sm text-muted-foreground max-w-xl">
+            Schedule recurring tasks that your AI agents execute autonomously on a timer. Outputs are auto-saved to your Obsidian Vault.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          {/* View Switcher: Routines vs Webhook Simulator */}
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border text-xs">
+            <button
+              onClick={() => setViewMode("routines")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === "routines"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Routines
+            </button>
+            <button
+              onClick={() => setViewMode("webhooks")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === "webhooks"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Webhook Simulator
+            </button>
+          </div>
+
           <button
             onClick={fetchRoutines}
-            className="p-2.5 rounded-xl bg-secondary/60 hover:bg-secondary/60 border border-border text-muted-foreground hover:text-foreground transition-all"
-            title="Refresh"
+            className="p-1.5 rounded-lg border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            title="Refresh routines"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground font-semibold text-xs shadow-lg shadow-indigo-500/20 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Routine</span>
-          </button>
+
+          {viewMode === "routines" && (
+            <button
+              onClick={openCreateModal}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Routine</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Top View Mode Switcher */}
-      <div className="flex items-center gap-2 border-b border-border pb-3">
-        <button
-          onClick={() => setActiveTab("routines")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all border ${
-            activeTab === "routines"
-              ? "bg-primary/20 text-primary border-border shadow-sm"
-              : "bg-secondary/40 text-muted-foreground border-border hover:text-foreground"
-          }`}
-        >
-          <CalendarClock className="w-3.5 h-3.5" />
-          <span>Scheduled Routines ({routines.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("webhooks")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all border ${
-            activeTab === "webhooks"
-              ? "bg-primary/20 text-primary border-border shadow-sm"
-              : "bg-secondary/40 text-muted-foreground border-border hover:text-foreground"
-          }`}
-        >
-          <Zap className="w-3.5 h-3.5 text-muted-foreground dark:text-muted-foreground" />
-          <span>Webhooks & Automation Triggers</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("pipelines")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all border ${
-            activeTab === "pipelines"
-              ? "bg-primary/20 text-primary border-border shadow-sm"
-              : "bg-secondary/40 text-muted-foreground border-border hover:text-foreground"
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5 text-foreground" />
-          <span>Multi-Agent Pipelines (DAG)</span>
-        </button>
-      </div>
-
-      {activeTab === "pipelines" ? (
-        <DagPipelineBuilder agents={agents} />
-      ) : activeTab === "webhooks" ? (
+      {viewMode === "webhooks" ? (
         <WebhookSimulator agents={agents} />
-      ) : (
-        <>
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="glass rounded-lg p-4 border border-border flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-primary/15 text-primary border border-border flex items-center justify-center">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-xs text-muted-foreground font-medium">Daily Recurring</span>
-            <div className="text-xl font-bold text-foreground mt-0.5">{dailyCount}</div>
-          </div>
+      ) : loading ? (
+        <div className="py-20 text-center flex flex-col items-center justify-center gap-3 text-muted-foreground">
+          <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+          <span className="text-xs">Loading active routines...</span>
         </div>
-
-        <div className="glass rounded-lg p-4 border border-border flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-primary/15 text-primary border border-border flex items-center justify-center">
-            <Calendar className="w-5 h-5" />
+      ) : routines.length === 0 ? (
+        /* Minimalist Clean Empty State */
+        <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center space-y-4 max-w-md mx-auto">
+          <div className="w-10 h-10 rounded-lg bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/20 flex items-center justify-center mx-auto text-lg">
+            ⏰
           </div>
-          <div>
-            <span className="text-xs text-muted-foreground font-medium">One-Time Scheduled</span>
-            <div className="text-xl font-bold text-foreground mt-0.5">{oneTimeCount}</div>
-          </div>
-        </div>
-
-        <div className="glass rounded-lg p-4 border border-border flex items-center gap-4">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
-            <Zap className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-xs text-muted-foreground font-medium">Active Automations</span>
-            <div className="text-xl font-bold text-emerald-300 mt-0.5">{activeCount} / {routines.length}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-border pb-3">
-        {(
-          [
-            { id: "all", label: "All Routines", count: routines.length },
-            { id: "daily", label: "Daily Recurring", count: dailyCount },
-            { id: "one_time", label: "One-Time Scheduled", count: oneTimeCount },
-          ] as const
-        ).map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setFilterType(tab.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              filterType === tab.id
-                ? "bg-secondary/50 text-foreground border border-border shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-            }`}
-          >
-            <span>{tab.label}</span>
-            <span className="px-1.5 py-0.2 rounded-md text-[10px] bg-secondary/50">
-              {tab.count}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Routines Grid */}
-      {loading ? (
-        <div className="py-24 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
-          <RefreshCw className="w-6 h-6 animate-spin text-foreground" />
-          <span className="text-xs">Loading scheduled routines...</span>
-        </div>
-      ) : filteredRoutines.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card/40 backdrop-blur-xl p-12 text-center space-y-4">
-          <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary border border-border text-foreground flex items-center justify-center mx-auto">
-            <CalendarClock className="w-6 h-6" />
-          </div>
-          <div className="max-w-md mx-auto space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">No routines scheduled yet</h3>
-            <p className="text-xs text-muted-foreground">
-              Create your first daily routine or one-time scheduled task to let your agents autonomously execute work at specific times.
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">No automated routines set up</h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Create a daily recurring routine (like a morning summary or code review) for your agents to execute automatically.
             </p>
           </div>
           <button
             onClick={openCreateModal}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground font-semibold text-xs transition-all"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium transition-opacity cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Create Scheduled Routine</span>
+            <span>Create Your First Routine</span>
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredRoutines.map((routine) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {routines.map((routine) => {
             const isTriggering = triggeringId === routine.id;
+            const hasOutput = Boolean(recentOutputs[routine.id]);
+
             return (
-              <motion.div
+              <div
                 key={routine.id}
-                layout
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className={`rounded-lg border transition-all p-5 flex flex-col justify-between gap-4 relative shadow-lg ${
+                className={`rounded-xl border transition-colors p-5 flex flex-col justify-between space-y-4 relative ${
                   routine.enabled
-                    ? "bg-secondary/85 border-border hover:border-border"
-                    : "bg-card/60 backdrop-blur-xl border-border opacity-60"
+                    ? "bg-card border-border hover:border-border/90"
+                    : "bg-muted/30 border-border/60 opacity-65"
                 }`}
               >
-                {/* Header */}
-                <div className="space-y-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
-                          routine.type === "daily"
-                            ? "bg-primary/20 text-primary border border-border"
-                            : "bg-primary/20 text-primary border border-border"
-                        }`}
-                      >
-                        {routine.type === "daily" ? `⏰ Daily ${routine.time || "09:00"}` : "📅 One-Time"}
-                      </span>
+                {/* Header: Schedule Type & Active Switch */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/20 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-[#0075de]" />
+                      <span>{routine.type === "daily" ? `Daily at ${routine.time || "09:00"}` : "One-Time"}</span>
+                    </span>
 
-                      <span
-                        className={`px-1.5 py-0.2 rounded text-[9px] uppercase font-bold tracking-wider ${
-                          routine.priority === "urgent"
-                            ? "bg-red-500/20 text-red-300"
-                            : routine.priority === "high"
-                            ? "bg-amber-500/20 text-amber-300"
-                            : "bg-primary/20 text-primary"
-                        }`}
-                      >
-                        {routine.priority}
+                    {routine.agent && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground border border-border flex items-center gap-1">
+                        <span>{routine.agent.avatar}</span>
+                        <span>{routine.agent.displayName}</span>
                       </span>
-                    </div>
-
-                    {/* Status Power Toggle */}
-                    <button
-                      onClick={() => handleToggleEnabled(routine)}
-                      className={`p-1.5 rounded-lg border transition-all ${
-                        routine.enabled
-                          ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25"
-                          : "bg-secondary border-border text-muted-foreground hover:text-muted-foreground"
-                      }`}
-                      title={routine.enabled ? "Active (Click to pause)" : "Paused (Click to activate)"}
-                    >
-                      <Power className="w-3.5 h-3.5" />
-                    </button>
+                    )}
                   </div>
 
-                  <h3 className="text-sm font-bold text-foreground line-clamp-1">
+                  {/* Power Toggle */}
+                  <button
+                    onClick={() => handleToggleEnabled(routine)}
+                    className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
+                      routine.enabled
+                        ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20"
+                        : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                    }`}
+                    title={routine.enabled ? "Routine active (click to pause)" : "Routine paused (click to activate)"}
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Title & Goal */}
+                <div className="space-y-1.5">
+                  <h3 className="text-sm font-semibold text-foreground line-clamp-1">
                     {routine.title}
                   </h3>
-
-                  <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed bg-secondary/40 p-2.5 rounded-xl border border-border">
+                  <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed bg-muted/40 p-2.5 rounded-lg border border-border">
                     {routine.prompt}
                   </p>
                 </div>
 
-                {/* Agent & Timing Info */}
-                <div className="space-y-2 pt-2 border-t border-border text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground text-[11px]">Assigned Agent:</span>
-                    {routine.agent ? (
-                      <span className="flex items-center gap-1 font-semibold text-foreground">
-                        <span>{routine.agent.avatar}</span>
-                        <span>{routine.agent.displayName}</span>
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground italic text-[11px]">Auto / Any Agent</span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-muted-foreground">Next Run:</span>
-                    <span className="text-primary font-medium font-mono">
-                      {routine.enabled && routine.nextRunAt
-                        ? new Date(routine.nextRunAt).toLocaleString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "Paused"}
-                    </span>
-                  </div>
-
-                  {routine.lastRunAt && (
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>Last run:</span>
-                      <span>{new Date(routine.lastRunAt).toLocaleString()}</span>
-                    </div>
-                  )}
+                {/* Next Run Info */}
+                <div className="text-[11px] text-muted-foreground flex items-center justify-between border-t border-border pt-2 font-mono">
+                  <span>Next scheduled:</span>
+                  <span className="font-medium text-foreground">
+                    {routine.enabled && routine.nextRunAt
+                      ? new Date(routine.nextRunAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                      : "Paused"}
+                  </span>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+                {/* Action Bar */}
+                <div className="flex items-center gap-2 border-t border-border pt-3">
+                  {/* Run Now Button */}
                   <button
                     onClick={() => handleTriggerRoutine(routine)}
                     disabled={isTriggering}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium transition-opacity disabled:opacity-50 cursor-pointer"
                   >
                     {isTriggering ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <Play className="w-3.5 h-3.5 fill-current" />
                     )}
-                    <span>{isTriggering ? "Executing..." : "Trigger Now"}</span>
+                    <span>{isTriggering ? "Running..." : "Run Now"}</span>
                   </button>
 
+                  {/* View Output Button */}
+                  {hasOutput && (
+                    <button
+                      onClick={() => handleViewDeliverable(routine)}
+                      className="p-1.5 rounded-lg bg-card hover:bg-muted border border-border text-xs font-medium text-foreground transition-colors cursor-pointer"
+                      title="View latest deliverable output"
+                    >
+                      <FileText className="w-4 h-4 text-primary" />
+                    </button>
+                  )}
+
+                  {/* Edit */}
                   <button
                     onClick={() => openEditModal(routine)}
-                    className="p-2 rounded-xl bg-secondary/50 hover:bg-secondary/50 border border-border text-muted-foreground hover:text-foreground transition-all"
-                    title="Edit Routine"
+                    className="p-1.5 rounded-lg bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    title="Edit routine"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
 
+                  {/* Delete */}
                   <button
                     onClick={() => handleDeleteRoutine(routine.id)}
-                    className="p-2 rounded-xl bg-secondary/50 hover:bg-red-500/10 border border-border text-muted-foreground hover:text-red-400 transition-all"
-                    title="Delete Routine"
+                    className="p-1.5 rounded-lg bg-card hover:bg-red-500/10 border border-border text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
+                    title="Delete routine"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              </motion.div>
+              </div>
             );
           })}
         </div>
       )}
-      </>
-      )}
 
-      {/* Routine Creation & Edit Modal */}
+      {/* Deliverable Viewer Drawer/Modal */}
+      <AnimatePresence>
+        {activeDeliverable && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-border pb-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl shrink-0">{activeDeliverable.agentAvatar}</span>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">
+                      {activeDeliverable.routineTitle}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Executed by <strong className="text-foreground">{activeDeliverable.agentName}</strong> at {activeDeliverable.timestamp}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActiveDeliverable(null)}
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Deliverable Markdown Content */}
+              <div className="flex-1 overflow-y-auto p-4 rounded-xl bg-secondary/30 border border-border text-xs text-foreground leading-relaxed">
+                <MarkdownRenderer content={activeDeliverable.deliverable} />
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between border-t border-border pt-3 shrink-0 text-xs">
+                <div className="flex items-center gap-1.5 text-muted-foreground font-mono text-[11px]">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Deliverable auto-archived to Obsidian Vault (tasks/)</span>
+                </div>
+
+                <button
+                  onClick={() => setActiveDeliverable(null)}
+                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs cursor-pointer hover:bg-primary/90"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Simplified, Clean Routine Creator Modal (Minimum Presets) */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
@@ -656,7 +565,7 @@ export default function RoutinesPage() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-xl rounded-lg border border-border bg-card p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5"
             >
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div className="flex items-center gap-2">
@@ -665,244 +574,144 @@ export default function RoutinesPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-foreground">
-                      {editingRoutine ? "Edit Scheduled Routine" : "Create Scheduled Routine"}
+                      {editingRoutine ? "Edit Routine" : "Create Automated Routine"}
                     </h3>
                     <p className="text-[11px] text-muted-foreground">
-                      Set a daily time or one-time date for autonomous execution
+                      Define what to do, who does it, and when.
                     </p>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setIsModalOpen(false)}
-                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
                 >
-                  ✕
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Template Pills */}
-              {!editingRoutine && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Quick Templates:
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {TEMPLATES.map((tmpl, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => applyTemplate(tmpl)}
-                        className="px-2.5 py-1 rounded-lg bg-secondary/50 hover:bg-secondary/50 border border-border text-muted-foreground hover:text-foreground text-xs font-medium transition-all"
-                      >
-                        ⚡ {tmpl.title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <form onSubmit={handleSaveRoutine} className="space-y-4">
-                {/* Title */}
+                {/* 1. What: Title */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Routine Title <span className="text-red-400">*</span>
+                  <label className="text-xs font-bold text-foreground">
+                    1. Routine Title
                   </label>
                   <input
                     type="text"
                     required
                     value={formTitle}
                     onChange={(e) => setFormTitle(e.target.value)}
-                    placeholder="e.g. Daily Competitor Pricing Audit"
-                    className="w-full px-3.5 py-2 rounded-xl bg-card border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-600"
+                    placeholder="e.g. Daily Code Health Check & Issue Audit"
+                    className="w-full p-2.5 rounded-xl border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   />
                 </div>
 
-                {/* Schedule Type Selection */}
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setFormType("daily")}
-                    className={`p-3 rounded-xl border text-left transition-all space-y-1 ${
-                      formType === "daily"
-                        ? "bg-primary/15 text-primary border-border text-foreground"
-                        : "bg-card/50 backdrop-blur-xl border-border text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <Clock className="w-3.5 h-3.5 text-foreground" />
-                      <span>Daily Recurring</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Repeats every day at a designated time
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setFormType("one_time")}
-                    className={`p-3 rounded-xl border text-left transition-all space-y-1 ${
-                      formType === "one_time"
-                        ? "bg-primary/15 text-primary border-border text-foreground"
-                        : "bg-card/50 backdrop-blur-xl border-border text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 font-bold text-xs">
-                      <Calendar className="w-3.5 h-3.5 text-foreground" />
-                      <span>One-Time Scheduled</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Executes once at a specific date and time
-                    </p>
-                  </button>
-                </div>
-
-                {/* Time or Datetime Input */}
-                {formType === "daily" ? (
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-muted-foreground">
-                      Daily Execution Time (24h)
-                    </label>
-                    <input
-                      type="time"
-                      value={formTime}
-                      onChange={(e) => setFormTime(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-amber-600"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-muted-foreground">
-                      Execution Date & Time
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={formScheduledAt}
-                      onChange={(e) => setFormScheduledAt(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-amber-600"
-                    />
-                  </div>
-                )}
-
-                {/* Agent & Priority Row */}
-                {(() => {
-                  const selectedAgent = agents.find((a) => a.id === formAgentId) || (agents.length > 0 ? agents[0] : null);
-                  return (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
-                          <span>Assigned AI Agent</span>
-                          {selectedAgent && (
-                            <span className="text-[10px] text-foreground font-normal">
-                              {selectedAgent.role || selectedAgent.department || "Specialist"}
-                            </span>
-                          )}
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={formAgentId || (selectedAgent?.id ?? "")}
-                            onChange={(e) => setFormAgentId(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-amber-600 [&>option]:bg-card [&>option]:text-foreground appearance-none pr-8 cursor-pointer"
-                          >
-                            {agents.length === 0 && (
-                              <option value="" className="bg-card text-muted-foreground">
-                                Loading agents...
-                              </option>
-                            )}
-                            {agents.map((agent) => (
-                              <option key={agent.id} value={agent.id} className="bg-card text-foreground">
-                                {agent.avatar} {agent.displayName} ({agent.name})
-                              </option>
-                            ))}
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-muted-foreground">
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </div>
-                        </div>
-
-                        {selectedAgent && (
-                          <div className="flex items-center gap-2 p-2 rounded-lg bg-secondary/50 border border-border">
-                            <span className="text-base">{selectedAgent.avatar}</span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-foreground truncate">{selectedAgent.displayName}</p>
-                              <p className="text-[10px] text-muted-foreground truncate">{selectedAgent.model || "auto/fast"}</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-muted-foreground">
-                          Task Priority
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={formPriority}
-                            onChange={(e) => setFormPriority(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs text-foreground focus:outline-none focus:border-amber-600 [&>option]:bg-card [&>option]:text-foreground appearance-none pr-8 cursor-pointer"
-                          >
-                            <option value="low" className="bg-card text-foreground">Low Priority</option>
-                            <option value="medium" className="bg-card text-foreground">Medium Priority</option>
-                            <option value="high" className="bg-card text-foreground">High Priority</option>
-                            <option value="urgent" className="bg-card text-foreground">Urgent</option>
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-muted-foreground">
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Prompt Instructions */}
+                {/* 2. Instructions / Goal */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Agent Instructions / Objective <span className="text-red-400">*</span>
+                  <label className="text-xs font-bold text-foreground">
+                    2. Instructions & Goal
                   </label>
                   <textarea
                     required
-                    rows={4}
+                    rows={3}
                     value={formPrompt}
                     onChange={(e) => setFormPrompt(e.target.value)}
-                    placeholder="Provide specific instructions for what the agent must do and format when this routine triggers..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-600 resize-none leading-relaxed"
+                    placeholder="What should the agent analyze, generate, or execute?"
+                    className="w-full p-2.5 rounded-xl border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
                   />
                 </div>
 
-                {/* Auto-execute checkbox */}
-                <label className="flex items-center gap-2.5 p-3 rounded-xl bg-card/60 backdrop-blur-xl border border-border cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formAutoExecute}
-                    onChange={(e) => setFormAutoExecute(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary w-4 h-4"
-                  />
-                  <div className="text-xs">
-                    <span className="font-semibold text-foreground">
-                      Autonomous Agent Execution
-                    </span>
-                    <p className="text-[11px] text-muted-foreground">
-                      When triggered, the agent runs immediately with Hermes runtime and saves the deliverable to the Obsidian vault under Review.
-                    </p>
+                {/* 3. Who: Assigned Specialist */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-foreground">
+                    3. Assign Agent Specialist
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {agents.map((ag) => (
+                      <button
+                        key={ag.id}
+                        type="button"
+                        onClick={() => setFormAgentId(ag.id)}
+                        className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                          formAgentId === ag.id
+                            ? "bg-primary/20 border-primary text-foreground font-semibold shadow-sm"
+                            : "bg-secondary/40 border-border text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <span className="text-lg shrink-0">{ag.avatar}</span>
+                        <span className="text-xs truncate">{ag.displayName}</span>
+                      </button>
+                    ))}
                   </div>
-                </label>
+                </div>
 
-                {/* Modal Footer */}
+                {/* 4. When: Schedule Time */}
+                <div className="space-y-2 pt-1 border-t border-border">
+                  <label className="text-xs font-bold text-foreground">
+                    4. Execution Schedule
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFormType("daily")}
+                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                        formType === "daily"
+                          ? "bg-primary/20 border-primary text-primary"
+                          : "bg-secondary/40 border-border text-muted-foreground"
+                      }`}
+                    >
+                      ⏰ Every Day
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormType("one_time")}
+                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                        formType === "one_time"
+                          ? "bg-primary/20 border-primary text-primary"
+                          : "bg-secondary/40 border-border text-muted-foreground"
+                      }`}
+                    >
+                      📅 Specific Date & Time
+                    </button>
+                  </div>
+
+                  {formType === "daily" ? (
+                    <div className="flex items-center gap-2 bg-secondary/30 p-2.5 rounded-xl border border-border">
+                      <span className="text-xs text-muted-foreground">Run time daily:</span>
+                      <input
+                        type="time"
+                        value={formTime}
+                        onChange={(e) => setFormTime(e.target.value)}
+                        className="bg-card text-xs font-mono text-foreground px-2 py-1 rounded border border-border outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-secondary/30 p-2.5 rounded-xl border border-border">
+                      <input
+                        type="datetime-local"
+                        value={formScheduledAt}
+                        onChange={(e) => setFormScheduledAt(e.target.value)}
+                        className="bg-card text-xs font-mono text-foreground px-2 py-1 rounded border border-border outline-none w-full"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Submit Buttons */}
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-muted-foreground hover:text-foreground"
+                    className="px-4 py-2 rounded-xl border border-border text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold text-xs transition-all shadow-md shadow-indigo-600/20"
+                    className="px-5 py-2 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-md transition-all disabled:opacity-50 cursor-pointer"
                   >
-                    {isSubmitting ? "Saving..." : editingRoutine ? "Update Routine" : "Save Routine"}
+                    {isSubmitting ? "Saving..." : editingRoutine ? "Update Routine" : "Create Routine"}
                   </button>
                 </div>
               </form>

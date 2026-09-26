@@ -13,15 +13,15 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  theme: "dark",
-  resolvedTheme: "dark",
+  theme: "light",
+  resolvedTheme: "light",
   setTheme: () => {},
   toggleTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("dark");
+  const [theme, setThemeState] = useState<Theme>("light");
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
 
   const applyResolvedTheme = (resolved: ResolvedTheme) => {
     const root = document.documentElement;
@@ -38,7 +38,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    let currentTheme: Theme = "dark";
+    let currentTheme: Theme = "light";
     try {
       const stored = localStorage.getItem("agent-studio-theme") as Theme | null;
       if (stored === "light" || stored === "dark" || stored === "system") {
@@ -55,7 +55,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyResolvedTheme(currentTheme);
       }
     } catch {
-      applyResolvedTheme("dark");
+      applyResolvedTheme("light");
     }
 
     // System theme change listener

@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       );
     }
 
-    let uniqueName = slugify(displayName) || "agent";
+    const uniqueName = slugify(displayName) || "agent";
     let candidate = uniqueName;
     let counter = 1;
     while (await prisma.agent.findUnique({ where: { name: candidate } })) {

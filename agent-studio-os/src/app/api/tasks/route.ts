@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { matchBestAgent } from "@/lib/agent-matcher";
 
 export async function GET(request: Request) {
   try {
@@ -17,7 +18,41 @@ export async function GET(request: Request) {
       orderBy: [{ status: "asc" }, { position: "asc" }],
     });
 
-    return NextResponse.json(tasks);
+    // Format tasks: extract subtasks from result envelope if present
+    const formattedTasks = tasks.map((task) => {
+      let subtasks: any[] = [];
+      let cleanResult = task.result || "";
+      if (task.result && task.result.trim().startsWith("{") && task.result.trim().endsWith("}")) {
+        try {
+          const parsed = JSON.parse(task.result);
+          if (parsed && typeof parsed === "object") {
+            if (Array.isArray(parsed.subtasks)) {
+              subtasks = parsed.subtasks;
+            }
+            if (typeof parsed.originalResult === "string") {
+              cleanResult = parsed.originalResult;
+            } else if (typeof parsed.content === "string") {
+              cleanResult = parsed.content;
+            } else if (typeof parsed.result === "string") {
+              cleanResult = parsed.result;
+            } else if (typeof parsed.text === "string") {
+              cleanResult = parsed.text;
+            } else if (typeof parsed.deliverable === "string") {
+              cleanResult = parsed.deliverable;
+            } else if (Array.isArray(parsed.subtasks)) {
+              cleanResult = "";
+            }
+          }
+        } catch {}
+      }
+      return {
+        ...task,
+        subtasks,
+        result: cleanResult,
+      };
+    });
+
+    return NextResponse.json(formattedTasks);
   } catch (error) {
     return NextResponse.json(
       { error: "Failed to fetch tasks" },
@@ -29,7 +64,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { action, title, description, agentId, priority, dueDate } = body;
+    const { action, title, description, agentId, priority, dueDate, status } = body;
 
     // Support seeding starter tasks
     if (action === "seed") {
@@ -84,18 +119,31 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get max position for backlog
+    const targetStatus = status || "backlog";
+
+    // Get max position for target column
     const maxPos = await prisma.task.findFirst({
-      where: { status: "backlog" },
+      where: { status: targetStatus },
       orderBy: { position: "desc" },
       select: { position: true },
     });
+
+    // Smart Auto-Assignment: resolve optimal specialist if not specified or set to auto
+    let finalAgentId = agentId && agentId !== "auto" && agentId !== "unassigned" ? agentId : null;
+    if (!finalAgentId && agentId !== "unassigned") {
+      const allAgents = await prisma.agent.findMany();
+      const matched = matchBestAgent(`${title} ${description || ""}`, allAgents as any);
+      if (matched) {
+        finalAgentId = matched.id;
+      }
+    }
 
     const task = await prisma.task.create({
       data: {
         title,
         description: description || "",
-        agentId: agentId || null,
+        status: targetStatus,
+        agentId: finalAgentId,
         priority: priority || "medium",
         dueDate: dueDate ? new Date(dueDate) : null,
         position: (maxPos?.position || 0) + 1,
@@ -107,7 +155,7 @@ export async function POST(request: Request) {
       data: {
         type: "task_created",
         message: `Task "${title}" created`,
-        agentId: agentId || null,
+        agentId: finalAgentId,
       },
     });
 
@@ -133,6 +181,7 @@ export async function PUT(request: Request) {
       priority,
       dueDate,
       result,
+      subtasks,
     } = body;
 
     if (!id) {
@@ -146,8 +195,21 @@ export async function PUT(request: Request) {
     if (description !== undefined) updateData.description = description;
     if (agentId !== undefined) updateData.agentId = agentId || null;
     if (priority !== undefined) updateData.priority = priority;
-    if (result !== undefined) updateData.result = result;
     if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null;
+
+    if (subtasks !== undefined) {
+      const existing = await prisma.task.findUnique({ where: { id } });
+      let envelope: any = {};
+      try {
+        envelope = JSON.parse(existing?.result || "{}");
+      } catch {
+        envelope = { originalResult: existing?.result || "" };
+      }
+      envelope.subtasks = subtasks;
+      updateData.result = JSON.stringify(envelope);
+    } else if (result !== undefined) {
+      updateData.result = result;
+    }
 
     const task = await prisma.task.update({
       where: { id },
@@ -165,7 +227,27 @@ export async function PUT(request: Request) {
       });
     }
 
-    return NextResponse.json(task);
+    // Format response task with parsed subtasks
+    let parsedSubtasks: any[] = subtasks || [];
+    let cleanResult = task.result || "";
+    if (task.result && task.result.trim().startsWith("{") && task.result.trim().endsWith("}")) {
+      try {
+        const parsed = JSON.parse(task.result);
+        if (parsed && typeof parsed === "object") {
+          if (Array.isArray(parsed.subtasks)) parsedSubtasks = parsed.subtasks;
+          if (typeof parsed.originalResult === "string") cleanResult = parsed.originalResult;
+          else if (typeof parsed.content === "string") cleanResult = parsed.content;
+          else if (typeof parsed.result === "string") cleanResult = parsed.result;
+          else if (Array.isArray(parsed.subtasks)) cleanResult = "";
+        }
+      } catch {}
+    }
+
+    return NextResponse.json({
+      ...task,
+      subtasks: parsedSubtasks,
+      result: cleanResult,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: "Failed to update task" },
@@ -178,13 +260,19 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
+    const status = searchParams.get("status");
 
-    if (!id) {
-      return NextResponse.json({ error: "Task ID is required" }, { status: 400 });
+    if (id) {
+      await prisma.task.delete({ where: { id } });
+      return NextResponse.json({ success: true });
     }
 
-    await prisma.task.delete({ where: { id } });
-    return NextResponse.json({ success: true });
+    if (status) {
+      const deleted = await prisma.task.deleteMany({ where: { status } });
+      return NextResponse.json({ success: true, count: deleted.count });
+    }
+
+    return NextResponse.json({ error: "Task ID or status is required" }, { status: 400 });
   } catch (error) {
     return NextResponse.json(
       { error: "Failed to delete task" },

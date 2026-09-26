@@ -87,7 +87,7 @@ export async function getWhatsAppConfigs(): Promise<{
       agent: i.agent,
       enabled: i.enabled,
       mode: mode as any,
-      hasSession: existsSync(credsFile),
+      hasSession: existsSync(/*turbopackIgnore: true*/ credsFile),
     };
   });
 }
@@ -143,7 +143,7 @@ export async function startWhatsAppBridge(agentId: string, agentName: string = "
   const state = getOrCreateState(agentId, agentName);
   state.mode = mode as any;
 
-  if (!existsSync(credsFile)) {
+  if (!existsSync(/*turbopackIgnore: true*/ credsFile)) {
     state.lastError = "WhatsApp session credentials not found.";
     return { success: false, message: state.lastError };
   }

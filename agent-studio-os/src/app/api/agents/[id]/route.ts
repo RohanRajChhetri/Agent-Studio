@@ -139,15 +139,40 @@ export async function DELETE(
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
-    // Delete Hermes profile
-    if (agent.profilePath && agent.name !== "default") {
+    // 1. Unlink subordinate agents so they become top-level orchestrators
+    await prisma.agent.updateMany({
+      where: { reportsToId: id },
+      data: { reportsToId: null },
+    });
+
+    // 2. Unlink tasks and routines so user backlog items are preserved safely
+    await prisma.task.updateMany({
+      where: { agentId: id },
+      data: { agentId: null },
+    });
+    await prisma.routine.updateMany({
+      where: { agentId: id },
+      data: { agentId: null },
+    });
+
+    // 3. Clean up agent tools and communication channel integrations
+    await prisma.agentTool.deleteMany({ where: { agentId: id } });
+    await prisma.agentIntegration.deleteMany({ where: { agentId: id } });
+
+    // 4. Clean up chat messages and sessions
+    await prisma.chatMessage.deleteMany({ where: { agentId: id } });
+    await prisma.chatSession.deleteMany({ where: { agentId: id } });
+
+    // 5. Delete Hermes profile safely
+    if (agent.name && agent.name !== "default") {
       try {
         await hermesDeleteProfile(agent.name);
       } catch (error) {
-        console.error("Hermes profile deletion error:", error);
+        console.warn(`Hermes profile deletion skipped/failed for ${agent.name}:`, error);
       }
     }
 
+    // 6. Delete the agent record
     await prisma.agent.delete({ where: { id } });
 
     await prisma.activityLog.create({
@@ -157,10 +182,11 @@ export async function DELETE(
       },
     });
 
-    return NextResponse.json({ success: true });
-  } catch (error) {
+    return NextResponse.json({ success: true, deletedId: id });
+  } catch (error: any) {
+    console.error("Agent delete error:", error);
     return NextResponse.json(
-      { error: "Failed to delete agent" },
+      { error: error?.message || "Failed to delete agent" },
       { status: 500 }
     );
   }

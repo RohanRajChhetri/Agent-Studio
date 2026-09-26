@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -10,22 +9,22 @@ import {
   Search,
   Users,
   GitBranch,
-  Network,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
+  Pencil,
   Crown,
   Shield,
   Zap,
   CheckCircle2,
-  Layers,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
   Sparkles,
-  ArrowDown,
-  ChevronsDownUp,
-  ChevronsUpDown,
-  GripVertical,
-  UserCheck,
+  Radio,
   X,
+  Layers,
+  ArrowRight,
+  GripVertical,
+  ArrowUpCircle,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -35,69 +34,80 @@ interface AgentHierarchyViewProps {
   agents: AgentProfile[];
   onOpenHermes: (agent: AgentProfile) => void;
   onRefresh?: () => void;
+  onEdit?: (agent: AgentProfile) => void;
+  onDelete?: (agent: AgentProfile) => void;
 }
 
-const ROLE_META = {
+const ROLE_CONFIG: Record<
+  string,
+  { label: string; badgeClass: string; borderClass: string; icon: React.ElementType }
+> = {
   orchestrator: {
     label: "Orchestrator",
-    color: "#f59e0b",
-    border: "border-amber-500/40",
-    bg: "bg-amber-500/10",
-    text: "text-amber-300",
-    glow: "shadow-amber-500/20",
+    badgeClass: "bg-[#e6f3fe] text-[#0075de] border-[#0075de]/30",
+    borderClass: "border-[#0075de]/40 hover:border-[#0075de]",
     icon: Crown,
-    desc: "Autonomous fleet director & strategy leader",
   },
   manager: {
     label: "Manager",
-    color: "#818cf8",
-    border: "border-border",
-    bg: "bg-primary/10 text-primary",
-    text: "text-primary",
-    glow: "shadow-indigo-500/20",
+    badgeClass: "bg-secondary text-foreground border-border",
+    borderClass: "border-border hover:border-foreground/40",
     icon: Shield,
-    desc: "Department supervisor & task dispatcher",
   },
   specialist: {
     label: "Specialist",
-    color: "#06b6d4",
-    border: "border-cyan-500/40",
-    bg: "bg-cyan-500/10",
-    text: "text-cyan-300",
-    glow: "shadow-cyan-500/20",
+    badgeClass: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20",
+    borderClass: "border-purple-500/30 hover:border-purple-500/70",
     icon: Zap,
-    desc: "Domain expert & specialized tooling executor",
   },
   worker: {
     label: "Worker",
-    color: "#10b981",
-    border: "border-emerald-500/40",
-    bg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    text: "text-emerald-300",
-    glow: "shadow-emerald-500/20",
+    badgeClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20",
+    borderClass: "border-emerald-500/30 hover:border-emerald-500/70",
     icon: CheckCircle2,
-    desc: "Operational worker & workflow task handler",
   },
 };
+
+const NODE_WIDTH = 230;
+const NODE_HEIGHT = 88;
+const LEVEL_HEIGHT = 165;
+const NODE_GAP = 36;
+
+interface PositionedNode {
+  agent: AgentProfile;
+  x: number;
+  y: number;
+  level: number;
+  children: PositionedNode[];
+  parentId?: string;
+}
 
 export function AgentHierarchyView({
   agents,
   onOpenHermes,
   onRefresh,
+  onEdit,
+  onDelete,
 }: AgentHierarchyViewProps) {
   const [localAgents, setLocalAgents] = useState<AgentProfile[]>(agents);
-  const [viewMode, setViewMode] = useState<"graph" | "matrix">("graph");
+  const [viewMode, setViewMode] = useState<"graph" | "tree">("graph");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDept, setSelectedDept] = useState<string>("all");
-  const [zoom, setZoom] = useState<number>(1);
-  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
-  const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>({});
+  const [collapsedBranches, setCollapsedBranches] = useState<Record<string, boolean>>({});
 
-  // Drag-and-drop hierarchy state
+  // Drag and Drop hierarchy reassignment state
   const [draggedAgentId, setDraggedAgentId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const [reassignModalAgent, setReassignModalAgent] = useState<AgentProfile | null>(null);
+  const [dragOverTargetId, setDragOverTargetId] = useState<string | null>(null);
+  const [isOverTopLevelZone, setIsOverTopLevelZone] = useState(false);
 
+  // Canvas pan & zoom state
+  const [pan, setPan] = useState({ x: 50, y: 60 });
+  const [zoom, setZoom] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Sync with incoming agents prop
   useEffect(() => {
     setLocalAgents(agents);
   }, [agents]);
@@ -111,983 +121,744 @@ export function AgentHierarchyView({
     return Array.from(set);
   }, [localAgents]);
 
-  // Fast lookup maps
+  // Fast agent map
   const agentMap = useMemo(() => {
     const map = new Map<string, AgentProfile>();
     localAgents.forEach((a) => map.set(a.id, a));
     return map;
   }, [localAgents]);
 
-  // Children mapping (subordinates)
-  const childrenMap = useMemo(() => {
-    const map = new Map<string, AgentProfile[]>();
+  // Build tree hierarchy structure
+  const { rootNodes, childrenMap } = useMemo(() => {
+    const cMap = new Map<string, AgentProfile[]>();
+    const roots: AgentProfile[] = [];
+
     localAgents.forEach((a) => {
-      if (a.reportsToId) {
-        const existing = map.get(a.reportsToId) || [];
-        existing.push(a);
-        map.set(a.reportsToId, existing);
+      if (a.reportsToId && agentMap.has(a.reportsToId)) {
+        const list = cMap.get(a.reportsToId) || [];
+        list.push(a);
+        cMap.set(a.reportsToId, list);
+      } else {
+        roots.push(a);
       }
     });
-    return map;
-  }, [localAgents]);
 
-  // Root agents: No reportsToId or reportsToId not in agent list
-  const rootAgents = useMemo(() => {
-    return localAgents.filter((a) => !a.reportsToId || !agentMap.has(a.reportsToId));
+    return { rootNodes: roots, childrenMap: cMap };
   }, [localAgents, agentMap]);
 
-  // Tiers mapping
-  const tiers = useMemo(
-    () => ({
-      orchestrators: localAgents.filter((a) => a.role === "orchestrator"),
-      managers: localAgents.filter((a) => a.role === "manager"),
-      specialists: localAgents.filter((a) => a.role === "specialist"),
-      workers: localAgents.filter((a) => a.role === "worker" || !a.role),
-    }),
-    [localAgents]
+  // Helper to check if potentialChildId is already an ancestor/descendant
+  const isDescendant = useCallback(
+    (parentId: string, targetChildId: string): boolean => {
+      if (parentId === targetChildId) return true;
+      const children = childrenMap.get(parentId) || [];
+      for (const child of children) {
+        if (child.id === targetChildId || isDescendant(child.id, targetChildId)) {
+          return true;
+        }
+      }
+      return false;
+    },
+    [childrenMap]
   );
 
-  // Hierarchy stats
-  const stats = useMemo(() => {
-    const total = localAgents.length;
-    const managersCount = localAgents.filter(
-      (a) => (childrenMap.get(a.id) || []).length > 0
-    ).length;
-    const rootsCount = rootAgents.length;
-    return { total, managersCount, rootsCount };
-  }, [localAgents, childrenMap, rootAgents]);
+  // Reassign an agent's manager via drag-and-drop
+  const handleReassignManager = async (draggedId: string, newManagerId: string | null) => {
+    if (!draggedId) return;
+    if (draggedId === newManagerId) return;
 
-  const toggleCollapse = (id: string) => {
-    setCollapsedNodes((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
+    const dragged = agentMap.get(draggedId);
+    if (!dragged) return;
 
-  const collapseAll = () => {
-    const newCollapsed: Record<string, boolean> = {};
-    localAgents.forEach((a) => {
-      if ((childrenMap.get(a.id) || []).length > 0) {
-        newCollapsed[a.id] = true;
+    if (newManagerId) {
+      if (isDescendant(draggedId, newManagerId)) {
+        toast.error(`Cannot assign "${dragged.displayName}" under its own subordinate`);
+        return;
       }
+    }
+
+    const manager = newManagerId ? agentMap.get(newManagerId) : null;
+
+    // Optimistic update
+    setLocalAgents((prev) =>
+      prev.map((a) => (a.id === draggedId ? { ...a, reportsToId: newManagerId } : a))
+    );
+
+    try {
+      const res = await fetch(`/api/agents/${draggedId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportsToId: newManagerId }),
+      });
+
+      if (res.ok) {
+        if (manager) {
+          toast.success(`Reassigned "${dragged.displayName}" to report to "${manager.displayName}"`);
+        } else {
+          toast.success(`Promoted "${dragged.displayName}" to Top-Level (Independent / Orchestrator)`);
+        }
+        onRefresh?.();
+      } else {
+        toast.error("Failed to update agent hierarchy");
+        onRefresh?.();
+      }
+    } catch {
+      toast.error("Network error updating hierarchy");
+      onRefresh?.();
+    }
+  };
+
+  // Toggle collapsing a branch
+  const toggleBranch = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setCollapsedBranches((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Calculate layout coordinates for tree graph
+  const { positionedNodes, totalWidth, totalHeight, connections } = useMemo(() => {
+    const nodes: PositionedNode[] = [];
+    const conns: {
+      fromId: string;
+      toId: string;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+    }[] = [];
+
+    // Calculate width of a subtree recursively
+    function getSubtreeWidth(agent: AgentProfile): number {
+      if (collapsedBranches[agent.id]) return NODE_WIDTH;
+      const children = childrenMap.get(agent.id) || [];
+      if (children.length === 0) return NODE_WIDTH;
+      const childrenWidth = children.reduce(
+        (sum, child) => sum + getSubtreeWidth(child) + NODE_GAP,
+        -NODE_GAP
+      );
+      return Math.max(NODE_WIDTH, childrenWidth);
+    }
+
+    // Position a subtree recursively
+    function layoutNode(
+      agent: AgentProfile,
+      startX: number,
+      level: number,
+      parentId?: string
+    ): PositionedNode {
+      const subtreeWidth = getSubtreeWidth(agent);
+      const isCollapsed = Boolean(collapsedBranches[agent.id]);
+      const children = isCollapsed ? [] : childrenMap.get(agent.id) || [];
+
+      // Center this node within its allocated subtree width
+      const nodeX = startX + (subtreeWidth - NODE_WIDTH) / 2;
+      const nodeY = 40 + level * LEVEL_HEIGHT;
+
+      const posNode: PositionedNode = {
+        agent,
+        x: nodeX,
+        y: nodeY,
+        level,
+        children: [],
+        parentId,
+      };
+
+      if (parentId) {
+        const parentPos = nodes.find((n) => n.agent.id === parentId);
+        if (parentPos) {
+          conns.push({
+            fromId: parentId,
+            toId: agent.id,
+            x1: parentPos.x + NODE_WIDTH / 2,
+            y1: parentPos.y + NODE_HEIGHT,
+            x2: nodeX + NODE_WIDTH / 2,
+            y2: nodeY,
+          });
+        }
+      }
+
+      nodes.push(posNode);
+
+      let currentChildX = startX;
+      children.forEach((child) => {
+        const childSubtreeWidth = getSubtreeWidth(child);
+        const childNode = layoutNode(child, currentChildX, level + 1, agent.id);
+        posNode.children.push(childNode);
+        currentChildX += childSubtreeWidth + NODE_GAP;
+      });
+
+      return posNode;
+    }
+
+    let currentRootX = 50;
+    rootNodes.forEach((root) => {
+      const rootWidth = getSubtreeWidth(root);
+      layoutNode(root, currentRootX, 0);
+      currentRootX += rootWidth + NODE_GAP * 1.5;
     });
-    setCollapsedNodes(newCollapsed);
+
+    const maxX = nodes.reduce((max, n) => Math.max(max, n.x + NODE_WIDTH + 80), 900);
+    const maxY = nodes.reduce((max, n) => Math.max(max, n.y + NODE_HEIGHT + 100), 550);
+
+    return {
+      positionedNodes: nodes,
+      totalWidth: maxX,
+      totalHeight: maxY,
+      connections: conns,
+    };
+  }, [rootNodes, childrenMap, collapsedBranches]);
+
+  // Check if an agent matches search or department
+  const isAgentMatched = useCallback(
+    (agent: AgentProfile) => {
+      if (selectedDept !== "all" && agent.department !== selectedDept) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        agent.displayName.toLowerCase().includes(q) ||
+        (agent.role || "").toLowerCase().includes(q) ||
+        (agent.department || "").toLowerCase().includes(q) ||
+        (agent.model || "").toLowerCase().includes(q)
+      );
+    },
+    [searchQuery, selectedDept]
+  );
+
+  // Pan interaction handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (
+      (e.target as HTMLElement).closest(".agent-node-card") ||
+      (e.target as HTMLElement).closest("button") ||
+      (e.target as HTMLElement).closest("a")
+    ) {
+      return;
+    }
+    setIsPanning(true);
+    panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
   };
 
-  const expandAll = () => {
-    setCollapsedNodes({});
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isPanning) return;
+    setPan({
+      x: e.clientX - panStartRef.current.x,
+      y: e.clientY - panStartRef.current.y,
+    });
   };
 
-  const handleZoom = (delta: number) => {
-    setZoom((prev) => Math.min(1.4, Math.max(0.65, +(prev + delta).toFixed(2))));
+  const handleMouseUp = () => {
+    setIsPanning(false);
   };
 
-  const resetZoom = () => {
+  const handleResetFit = () => {
+    setPan({ x: 50, y: 60 });
     setZoom(1);
   };
 
-  // Reassign supervisor handler
-  const handleReassignSupervisor = async (
-    agentId: string,
-    newSupervisorId: string | null
-  ) => {
-    if (agentId === newSupervisorId) {
-      toast.error("An agent cannot report to itself.");
-      return;
-    }
-
-    // Check for circular reference
-    const getDescendants = (parentId: string): string[] => {
-      const kids = childrenMap.get(parentId) || [];
-      return kids.reduce<string[]>(
-        (acc, k) => [...acc, k.id, ...getDescendants(k.id)],
-        []
-      );
-    };
-
-    if (newSupervisorId && getDescendants(agentId).includes(newSupervisorId)) {
-      toast.error("Circular hierarchy prevented: An agent cannot report to its own subordinate!");
-      return;
-    }
-
-    const previousState = [...localAgents];
-    const targetAgent = localAgents.find((a) => a.id === agentId);
-    const supervisor = newSupervisorId ? localAgents.find((a) => a.id === newSupervisorId) : null;
-
-    // Optimistic UI update
-    setLocalAgents((prev) =>
-      prev.map((a) => (a.id === agentId ? { ...a, reportsToId: newSupervisorId } : a))
-    );
-    setReassignModalAgent(null);
-    setDraggedAgentId(null);
-    setDropTargetId(null);
-
-    try {
-      const res = await fetch(`/api/agents/${agentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reportsToId: newSupervisorId }),
-      });
-
-      if (!res.ok) throw new Error("Server rejected hierarchy change");
-
-      toast.success(
-        supervisor
-          ? `Reassigned ${targetAgent?.displayName} under ${supervisor.displayName}`
-          : `Promoted ${targetAgent?.displayName} to Org Root`
-      );
-
-      if (onRefresh) onRefresh();
-    } catch {
-      setLocalAgents(previousState);
-      toast.error("Failed to reassign supervisor");
-    }
-  };
-
-  // Check if an agent matches search or department
-  const isAgentMatch = (agent: AgentProfile): boolean => {
-    if (selectedDept !== "all" && agent.department !== selectedDept) {
-      return false;
-    }
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      agent.displayName.toLowerCase().includes(q) ||
-      agent.name.toLowerCase().includes(q) ||
-      Boolean(agent.role && agent.role.toLowerCase().includes(q)) ||
-      Boolean(agent.department && agent.department.toLowerCase().includes(q)) ||
-      Boolean(agent.model && agent.model.toLowerCase().includes(q))
-    );
-  };
-
-  // Hover lineage detection
-  const hoveredAgent = hoveredAgentId ? agentMap.get(hoveredAgentId) : null;
-  const isLineageHighlighted = (agentId: string) => {
-    if (!hoveredAgentId) return false;
-    if (hoveredAgentId === agentId) return true;
-    if (hoveredAgent?.reportsToId === agentId) return true;
-    const childList = childrenMap.get(hoveredAgentId) || [];
-    if (childList.some((c) => c.id === agentId)) return true;
-    return false;
-  };
+  const draggedAgent = draggedAgentId ? agentMap.get(draggedAgentId) : null;
 
   return (
     <div className="space-y-4 w-full">
-      {/* Header & Controls Toolbar */}
-      <div className="p-4 rounded-lg border border-border bg-card/70 backdrop-blur-xl space-y-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Title & Stats */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-card /20 border border-border flex items-center justify-center text-primary">
-              <Network className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-foreground tracking-tight">
-                  Agent Hierarchy Graph
-                </h3>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-border">
-                  {stats.total} Agents
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-muted-foreground dark:text-muted-foreground">
-                  {stats.rootsCount} Org Root{stats.rootsCount === 1 ? "" : "s"}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Visual chain of command & interactive drag-and-drop supervisor restructuring
-              </p>
-            </div>
+      {/* Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card border border-border p-3.5 sm:p-4 rounded-xl shadow-xs">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-medium text-[#0075de] bg-[#e6f3fe] px-2.5 py-0.5 rounded-full border border-[#0075de]/20 inline-flex items-center gap-1.5">
+              <GitBranch className="w-3 h-3 text-[#0075de]" />
+              Interactive Hierarchy Graph
+            </span>
+            <span className="text-xs text-muted-foreground font-mono">
+              {localAgents.length} Agents • Drag cards to reassign reports
+            </span>
           </div>
-
-          {/* View Switcher & Actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* View Mode Toggle */}
-            <div className="flex items-center p-1 rounded-xl bg-secondary/80 border border-border text-xs">
-              <button
-                onClick={() => setViewMode("graph")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
-                  viewMode === "graph"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <GitBranch className="w-3.5 h-3.5" />
-                <span>Graph View</span>
-              </button>
-              <button
-                onClick={() => setViewMode("matrix")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
-                  viewMode === "matrix"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Tier Matrix</span>
-              </button>
-            </div>
-
-            {/* Tree Collapse / Expand controls */}
-            {viewMode === "graph" && (
-              <div className="flex items-center gap-1 bg-secondary/70 border border-border rounded-xl p-1 text-xs">
-                <button
-                  onClick={expandAll}
-                  title="Expand all branches"
-                  className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors"
-                >
-                  <ChevronsUpDown className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={collapseAll}
-                  title="Collapse all branches"
-                  className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors"
-                >
-                  <ChevronsDownUp className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            {/* Zoom Controls */}
-            {viewMode === "graph" && (
-              <div className="flex items-center gap-1 bg-secondary/70 border border-border rounded-xl p-1 text-xs">
-                <button
-                  onClick={() => handleZoom(-0.15)}
-                  title="Zoom Out"
-                  className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors"
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </button>
-                <span className="text-[11px] font-mono text-muted-foreground px-1 min-w-[40px] text-center">
-                  {Math.round(zoom * 100)}%
-                </span>
-                <button
-                  onClick={() => handleZoom(0.15)}
-                  title="Zoom In"
-                  className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={resetZoom}
-                  title="Reset Zoom (100%)"
-                  className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Drag any agent card onto another to restructure command reporting lines
+          </p>
         </div>
 
-        {/* Filter Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border">
-          {/* Search */}
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Find agent, role, or model..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border bg-secondary/60 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-border"
-            />
-          </div>
-
-          {/* Department Filter Pills */}
-          {departments.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <span className="text-[11px] text-muted-foreground font-medium">Dept:</span>
+        {/* View Switcher & Graph Controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {viewMode === "graph" && (
+            <div className="flex items-center gap-1 bg-secondary/50 p-1 rounded-lg border border-border text-xs">
               <button
-                onClick={() => setSelectedDept("all")}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                  selectedDept === "all"
-                    ? "bg-primary/30 text-primary border border-border text-primary"
-                    : "border border-border bg-secondary/40 text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                }`}
+                type="button"
+                onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))}
+                className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+                title="Zoom in"
               >
-                All ({localAgents.length})
+                <ZoomIn className="w-3.5 h-3.5" />
               </button>
-              {departments.map((dept) => {
-                const count = localAgents.filter((a) => a.department === dept).length;
-                return (
-                  <button
-                    key={dept}
-                    onClick={() => setSelectedDept(dept)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                      selectedDept === dept
-                        ? "bg-primary/30 text-primary border border-border text-primary"
-                        : "border border-border bg-secondary/40 text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                    }`}
-                  >
-                    {dept} ({count})
-                  </button>
-                );
-              })}
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.max(0.5, z - 0.15))}
+                className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+                title="Zoom out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleResetFit}
+                className="px-2 py-0.5 rounded hover:bg-secondary text-[11px] font-mono text-muted-foreground hover:text-foreground transition cursor-pointer flex items-center gap-1"
+                title="Reset view"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>{Math.round(zoom * 100)}%</span>
+              </button>
             </div>
           )}
 
-          {/* Role Badges Legend */}
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground ml-auto">
-            {Object.entries(ROLE_META).map(([key, meta]) => {
-              const count = localAgents.filter((a) => (a.role || "worker") === key).length;
-              return (
-                <div
-                  key={key}
-                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg border border-border bg-secondary/40"
-                >
-                  <span
-                    className="w-2 h-2 rounded-md shadow-sm"
-                    style={{ backgroundColor: meta.color }}
-                  />
-                  <span className="capitalize">{meta.label}</span>
-                  <span className="text-muted-foreground font-mono text-[10px]">({count})</span>
-                </div>
-              );
-            })}
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border text-xs">
+            <button
+              onClick={() => setViewMode("graph")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === "graph"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Interactive Graph
+            </button>
+            <button
+              onClick={() => setViewMode("tree")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                viewMode === "tree"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Tree List
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Main Canvas Area */}
-      {viewMode === "graph" ? (
-        <div className="relative w-full rounded-lg border border-border bg-card/80 backdrop-blur-xl overflow-hidden min-h-[620px] flex flex-col">
-          {/* Subtle Grid Background */}
-          <div
-            className="absolute inset-0 opacity-20 pointer-events-none"
-            style={{
-              backgroundImage:
-                "radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.15) 1px, transparent 0)",
-              backgroundSize: "28px 28px",
-            }}
+      {/* Filter Row: Search & Department Tabs */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search agents in graph..."
+            className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition"
           />
+        </div>
 
-          {/* Dragging Active Drop Zone: Promote to Org Root */}
-          <AnimatePresence>
-            {draggedAgentId && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                onDragOver={(e: any) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                  setDropTargetId("root-dropzone");
-                }}
-                onDragLeave={() => setDropTargetId(null)}
-                onDrop={(e: any) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const droppedId = e.dataTransfer?.getData("text/plain") || draggedAgentId;
-                  if (droppedId) handleReassignSupervisor(droppedId, null);
-                }}
-                className={`m-4 p-3 rounded-xl border-2 border-dashed text-center transition-all z-20 ${
-                  dropTargetId === "root-dropzone"
-                    ? "border-amber-400 bg-amber-500/20 text-amber-200 ring-2 ring-amber-400/40"
-                    : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+        {departments.length > 0 && (
+          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs">
+            <button
+              onClick={() => setSelectedDept("all")}
+              className={`px-2.5 py-1 rounded-full font-medium transition cursor-pointer whitespace-nowrap ${
+                selectedDept === "all"
+                  ? "bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/30"
+                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All Departments
+            </button>
+            {departments.map((dept) => (
+              <button
+                key={dept}
+                onClick={() => setSelectedDept(dept)}
+                className={`px-2.5 py-1 rounded-full font-medium transition cursor-pointer whitespace-nowrap ${
+                  selectedDept === dept
+                    ? "bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/30"
+                    : "bg-card border border-border text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <div className="flex items-center justify-center gap-2 text-xs font-semibold">
-                  <Crown className="w-4 h-4 text-muted-foreground dark:text-muted-foreground" />
-                  <span>Drop here to promote agent to Org Root (Lead / Unsupervised)</span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Interactive Graph Canvas */}
-          <div className="relative flex-1 overflow-auto p-8 sm:p-12">
-            <div
-              style={{
-                transform: `scale(${zoom})`,
-                transformOrigin: "top center",
-                transition: "transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
-              className="flex justify-center min-w-max pb-16"
-            >
-              {rootAgents.length === 0 ? (
-                <div className="py-24 text-center text-muted-foreground text-sm">
-                  No agents found in fleet.
-                </div>
-              ) : (
-                <div className="flex gap-12 sm:gap-16 items-start justify-center">
-                  {rootAgents.map((root) => (
-                    <GraphTreeNode
-                      key={root.id}
-                      agent={root}
-                      childrenMap={childrenMap}
-                      agentMap={agentMap}
-                      collapsedNodes={collapsedNodes}
-                      onToggleCollapse={toggleCollapse}
-                      onOpenHermes={onOpenHermes}
-                      hoveredAgentId={hoveredAgentId}
-                      setHoveredAgentId={setHoveredAgentId}
-                      isLineageHighlighted={isLineageHighlighted}
-                      isAgentMatch={isAgentMatch}
-                      onDragStart={(id) => setDraggedAgentId(id)}
-                      onDragEnd={() => {
-                        setDraggedAgentId(null);
-                        setDropTargetId(null);
-                      }}
-                      onDropTarget={setDropTargetId}
-                      dropTargetId={dropTargetId}
-                      draggedAgentId={draggedAgentId}
-                      onReassignSupervisor={handleReassignSupervisor}
-                      onOpenReassignModal={(agent) => setReassignModalAgent(agent)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+                {dept}
+              </button>
+            ))}
           </div>
+        )}
+      </div>
 
-          {/* Graph Footer */}
-          <div className="px-5 py-2.5 border-t border-border bg-card/90 backdrop-blur-xl flex items-center justify-between text-[11px] text-muted-foreground z-10">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-primary" />
+      {/* Main Content Area */}
+      {viewMode === "graph" ? (
+        <div className="relative w-full rounded-2xl border border-border bg-card/60 backdrop-blur-xs overflow-hidden shadow-xs">
+          {/* Top-Level Drop Target Zone (Visible while dragging) */}
+          {draggedAgent && (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setIsOverTopLevelZone(true);
+              }}
+              onDragLeave={() => setIsOverTopLevelZone(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsOverTopLevelZone(false);
+                if (draggedAgentId) {
+                  handleReassignManager(draggedAgentId, null);
+                  setDraggedAgentId(null);
+                  setDragOverTargetId(null);
+                }
+              }}
+              className={`absolute top-3 left-1/2 -translate-x-1/2 z-30 px-5 py-2.5 rounded-xl border-2 border-dashed transition-all flex items-center gap-2 text-xs font-semibold shadow-md ${
+                isOverTopLevelZone
+                  ? "bg-[#0075de] text-white border-[#0075de] scale-105"
+                  : "bg-card/95 text-foreground border-[#0075de]/50 hover:border-[#0075de]"
+              }`}
+            >
+              <ArrowUpCircle className="w-4 h-4" />
               <span>
-                Drag any card onto another agent to reassign its supervisor, or onto the top banner to make it an Org Root.
+                Drop here to promote <b>{draggedAgent.displayName}</b> to Top-Level (Orchestrator)
               </span>
             </div>
-            <span className="font-mono text-muted-foreground">
-              {localAgents.length} Nodes Active
-            </span>
+          )}
+
+          {/* Interactive Graph Canvas */}
+          <div
+            ref={canvasRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            className={`w-full h-[620px] overflow-hidden select-none relative bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-secondary/15 via-background to-background ${
+              isPanning ? "cursor-grabbing" : "cursor-grab"
+            }`}
+          >
+            {/* Pannable & Zoomable Container */}
+            <div
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: "0 0",
+                width: totalWidth,
+                height: totalHeight,
+                position: "absolute",
+                top: 0,
+                left: 0,
+                transition: isPanning ? "none" : "transform 0.15s ease-out",
+              }}
+            >
+              {/* SVG Connector Lines */}
+              <svg
+                width={totalWidth}
+                height={totalHeight}
+                className="absolute inset-0 pointer-events-none z-0"
+              >
+                {connections.map((conn) => {
+                  const isHighlighted =
+                    draggedAgentId === conn.toId || dragOverTargetId === conn.fromId;
+                  const midY = (conn.y1 + conn.y2) / 2;
+                  const pathD = `M ${conn.x1} ${conn.y1} C ${conn.x1} ${midY}, ${conn.x2} ${midY}, ${conn.x2} ${conn.y2}`;
+
+                  return (
+                    <g key={`${conn.fromId}-${conn.toId}`}>
+                      {isHighlighted && (
+                        <path
+                          d={pathD}
+                          fill="none"
+                          stroke="#0075de"
+                          strokeWidth="3.5"
+                          strokeOpacity="0.4"
+                        />
+                      )}
+                      <path
+                        d={pathD}
+                        fill="none"
+                        stroke={isHighlighted ? "#0075de" : "currentColor"}
+                        strokeWidth={isHighlighted ? "2" : "1.25"}
+                        strokeDasharray={isHighlighted ? "none" : "4,3"}
+                        className={isHighlighted ? "" : "text-border dark:text-border/80"}
+                      />
+                    </g>
+                  );
+                })}
+              </svg>
+
+              {/* Node Cards with Drag-and-Drop */}
+              {positionedNodes.map((node) => {
+                const agent = node.agent;
+                const isDraggingThis = draggedAgentId === agent.id;
+                const isDragTarget = dragOverTargetId === agent.id && draggedAgentId !== agent.id;
+                const isMatched = isAgentMatched(agent);
+                const roleMeta = ROLE_CONFIG[agent.role || "specialist"] || ROLE_CONFIG.specialist;
+                const RoleIcon = roleMeta.icon;
+                const childrenCount = (childrenMap.get(agent.id) || []).length;
+                const isCollapsed = Boolean(collapsedBranches[agent.id]);
+
+                return (
+                  <div
+                    key={agent.id}
+                    draggable={true}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", agent.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      setDraggedAgentId(agent.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedAgentId(null);
+                      setDragOverTargetId(null);
+                      setIsOverTopLevelZone(false);
+                    }}
+                    onDragOver={(e) => {
+                      if (draggedAgentId && draggedAgentId !== agent.id) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                      }
+                    }}
+                    onDragEnter={(e) => {
+                      if (draggedAgentId && draggedAgentId !== agent.id) {
+                        e.preventDefault();
+                        setDragOverTargetId(agent.id);
+                      }
+                    }}
+                    onDragLeave={(e) => {
+                      if (dragOverTargetId === agent.id) {
+                        setDragOverTargetId(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverTargetId(null);
+                      if (draggedAgentId && draggedAgentId !== agent.id) {
+                        handleReassignManager(draggedAgentId, agent.id);
+                        setDraggedAgentId(null);
+                      }
+                    }}
+                    style={{
+                      position: "absolute",
+                      left: node.x,
+                      top: node.y,
+                      width: NODE_WIDTH,
+                      height: NODE_HEIGHT,
+                    }}
+                    className={`agent-node-card rounded-xl border p-2.5 transition-all duration-150 shadow-xs z-10 select-none flex flex-col justify-between ${
+                      isDraggingThis
+                        ? "opacity-40 scale-95 border-[#0075de] ring-2 ring-[#0075de]"
+                        : isDragTarget
+                        ? "bg-[#e6f3fe]/40 border-2 border-dashed border-[#0075de] ring-4 ring-[#0075de]/20 scale-105 shadow-lg"
+                        : isMatched
+                        ? `bg-card ${roleMeta.borderClass} hover:shadow-md cursor-grab active:cursor-grabbing`
+                        : "bg-card/40 border-border/50 opacity-40"
+                    }`}
+                  >
+                    {/* Drop target badge overlay */}
+                    {isDragTarget && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-[#0075de] text-white text-[10px] font-semibold tracking-wide whitespace-nowrap shadow-sm pointer-events-none">
+                        ↳ Place under {agent.displayName}
+                      </div>
+                    )}
+
+                    {/* Top Row: Drag Handle, Avatar, Name, Role */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="text-muted-foreground/40 hover:text-muted-foreground cursor-grab shrink-0">
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </div>
+
+                      <div className="w-8 h-8 rounded-lg bg-secondary/80 border border-border flex items-center justify-center text-base shrink-0">
+                        {agent.avatar || "🤖"}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-semibold text-xs text-foreground truncate">
+                            {agent.displayName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-medium border ${roleMeta.badgeClass}`}
+                          >
+                            <RoleIcon className="w-2.5 h-2.5" />
+                            {roleMeta.label}
+                          </span>
+                          {agent.department && (
+                            <span className="text-[10px] text-muted-foreground truncate">
+                              {agent.department}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Direct reports badge & action buttons */}
+                    <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-border/60 text-muted-foreground">
+                      {childrenCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={(e) => toggleBranch(agent.id, e)}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition cursor-pointer ${
+                            isCollapsed
+                              ? "bg-secondary text-foreground font-semibold"
+                              : "hover:bg-muted text-muted-foreground"
+                          }`}
+                          title={isCollapsed ? "Expand direct reports" : "Collapse branch"}
+                        >
+                          {isCollapsed ? (
+                            <ChevronRight className="w-2.5 h-2.5" />
+                          ) : (
+                            <ChevronDown className="w-2.5 h-2.5" />
+                          )}
+                          <span>
+                            {childrenCount} {childrenCount === 1 ? "report" : "reports"}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="text-muted-foreground/60 text-[10px] truncate max-w-[100px]">
+                          {agent.model ? agent.model.split("/").pop() : "Specialist"}
+                        </span>
+                      )}
+
+                      <div className="flex items-center gap-1">
+                        <Link
+                          href={`/chat?agentId=${agent.id}`}
+                          className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+                          title="Chat with agent"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => onOpenHermes(agent)}
+                          className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+                          title="Hermes Terminal"
+                        >
+                          <Terminal className="w-3 h-3" />
+                        </button>
+                        {onEdit && (
+                          <button
+                            type="button"
+                            onClick={() => onEdit(agent)}
+                            className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+                            title="Edit agent"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                        {onDelete && (
+                          <button
+                            type="button"
+                            onClick={() => onDelete(agent)}
+                            className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition cursor-pointer"
+                            title="Delete agent"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Instruction tooltip in corner */}
+            <div className="absolute left-3 bottom-3 text-[11px] text-muted-foreground bg-card/85 backdrop-blur-md px-2.5 py-1 rounded-lg border border-border pointer-events-none shadow-xs">
+              Drag an agent onto another to reassign manager • Drag canvas to pan
+            </div>
           </div>
         </div>
       ) : (
-        /* Command Tier Matrix View */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-          {(
-            [
-              { key: "orchestrator", label: "Orchestrators", list: tiers.orchestrators },
-              { key: "manager", label: "Managers", list: tiers.managers },
-              { key: "specialist", label: "Specialists", list: tiers.specialists },
-              { key: "worker", label: "Workers", list: tiers.workers },
-            ] as const
-          ).map((tier) => {
-            const meta = ROLE_META[tier.key];
-            const Icon = meta.icon;
-            const filteredList = tier.list.filter(isAgentMatch);
+        /* Alternative Tree List Mode */
+        <div className="space-y-3">
+          {rootNodes.map((root) => {
+            const children = childrenMap.get(root.id) || [];
+            const isMatched = isAgentMatched(root);
 
             return (
               <div
-                key={tier.key}
-                className="flex flex-col rounded-lg border border-border bg-card/70 backdrop-blur-xl p-4 space-y-3"
+                key={root.id}
+                className="p-3.5 rounded-xl border border-border bg-card space-y-2 shadow-xs"
               >
-                <div className="flex items-center justify-between pb-3 border-b border-border">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center border ${meta.border} ${meta.bg}`}
-                    >
-                      <Icon className={`w-4 h-4 ${meta.text}`} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-foreground">{tier.label}</h4>
-                      <p className="text-[10px] text-muted-foreground">{meta.desc}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-base shrink-0">
+                      {root.avatar || "🤖"}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs text-foreground">
+                          {root.displayName}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#e6f3fe] text-[#0075de] font-medium border border-[#0075de]/20">
+                          {root.role}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate max-w-md">
+                        {root.description || root.department}
+                      </p>
                     </div>
                   </div>
-                  <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-md bg-card border border-border text-muted-foreground">
-                    {filteredList.length}
-                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    <Link
+                      href={`/chat?agentId=${root.id}`}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-secondary text-foreground hover:bg-secondary/80 border border-border flex items-center gap-1"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>Chat</span>
+                    </Link>
+                    {onEdit && (
+                      <button
+                        type="button"
+                        onClick={() => onEdit(root)}
+                        className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
+                        title="Edit agent"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        type="button"
+                        onClick={() => onDelete(root)}
+                        className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition cursor-pointer"
+                        title="Delete agent"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex-1 space-y-2.5 overflow-y-auto max-h-[580px] pr-0.5">
-                  {filteredList.length === 0 ? (
-                    <div className="py-12 text-center border border-dashed border-border rounded-xl text-xs text-muted-foreground">
-                      No agents in tier
-                    </div>
-                  ) : (
-                    filteredList.map((agent) => {
-                      const supervisor = agent.reportsToId
-                        ? agentMap.get(agent.reportsToId)
-                        : null;
-                      const reports = childrenMap.get(agent.id) || [];
-
-                      return (
-                        <div
-                          key={agent.id}
-                          onMouseEnter={() => setHoveredAgentId(agent.id)}
-                          onMouseLeave={() => setHoveredAgentId(null)}
-                          className={`p-3 rounded-xl border transition-all space-y-2 group ${
-                            isLineageHighlighted(agent.id)
-                              ? "border-border bg-primary/10 text-primary shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/40"
-                              : "border-border bg-secondary/50 hover:bg-card hover:border-border"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="text-xl shrink-0">{agent.avatar || "🤖"}</span>
-                              <div className="min-w-0">
-                                <h5 className="text-xs font-bold text-foreground truncate">
-                                  {agent.displayName}
-                                </h5>
-                                <p className="text-[10px] text-muted-foreground font-mono truncate">
-                                  @{agent.name}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                              <button
-                                onClick={() => setReassignModalAgent(agent)}
-                                className="p-1.5 rounded-lg border border-border bg-secondary/80 text-muted-foreground hover:text-amber-300 hover:bg-amber-500/20 transition-colors"
-                                title="Reassign supervisor"
-                              >
-                                <UserCheck className="w-3 h-3" />
-                              </button>
-                              <Link
-                                href={`/chat?agentId=${agent.id}`}
-                                className="p-1.5 rounded-lg border border-border bg-secondary/80 text-muted-foreground hover:text-foreground hover:bg-primary/20 text-primary transition-colors"
-                                title="Chat with agent"
-                              >
-                                <MessageSquare className="w-3 h-3" />
-                              </Link>
-                              <button
-                                onClick={() => onOpenHermes(agent)}
-                                className="p-1.5 rounded-lg border border-border bg-secondary/80 text-muted-foreground hover:text-foreground hover:bg-secondary dark:bg-secondary transition-colors"
-                                title="Open Hermes CLI"
-                              >
-                                <Terminal className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                            {supervisor && (
-                              <span className="px-2 py-0.5 rounded bg-secondary/80 border border-border text-muted-foreground flex items-center gap-1">
-                                <ArrowDown className="w-2.5 h-2.5 text-foreground rotate-180" />
-                                <span>Reports to: {supervisor.displayName}</span>
-                              </span>
-                            )}
-                            {reports.length > 0 && (
-                              <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-border text-primary flex items-center gap-1">
-                                <Users className="w-2.5 h-2.5" />
-                                <span>{reports.length} Reports</span>
-                              </span>
-                            )}
-                            {agent.department && (
-                              <span className="px-2 py-0.5 rounded bg-secondary/50 text-muted-foreground">
-                                {agent.department}
-                              </span>
-                            )}
-                          </div>
+                {children.length > 0 && (
+                  <div className="pl-6 border-l-2 border-border/70 ml-4 space-y-2 pt-1">
+                    {children.map((child) => (
+                      <div
+                        key={child.id}
+                        className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 border border-border/60 text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{child.avatar || "🤖"}</span>
+                          <span className="font-medium text-foreground">{child.displayName}</span>
+                          <span className="text-[10px] text-muted-foreground">({child.role})</span>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/chat?agentId=${child.id}`}
+                            className="text-xs text-[#0075de] hover:underline"
+                          >
+                            Chat &rarr;
+                          </Link>
+                          {onEdit && (
+                            <button
+                              type="button"
+                              onClick={() => onEdit(child)}
+                              className="text-muted-foreground hover:text-foreground p-0.5 transition cursor-pointer"
+                              title="Edit agent"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          )}
+                          {onDelete && (
+                            <button
+                              type="button"
+                              onClick={() => onDelete(child)}
+                              className="text-muted-foreground hover:text-red-500 p-0.5 transition cursor-pointer"
+                              title="Delete agent"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Accessible Reassign Supervisor Modal */}
-      <AnimatePresence>
-        {reassignModalAgent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-card border border-border rounded-lg p-5 shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <div className="flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-foreground" />
-                  <h4 className="text-sm font-bold text-foreground">
-                    Reassign Supervisor for {reassignModalAgent.displayName}
-                  </h4>
-                </div>
-                <button
-                  onClick={() => setReassignModalAgent(null)}
-                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Choose which agent oversees this specialist, or promote them to an independent Org Root.
-              </p>
-
-              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                {/* Option 1: Org Root */}
-                <button
-                  onClick={() => handleReassignSupervisor(reassignModalAgent.id, null)}
-                  className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
-                    !reassignModalAgent.reportsToId
-                      ? "bg-amber-500/15 border-amber-500/50 text-amber-200"
-                      : "bg-secondary/50 border-border text-muted-foreground hover:bg-card"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
-                      <Crown className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-foreground">None (Org Root)</span>
-                      <p className="text-[10px] text-muted-foreground">Autonomous fleet leader</p>
-                    </div>
-                  </div>
-                  {!reassignModalAgent.reportsToId && (
-                    <span className="text-[10px] font-semibold text-muted-foreground dark:text-muted-foreground">Current</span>
-                  )}
-                </button>
-
-                {/* Other Agents */}
-                {localAgents
-                  .filter((a) => a.id !== reassignModalAgent.id)
-                  .map((candidate) => {
-                    const isCurrent = reassignModalAgent.reportsToId === candidate.id;
-                    const meta = ROLE_META[(candidate.role || "worker") as keyof typeof ROLE_META] || ROLE_META.worker;
-
-                    return (
-                      <button
-                        key={candidate.id}
-                        onClick={() => handleReassignSupervisor(reassignModalAgent.id, candidate.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
-                          isCurrent
-                            ? "bg-primary/15 text-primary border-border text-foreground ring-1 ring-indigo-500/40"
-                            : "bg-secondary/50 border-border text-muted-foreground hover:bg-card"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="text-lg shrink-0">{candidate.avatar || "🤖"}</span>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-bold text-foreground truncate">
-                                {candidate.displayName}
-                              </span>
-                              <span
-                                className={`text-[9px] px-1.5 py-0.2 rounded-md border ${meta.border} ${meta.bg} ${meta.text}`}
-                              >
-                                {meta.label}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground truncate">
-                              @{candidate.name} {candidate.department ? `• ${candidate.department}` : ""}
-                            </p>
-                          </div>
-                        </div>
-                        {isCurrent && (
-                          <span className="text-[10px] font-semibold text-foreground shrink-0">Current</span>
-                        )}
-                      </button>
-                    );
-                  })}
-              </div>
-
-              <div className="pt-2 border-t border-border flex justify-end">
-                <button
-                  onClick={() => setReassignModalAgent(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ==========================================
-// Recursive Graph Tree Node Component
-// ==========================================
-
-interface GraphTreeNodeProps {
-  agent: AgentProfile;
-  childrenMap: Map<string, AgentProfile[]>;
-  agentMap: Map<string, AgentProfile>;
-  collapsedNodes: Record<string, boolean>;
-  onToggleCollapse: (id: string) => void;
-  onOpenHermes: (agent: AgentProfile) => void;
-  hoveredAgentId: string | null;
-  setHoveredAgentId: (id: string | null) => void;
-  isLineageHighlighted: (id: string) => boolean;
-  isAgentMatch: (agent: AgentProfile) => boolean;
-  onDragStart: (id: string) => void;
-  onDragEnd: () => void;
-  onDropTarget: (id: string | null) => void;
-  dropTargetId: string | null;
-  draggedAgentId: string | null;
-  onReassignSupervisor: (agentId: string, supervisorId: string | null) => void;
-  onOpenReassignModal: (agent: AgentProfile) => void;
-}
-
-function GraphTreeNode({
-  agent,
-  childrenMap,
-  agentMap,
-  collapsedNodes,
-  onToggleCollapse,
-  onOpenHermes,
-  hoveredAgentId,
-  setHoveredAgentId,
-  isLineageHighlighted,
-  isAgentMatch,
-  onDragStart,
-  onDragEnd,
-  onDropTarget,
-  dropTargetId,
-  draggedAgentId,
-  onReassignSupervisor,
-  onOpenReassignModal,
-}: GraphTreeNodeProps) {
-  const children = childrenMap.get(agent.id) || [];
-  const hasChildren = children.length > 0;
-  const isCollapsed = !!collapsedNodes[agent.id];
-
-  const role = (agent.role || "worker") as keyof typeof ROLE_META;
-  const meta = ROLE_META[role] || ROLE_META.worker;
-  const RoleIcon = meta.icon;
-
-  const matchesFilter = isAgentMatch(agent);
-  const isHighlighted = isLineageHighlighted(agent.id);
-  const isDropTarget = dropTargetId === agent.id && draggedAgentId !== agent.id;
-
-  return (
-    <div className="flex flex-col items-center select-none">
-      {/* Node Card */}
-      <motion.div
-        layout
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{
-          opacity: matchesFilter ? 1 : 0.35,
-          scale: isDropTarget ? 1.05 : 1,
-        }}
-        transition={{ duration: 0.2 }}
-        draggable={true}
-        onDragStart={(e: any) => {
-          e.stopPropagation();
-          if (e.dataTransfer) {
-            e.dataTransfer.setData("text/plain", agent.id);
-            e.dataTransfer.effectAllowed = "move";
-          }
-          onDragStart(agent.id);
-        }}
-        onDragEnd={onDragEnd}
-        onDragOver={(e: any) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.dataTransfer) {
-            e.dataTransfer.dropEffect = "move";
-          }
-          if (draggedAgentId && draggedAgentId !== agent.id) {
-            onDropTarget(agent.id);
-          }
-        }}
-        onDragLeave={(e) => {
-          e.stopPropagation();
-          if (dropTargetId === agent.id) {
-            onDropTarget(null);
-          }
-        }}
-        onDrop={(e: any) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const droppedId = e.dataTransfer?.getData("text/plain") || draggedAgentId;
-          if (droppedId && droppedId !== agent.id) {
-            onReassignSupervisor(droppedId, agent.id);
-          }
-        }}
-        onMouseEnter={() => setHoveredAgentId(agent.id)}
-        onMouseLeave={() => setHoveredAgentId(null)}
-        className={`relative group w-72 rounded-lg border transition-all duration-200 z-10 cursor-grab active:cursor-grabbing ${
-          isDropTarget
-            ? "border-emerald-400 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shadow-2xl shadow-emerald-500/40 ring-2 ring-emerald-400"
-            : isHighlighted
-            ? "border-amber-600 bg-secondary/95 shadow-xl shadow-indigo-500/25 ring-2 ring-indigo-500/50"
-            : "border-border bg-card/90 backdrop-blur-xl hover:border-border hover:bg-secondary/90 shadow-md"
-        }`}
-      >
-        {/* Glowing Top Accent Bar */}
-        <div
-          className="h-1 w-full rounded-t-2xl transition-all"
-          style={{
-            backgroundColor: isDropTarget ? "#10b981" : meta.color,
-            boxShadow: `0 0 12px ${isDropTarget ? "#10b981" : meta.color}50`,
-          }}
-        />
-
-        {isDropTarget && (
-          <div className="bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border-b border-emerald-500/40 px-3 py-1 text-center">
-            <span className="text-[10.5px] font-bold text-emerald-200 animate-pulse">
-              ⬇ Drop to assign under {agent.displayName}
-            </span>
-          </div>
-        )}
-
-        <div className="p-3.5 space-y-2.5">
-          {/* Top Row: Avatar, Names, Role Badge */}
-          <div className="flex items-start justify-between gap-2.5">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-xl border shrink-0 relative"
-                style={{
-                  borderColor: `${meta.color}40`,
-                  backgroundColor: `${meta.color}15`,
-                }}
-              >
-                {agent.avatar || "🤖"}
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-md bg-emerald-500 border-2 border-zinc-950 shadow-sm" />
-              </div>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-1">
-                  <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                  <h4 className="text-xs font-bold text-foreground truncate group-hover:text-foreground transition-colors">
-                    {agent.displayName}
-                  </h4>
-                </div>
-                <p className="text-[10.5px] text-muted-foreground font-mono truncate">
-                  @{agent.name}
-                </p>
-              </div>
-            </div>
-
-            {/* Role Badge */}
-            <span
-              className={`text-[9.5px] font-semibold px-2 py-0.5 rounded-md border flex items-center gap-1 shrink-0 ${meta.border} ${meta.bg} ${meta.text}`}
-            >
-              <RoleIcon className="w-2.5 h-2.5" />
-              <span className="capitalize">{meta.label}</span>
-            </span>
-          </div>
-
-          {/* Middle Row: Model & Department */}
-          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-            {agent.department && (
-              <span className="px-2 py-0.5 rounded-md border border-border bg-secondary/90 text-muted-foreground font-medium">
-                {agent.department}
-              </span>
-            )}
-            {agent.model && (
-              <span className="px-2 py-0.5 rounded-md border border-border bg-primary/10 text-primary font-mono">
-                {agent.model.split("/").pop() || agent.model}
-              </span>
-            )}
-          </div>
-
-          {/* Bottom Row: Direct Reports Button & Actions */}
-          <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
-            {hasChildren ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleCollapse(agent.id);
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all border ${
-                  isCollapsed
-                    ? "bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25"
-                    : "bg-primary/15 text-primary border-border text-primary hover:bg-primary/25 text-primary"
-                }`}
-                title={isCollapsed ? "Expand subordinates" : "Collapse subordinates"}
-              >
-                <Users className="w-3 h-3" />
-                <span>
-                  {children.length} Report{children.length === 1 ? "" : "s"}
-                </span>
-                {isCollapsed ? (
-                  <ChevronRight className="w-3 h-3" />
-                ) : (
-                  <ChevronDown className="w-3 h-3" />
-                )}
-              </button>
-            ) : (
-              <span className="text-[10px] text-muted-foreground italic px-1">
-                Direct Contributor
-              </span>
-            )}
-
-            {/* Quick Actions */}
-            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => onOpenReassignModal(agent)}
-                className="p-1.5 rounded-lg border border-border bg-card hover:bg-amber-500/20 hover:text-amber-300 text-muted-foreground transition-colors"
-                title="Reassign Supervisor"
-              >
-                <UserCheck className="w-3 h-3" />
-              </button>
-              <Link
-                href={`/chat?agentId=${agent.id}`}
-                className="p-1.5 rounded-lg border border-border bg-card hover:bg-primary/90 hover:text-foreground text-muted-foreground transition-colors"
-                title="Direct Chat"
-              >
-                <MessageSquare className="w-3 h-3" />
-              </Link>
-              <button
-                onClick={() => onOpenHermes(agent)}
-                className="p-1.5 rounded-lg border border-border bg-card hover:bg-secondary hover:text-foreground text-muted-foreground transition-colors"
-                title="Hermes CLI"
-              >
-                <Terminal className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Tree Connectors & Children */}
-      {hasChildren && !isCollapsed && (
-        <div className="flex flex-col items-center w-full">
-          <div className="w-0.5 h-6 bg-card /30 relative">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-md bg-indigo-400 shadow-sm" />
-          </div>
-
-          <div className="relative flex justify-center pt-0">
-            {children.map((child, idx) => {
-              const isFirst = idx === 0;
-              const isLast = idx === children.length - 1;
-              const isSingleChild = children.length === 1;
-
-              return (
-                <div
-                  key={child.id}
-                  className="relative px-5 sm:px-8 flex flex-col items-center"
-                >
-                  {!isSingleChild && (
-                    <div
-                      className={`absolute top-0 h-0.5 bg-primary/30 text-primary ${
-                        isFirst
-                          ? "left-1/2 right-0"
-                          : isLast
-                          ? "left-0 right-1/2"
-                          : "left-0 right-0"
-                      }`}
-                    />
-                  )}
-
-                  <div className="w-0.5 h-6 bg-primary/30 text-primary mb-0 relative">
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-md bg-indigo-400/60" />
-                  </div>
-
-                  <GraphTreeNode
-                    agent={child}
-                    childrenMap={childrenMap}
-                    agentMap={agentMap}
-                    collapsedNodes={collapsedNodes}
-                    onToggleCollapse={onToggleCollapse}
-                    onOpenHermes={onOpenHermes}
-                    hoveredAgentId={hoveredAgentId}
-                    setHoveredAgentId={setHoveredAgentId}
-                    isLineageHighlighted={isLineageHighlighted}
-                    isAgentMatch={isAgentMatch}
-                    onDragStart={onDragStart}
-                    onDragEnd={onDragEnd}
-                    onDropTarget={onDropTarget}
-                    dropTargetId={dropTargetId}
-                    draggedAgentId={draggedAgentId}
-                    onReassignSupervisor={onReassignSupervisor}
-                    onOpenReassignModal={onOpenReassignModal}
-                  />
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
     </div>

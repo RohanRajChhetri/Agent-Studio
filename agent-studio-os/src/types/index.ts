@@ -207,7 +207,27 @@ export const KANBAN_COLUMNS = [
 ];
 
 export const PRIORITY_COLORS = {
-  low: "#6b7280",
-  medium: "#f59e0b",
-  high: "#ef4444",
+  low: "#64748b",
+  medium: "#d97706",
+  high: "#ea580c",
+  urgent: "#e11d48",
 } as const;
+
+export const PRIORITY_BADGE_CLASSES: Record<string, { badge: string; dot: string }> = {
+  urgent: {
+    badge: "bg-rose-100 text-rose-950 border-rose-300 dark:bg-rose-950/60 dark:text-rose-200 dark:border-rose-800/60",
+    dot: "bg-rose-600 dark:bg-rose-400",
+  },
+  high: {
+    badge: "bg-orange-100 text-orange-950 border-orange-300 dark:bg-orange-950/60 dark:text-orange-200 dark:border-orange-800/60",
+    dot: "bg-orange-600 dark:bg-orange-400",
+  },
+  medium: {
+    badge: "bg-amber-100 text-amber-950 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800/60",
+    dot: "bg-amber-600 dark:bg-amber-400",
+  },
+  low: {
+    badge: "bg-slate-100 text-slate-900 border-slate-300 dark:bg-slate-800/60 dark:text-slate-200 dark:border-slate-700/60",
+    dot: "bg-slate-600 dark:bg-slate-400",
+  },
+};

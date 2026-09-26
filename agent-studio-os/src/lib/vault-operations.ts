@@ -1,0 +1,131 @@
+import fs from "fs/promises";
+import path from "path";
+import type { VaultFile } from "@/types";
+import { getVaultPath } from "./obsidian-integration";
+
+/** Recursively list files in the vault */
+export async function listVaultFiles(dirPath?: string): Promise<VaultFile[]> {
+  const basePath = dirPath || getVaultPath();
+  const vaultRoot = getVaultPath();
+
+  try {
+    const entries = await fs.readdir(/*turbopackIgnore: true*/ basePath, {
+      withFileTypes: true,
+    });
+    const files: VaultFile[] = [];
+
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+
+      const fullPath = path.join(basePath, entry.name);
+      const relativePath = path
+        .relative(vaultRoot, fullPath)
+        .replace(/\\/g, "/");
+
+      if (entry.isDirectory()) {
+        const children = await listVaultFiles(fullPath);
+        files.push({
+          name: entry.name,
+          path: fullPath,
+          relativePath,
+          isDirectory: true,
+          children,
+        });
+      } else {
+        const stat = await fs.stat(fullPath);
+        files.push({
+          name: entry.name,
+          path: fullPath,
+          relativePath,
+          isDirectory: false,
+          size: stat.size,
+          modifiedAt: stat.mtime.toISOString(),
+        });
+      }
+    }
+
+    files.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return files;
+  } catch {
+    return [];
+  }
+}
+
+/** Read a file from the vault */
+export async function readVaultFile(
+  relativePath: string
+): Promise<{ content: string; modifiedAt: string }> {
+  const fullPath = path.join(getVaultPath(), relativePath);
+  const content = await fs.readFile(fullPath, "utf-8");
+  const stat = await fs.stat(fullPath);
+  return { content, modifiedAt: stat.mtime.toISOString() };
+}
+
+/** Write a file to the vault */
+export async function writeVaultFile(
+  relativePath: string,
+  content: string
+): Promise<void> {
+  const fullPath = path.join(getVaultPath(), relativePath);
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.writeFile(fullPath, content, "utf-8");
+}
+
+/** Delete a file from the vault */
+export async function deleteVaultFile(relativePath: string): Promise<void> {
+  const fullPath = path.join(getVaultPath(), relativePath);
+  await fs.unlink(fullPath);
+}
+
+/** Create a folder in the vault */
+export async function createVaultFolder(relativePath: string): Promise<void> {
+  const fullPath = path.join(getVaultPath(), relativePath);
+  await fs.mkdir(fullPath, { recursive: true });
+}
+
+/** Rename or move a file or folder in the vault */
+export async function renameVaultPath(
+  oldRelativePath: string,
+  newRelativePath: string
+): Promise<void> {
+  const oldPath = path.join(getVaultPath(), oldRelativePath);
+  const newPath = path.join(getVaultPath(), newRelativePath);
+  await fs.mkdir(path.dirname(newPath), { recursive: true });
+  await fs.rename(oldPath, newPath);
+}
+
+/** Delete a folder and its contents recursively from the vault */
+export async function deleteVaultFolder(relativePath: string): Promise<void> {
+  const fullPath = path.join(getVaultPath(), relativePath);
+  await fs.rm(fullPath, { recursive: true, force: true });
+}
+
+/** Count total markdown notes in the vault */
+export async function countVaultNotes(dirPath?: string): Promise<number> {
+  const basePath = dirPath || getVaultPath();
+  let count = 0;
+
+  try {
+    const entries = await fs.readdir(/*turbopackIgnore: true*/ basePath, {
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = path.join(basePath, entry.name);
+      if (entry.isDirectory()) {
+        count += await countVaultNotes(fullPath);
+      } else if (entry.name.endsWith(".md")) {
+        count++;
+      }
+    }
+  } catch {
+    // Directory doesn't exist yet
+  }
+
+  return count;
+}

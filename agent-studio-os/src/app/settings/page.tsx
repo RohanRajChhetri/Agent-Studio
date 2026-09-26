@@ -20,15 +20,20 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
-  Smartphone,
   Copy,
   Check,
   ExternalLink,
   Sparkles,
+  Cpu,
+  Radio,
+  Plus,
+  Server,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatResponseTime } from "@/lib/utils";
-import { DevicesTab } from "./devices-tab";
+import { WebhookSimulator } from "@/components/routines/webhook-simulator";
+import type { MCPServerConfig } from "@/types/mcp";
 
 interface ProviderInfo {
   provider: string;
@@ -73,7 +78,7 @@ export default function SettingsPage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
-      if (tabParam && ["providers", "devices", "models", "vault"].includes(tabParam)) {
+      if (tabParam && ["providers", "models", "mcp", "webhooks", "vault", "danger"].includes(tabParam)) {
         setActiveTab(tabParam);
       }
     }
@@ -102,6 +107,127 @@ export default function SettingsPage() {
   const [vaultStats, setVaultStats] = useState<VaultStats | null>(null);
   const [syncingVault, setSyncingVault] = useState(false);
   const [copiedVaultPath, setCopiedVaultPath] = useState(false);
+
+  // MCP Server state
+  const [mcpServers, setMcpServers] = useState<MCPServerConfig[]>([]);
+  const [loadingMcp, setLoadingMcp] = useState(false);
+  const [testingMcpId, setTestingMcpId] = useState<string | null>(null);
+  const [togglingMcpId, setTogglingMcpId] = useState<string | null>(null);
+  const [showAddMcpModal, setShowAddMcpModal] = useState(false);
+  const [newMcpName, setNewMcpName] = useState("");
+  const [newMcpDesc, setNewMcpDesc] = useState("");
+  const [newMcpTransport, setNewMcpTransport] = useState<"stdio" | "sse">("stdio");
+  const [newMcpCommand, setNewMcpCommand] = useState("npx");
+  const [newMcpArgs, setNewMcpArgs] = useState("");
+  const [newMcpUrl, setNewMcpUrl] = useState("");
+
+  const fetchMcpServers = async () => {
+    try {
+      setLoadingMcp(true);
+      const res = await fetch("/api/mcp");
+      if (res.ok) {
+        const data = await res.json();
+        setMcpServers(data.servers || []);
+      }
+    } catch {
+      toast.error("Failed to load MCP servers");
+    } finally {
+      setLoadingMcp(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "mcp") {
+      fetchMcpServers();
+    }
+  }, [activeTab]);
+
+  const handleToggleMcp = async (id: string) => {
+    setTogglingMcpId(id);
+    try {
+      const res = await fetch("/api/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle", serverId: id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMcpServers((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, enabled: data.server.enabled, status: data.server.status } : s))
+        );
+        toast.success(`MCP Server ${data.server.enabled ? "enabled" : "disabled"}`);
+      } else {
+        toast.error("Failed to toggle MCP server");
+      }
+    } catch {
+      toast.error("Network error toggling MCP server");
+    } finally {
+      setTogglingMcpId(null);
+    }
+  };
+
+  const handleTestMcp = async (id: string) => {
+    setTestingMcpId(id);
+    try {
+      const res = await fetch("/api/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test", serverId: id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || "MCP server responded successfully!");
+        setMcpServers((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, status: "connected" } : s))
+        );
+      } else {
+        toast.error(data.error || "MCP server verification failed");
+      }
+    } catch {
+      toast.error("Network error testing MCP server");
+    } finally {
+      setTestingMcpId(null);
+    }
+  };
+
+  const handleAddMcpServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMcpName.trim()) {
+      toast.error("Please enter a server name");
+      return;
+    }
+    try {
+      const res = await fetch("/api/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add",
+          serverConfig: {
+            name: newMcpName.trim(),
+            description: newMcpDesc.trim(),
+            transport: newMcpTransport,
+            command: newMcpTransport === "stdio" ? newMcpCommand.trim() : undefined,
+            args: newMcpTransport === "stdio" ? newMcpArgs.split(" ").filter(Boolean) : undefined,
+            url: newMcpTransport === "sse" ? newMcpUrl.trim() : undefined,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(`MCP Server "${newMcpName}" registered`);
+        setMcpServers((prev) => [...prev, data.server]);
+        setShowAddMcpModal(false);
+        setNewMcpName("");
+        setNewMcpDesc("");
+        setNewMcpArgs("");
+        setNewMcpUrl("");
+      } else {
+        toast.error(data.error || "Failed to register server");
+      }
+    } catch {
+      toast.error("Error creating MCP server");
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -358,8 +484,9 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: "providers", label: "Providers & API Keys", icon: Key },
-    { id: "devices", label: "Devices & Channels", icon: Smartphone },
     { id: "models", label: "Available Models", icon: Zap },
+    { id: "mcp", label: "MCP Server Hub", icon: Cpu },
+    { id: "webhooks", label: "Webhooks & Simulator", icon: Radio },
     { id: "vault", label: "Shared Memory Vault", icon: FolderOpen },
     { id: "danger", label: "Diagnostics & Reset", icon: AlertTriangle },
   ];
@@ -396,26 +523,26 @@ export default function SettingsPage() {
     <div className="space-y-5 w-full">
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wider bg-primary/10 text-primary px-2.5 py-0.5 rounded-md border border-border inline-flex items-center gap-1.5">
-            <Key className="w-3 h-3" />
+          <span className="text-[11px] font-medium text-[#0075de] bg-[#e6f3fe] px-2.5 py-0.5 rounded-full border border-[#0075de]/20 inline-flex items-center gap-1.5">
+            <Key className="w-3 h-3 text-[#0075de]" />
             Configuration Hub
           </span>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Manage model provider credentials, mobile messaging pairing, and local Obsidian vault storage
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Settings</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+          Manage model provider credentials and local Obsidian vault storage
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-secondary/60 border border-border w-fit">
+      <div className="flex flex-wrap gap-1 p-0.5 rounded-lg bg-muted border border-border w-fit">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
               activeTab === tab.id
-                ? "bg-card text-foreground shadow-sm font-semibold"
+                ? "bg-card text-foreground font-semibold"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -571,12 +698,7 @@ export default function SettingsPage() {
         </motion.div>
       )}
 
-      {/* Devices & Channels Tab */}
-      {activeTab === "devices" && (
-        <div className="animate-in fade-in duration-300">
-          <DevicesTab agents={agents} />
-        </div>
-      )}
+
 
       {/* Models Tab */}
       {activeTab === "models" && (
@@ -651,9 +773,9 @@ export default function SettingsPage() {
                             {groupModels.map((m, index) => (
                               <div
                                 key={`${m.id}-${index}`}
-                                className="flex items-center justify-between px-4 py-2.5 hover:bg-secondary/30 transition-colors"
+                                className="flex items-center justify-between px-4 py-2.5 hover:bg-muted/40 transition-colors gap-3"
                               >
-                                <span className="text-xs font-mono text-muted-foreground truncate">
+                                <span className="text-xs font-mono text-muted-foreground truncate min-w-0 flex-1" title={m.id}>
                                   {m.id}
                                 </span>
 
@@ -781,6 +903,220 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+        </motion.div>
+      )}
+
+      {/* MCP Server Hub Tab */}
+      {activeTab === "mcp" && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-5"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-foreground">Model Context Protocol (MCP) Hub</h3>
+              <p className="text-xs text-muted-foreground">
+                Connect external tool servers, resources, and filesystem sandboxes for your agent fleet
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowAddMcpModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-xs transition cursor-pointer w-fit"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add MCP Server</span>
+            </button>
+          </div>
+
+          {loadingMcp ? (
+            <div className="p-12 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <span>Discovering MCP services...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {mcpServers.map((server) => (
+                <div
+                  key={server.id}
+                  className="p-4 rounded-xl border border-border bg-card shadow-xs flex flex-col justify-between space-y-3"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-secondary text-foreground">
+                          <Server className="w-4 h-4 text-primary" />
+                        </div>
+                        <h4 className="text-sm font-semibold text-foreground">{server.name}</h4>
+                      </div>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+                          server.enabled
+                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                            : "bg-secondary text-muted-foreground border-border"
+                        }`}
+                      >
+                        {server.enabled ? "Active" : "Disabled"}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                      {server.description || "Model Context Protocol provider"}
+                    </p>
+
+                    <div className="pt-1 flex items-center gap-2 text-[10.5px] font-mono text-muted-foreground">
+                      <span className="px-1.5 py-0.5 rounded bg-secondary border border-border">
+                        {server.transport}
+                      </span>
+                      {server.command && (
+                        <span className="truncate max-w-[150px]">{server.command} {server.args?.join(" ")}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => handleTestMcp(server.id)}
+                      disabled={testingMcpId === server.id}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-secondary hover:bg-secondary/80 text-foreground transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {testingMcpId === server.id && <Loader2 className="w-3 h-3 animate-spin" />}
+                      <span>Ping</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleToggleMcp(server.id)}
+                      disabled={togglingMcpId === server.id}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        server.enabled
+                          ? "bg-secondary hover:bg-muted text-foreground border border-border"
+                          : "bg-primary text-primary-foreground hover:bg-primary/90"
+                      }`}
+                    >
+                      {server.enabled ? "Disable" : "Enable"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add MCP Server Modal */}
+          {showAddMcpModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-border pb-3">
+                  <h3 className="text-sm font-bold text-foreground">Add Custom MCP Server</h3>
+                  <button
+                    onClick={() => setShowAddMcpModal(false)}
+                    className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleAddMcpServer} className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-[11px] text-muted-foreground block mb-1">Server Name</label>
+                    <input
+                      type="text"
+                      value={newMcpName}
+                      onChange={(e) => setNewMcpName(e.target.value)}
+                      placeholder="e.g. SQLite Inspector or Linear API"
+                      className="w-full p-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-muted-foreground block mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={newMcpDesc}
+                      onChange={(e) => setNewMcpDesc(e.target.value)}
+                      placeholder="What tools does this server provide?"
+                      className="w-full p-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-muted-foreground block mb-1">Transport</label>
+                    <select
+                      value={newMcpTransport}
+                      onChange={(e: any) => setNewMcpTransport(e.target.value)}
+                      className="w-full p-2 rounded-lg border border-border bg-background text-foreground"
+                    >
+                      <option value="stdio">stdio (Local Process)</option>
+                      <option value="sse">sse (Server-Sent Events / Remote URL)</option>
+                    </select>
+                  </div>
+
+                  {newMcpTransport === "stdio" ? (
+                    <>
+                      <div>
+                        <label className="text-[11px] text-muted-foreground block mb-1">Command</label>
+                        <input
+                          type="text"
+                          value={newMcpCommand}
+                          onChange={(e) => setNewMcpCommand(e.target.value)}
+                          placeholder="npx or node"
+                          className="w-full p-2 rounded-lg border border-border bg-background text-foreground font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-muted-foreground block mb-1">Arguments (space separated)</label>
+                        <input
+                          type="text"
+                          value={newMcpArgs}
+                          onChange={(e) => setNewMcpArgs(e.target.value)}
+                          placeholder="-y @modelcontextprotocol/server-sqlite --db ./data.db"
+                          className="w-full p-2 rounded-lg border border-border bg-background text-foreground font-mono"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <label className="text-[11px] text-muted-foreground block mb-1">SSE URL</label>
+                      <input
+                        type="text"
+                        value={newMcpUrl}
+                        onChange={(e) => setNewMcpUrl(e.target.value)}
+                        placeholder="https://mcp.internal.company.com/sse"
+                        className="w-full p-2 rounded-lg border border-border bg-background text-foreground font-mono"
+                      />
+                    </div>
+                  )}
+
+                  <div className="pt-2 flex justify-end gap-2 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddMcpModal(false)}
+                      className="px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold"
+                    >
+                      Register Server
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* Webhooks & Simulator Tab */}
+      {activeTab === "webhooks" && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-4"
+        >
+          <WebhookSimulator agents={agents as any} />
         </motion.div>
       )}
 

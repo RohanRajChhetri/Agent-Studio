@@ -36,11 +36,11 @@ interface SimLink {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  task: "#a855f7",      // Purple
-  research: "#06b6d4",  // Cyan
-  strategy: "#f59e0b",  // Amber
+  task: "#0075de",      // Notion Blue
+  research: "#62aef0",  // Sky Wash
+  strategy: "#ffb110",  // Marigold
   concept: "#10b981",   // Emerald
-  system: "#6366f1",    // Indigo
+  system: "#f64932",    // Coral
 };
 
 export function ObsidianGraph({
@@ -57,6 +57,7 @@ export function ObsidianGraph({
   const linksRef = useRef<SimLink[]>([]);
   const animFrameIdRef = useRef<number | null>(null);
   const isSimulatingRef = useRef<boolean>(true);
+  const alphaRef = useRef<number>(1.0);
 
   // Viewport / Camera Transform
   const transformRef = useRef<{ x: number; y: number; k: number }>({
@@ -130,6 +131,7 @@ export function ObsidianGraph({
 
     nodesRef.current = simNodes;
     linksRef.current = simLinks;
+    alphaRef.current = 1.0;
     isSimulatingRef.current = true;
     startSimulationLoop();
 
@@ -156,11 +158,17 @@ export function ObsidianGraph({
       // 1. Physical Force Calculation (if simulation is active)
       let totalKineticEnergy = 0;
       if (isSimulatingRef.current) {
-        const linkDistance = 75;
-        const linkStrength = 0.045;
-        const charge = 450;
-        const centerGravity = 0.008;
-        const damping = 0.86;
+        // Alpha cooling schedule: gradually cool down to achieve stable, serene rest
+        const alpha = alphaRef.current;
+        if (alpha > 0.003) {
+          alphaRef.current *= 0.985;
+        }
+
+        const linkDistance = 80;
+        const linkStrength = 0.045 * alpha;
+        const repulsionStrength = 1600 * alpha;
+        const centerGravity = 0.014 * alpha;
+        const damping = 0.88;
 
         // Hooke's Law: Spring force along links
         for (let i = 0; i < links.length; i++) {
@@ -184,68 +192,50 @@ export function ObsidianGraph({
           }
         }
 
-        // Coulomb's Law: Node-to-node repulsion with spatial partitioning
-        const gridSize = 30; // Size of each grid cell
-        const gridMap = new Map<string, SimNode[]>();
+        // Coulomb's Law: Continuous soft-core all-pairs repulsion
+        // Completely avoids grid edge discontinuities and infinite close-range spikes
+        for (let i = 0; i < nodes.length; i++) {
+          const a = nodes[i];
+          for (let j = i + 1; j < nodes.length; j++) {
+            const b = nodes[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const distSq = dx * dx + dy * dy || 1;
 
-        // Assign nodes to grid cells
-        for (const node of nodes) {
-          const gridX = Math.floor(node.x / gridSize);
-          const gridY = Math.floor(node.y / gridSize);
-          const gridKey = `${gridX},${gridY}`;
-          if (!gridMap.has(gridKey)) {
-            gridMap.set(gridKey, []);
-          }
-          gridMap.get(gridKey)!.push(node);
-        }
+            if (distSq < 160000) { // ~400px radius of influence
+              const dist = Math.sqrt(distSq);
+              // Soft-core denominator prevents explosive repulsion at close contact
+              const force = repulsionStrength / (distSq + 900);
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
 
-        // Check nodes in same or adjacent cells
-        for (const node of nodes) {
-          const gridX = Math.floor(node.x / gridSize);
-          const gridY = Math.floor(node.y / gridSize);
-
-          // Check this cell and adjacent cells
-          for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-              const neighborKey = `${gridX + dx},${gridY + dy}`;
-              const neighborNodes = gridMap.get(neighborKey) || [];
-
-              for (const other of neighborNodes) {
-                // Skip self-check and duplicate checks (only check when other comes after node in array)
-                if (other === other && other !== node && nodes.indexOf(other) > nodes.indexOf(node)) {
-                  const dx = other.x - node.x;
-                  const dy = other.y - node.y;
-                  const distSq = dx * dx + dy * dy || 1;
-
-                  if (distSq < 45000) {
-                    const dist = Math.sqrt(distSq);
-                    const force = charge / (distSq + 10);
-                    const fx = (dx / dist) * force;
-                    const fy = (dy / dist) * force;
-
-                    if (node !== draggingNodeRef.current) {
-                      node.vx -= fx;
-                      node.vy -= fy;
-                    }
-                    if (other !== draggingNodeRef.current) {
-                      other.vx += fx;
-                      other.vy += fy;
-                    }
-                  }
-                }
+              if (a !== draggingNodeRef.current) {
+                a.vx -= fx;
+                a.vy -= fy;
+              }
+              if (b !== draggingNodeRef.current) {
+                b.vx += fx;
+                b.vy += fy;
               }
             }
           }
         }
 
-        // Center Gravity
+        // Center Gravity, Velocity Clamping & Damping
+        const maxSpeed = 7;
         for (let i = 0; i < nodes.length; i++) {
           const a = nodes[i];
           if (a !== draggingNodeRef.current) {
             a.vx -= a.x * centerGravity;
             a.vy -= a.y * centerGravity;
 
-            // Velocity integration & damping
+            // Velocity integration, clamping & damping
+            const speed = Math.sqrt(a.vx * a.vx + a.vy * a.vy);
+            if (speed > maxSpeed) {
+              a.vx = (a.vx / speed) * maxSpeed;
+              a.vy = (a.vy / speed) * maxSpeed;
+            }
+
             a.vx *= damping;
             a.vy *= damping;
             a.x += a.vx;
@@ -257,7 +247,7 @@ export function ObsidianGraph({
       }
 
       // Automatic energy sleep threshold to save 100% idle CPU
-      if (totalKineticEnergy < 0.04 && !draggingNodeRef.current) {
+      if ((totalKineticEnergy < 0.02 || alphaRef.current <= 0.003) && !draggingNodeRef.current) {
         isSimulatingRef.current = false;
       }
 
@@ -372,27 +362,33 @@ export function ObsidianGraph({
         ctx.stroke();
         ctx.shadowBlur = 0; // reset shadow
 
-        // Labels
+        // Labels with collision and overlap prevention
         const shouldDrawLabel =
-          (showLabels && isFiltered && (zoom >= 0.8 || isNeighbor || isHovered || isSelected)) ||
+          (showLabels && isFiltered && (zoom >= 0.85 || isNeighbor || isHovered || isSelected)) ||
           isHovered;
 
         if (shouldDrawLabel) {
-          ctx.font = `${isHovered || isSelected ? "bold " : ""}10px Inter, -apple-system, sans-serif`;
+          const displayName = (isHovered || isSelected)
+            ? n.name
+            : n.name.length > 14
+            ? n.name.slice(0, 13) + "…"
+            : n.name;
+
+          ctx.font = `${isHovered || isSelected ? "600 " : "400 "}10px 'NotionInter', Inter, -apple-system, sans-serif`;
           ctx.textAlign = "center";
           ctx.textBaseline = "top";
 
-          // Text shadow outline for readability
+          // Text shadow outline for readability matching paper warmth
           ctx.lineWidth = 3;
-          ctx.strokeStyle = isDark ? "rgba(9, 10, 15, 0.9)" : "rgba(248, 250, 252, 0.9)";
-          ctx.strokeText(n.name, n.x, n.y + n.radius + 3.5);
+          ctx.strokeStyle = isDark ? "rgba(25, 25, 25, 0.95)" : "rgba(246, 245, 244, 0.95)";
+          ctx.strokeText(displayName, n.x, n.y + n.radius + 3.5);
 
           ctx.fillStyle = isHovered
-            ? (isDark ? "#ffffff" : "#0f172a")
+            ? (isDark ? "#ffffff" : "#000000")
             : isNeighbor || isSelected
-            ? (isDark ? "#e2e8f0" : "#1e293b")
-            : (isDark ? "#94a3b8" : "#64748b");
-          ctx.fillText(n.name, n.x, n.y + n.radius + 3.5);
+            ? (isDark ? "#ffffff" : "#0075de")
+            : (isDark ? "#94a3b8" : "#615d59");
+          ctx.fillText(displayName, n.x, n.y + n.radius + 3.5);
         }
       }
 
@@ -468,6 +464,7 @@ export function ObsidianGraph({
 
     if (clickedNode) {
       draggingNodeRef.current = clickedNode;
+      alphaRef.current = 0.35;
       isSimulatingRef.current = true;
       startSimulationLoop();
     } else {
@@ -491,6 +488,7 @@ export function ObsidianGraph({
       draggingNodeRef.current.y = worldPos.y;
       draggingNodeRef.current.vx = 0;
       draggingNodeRef.current.vy = 0;
+      alphaRef.current = 0.25;
       isSimulatingRef.current = true;
       startSimulationLoop();
       return;
@@ -528,6 +526,9 @@ export function ObsidianGraph({
     if (draggingNodeRef.current) {
       const dragged = draggingNodeRef.current;
       draggingNodeRef.current = null;
+      alphaRef.current = 0.2;
+      isSimulatingRef.current = true;
+      startSimulationLoop();
       onSelectNote(dragged.path);
     }
     isPanningRef.current = false;
@@ -581,7 +582,7 @@ export function ObsidianGraph({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full min-h-[550px] bg-card rounded-2xl border border-border overflow-hidden select-none"
+      className="relative w-full h-full min-h-[550px] bg-card rounded-xl border border-border overflow-hidden select-none"
     >
       {/* Interactive 2D Canvas */}
       <canvas
@@ -596,8 +597,8 @@ export function ObsidianGraph({
       {/* Top Floating Control Bar */}
       <div className="absolute top-4 left-4 right-4 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
         {/* Search & Category Filter */}
-        <div className="flex items-center gap-2 pointer-events-auto bg-card/90 backdrop-blur-md p-1.5 rounded-xl border border-border shadow-md">
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-secondary/60 border border-border/50 text-xs">
+        <div className="flex items-center gap-2 pointer-events-auto bg-card p-1.5 rounded-lg border border-border">
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-muted border border-border text-xs">
             <Search className="w-3.5 h-3.5 text-muted-foreground" />
             <input
               type="text"
@@ -619,10 +620,10 @@ export function ObsidianGraph({
                   setActiveCategory(cat);
                   startSimulationLoop();
                 }}
-                className={`px-2 py-1 rounded-lg text-[11px] font-medium capitalize transition-all cursor-pointer ${
+                className={`px-2 py-0.5 rounded-md text-[11px] font-medium capitalize transition-colors cursor-pointer ${
                   activeCategory === cat
-                    ? "bg-primary/20 text-primary border border-border"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/40 border border-transparent"
+                    ? "bg-[#e6f3fe] text-[#0075de] font-semibold border border-[#0075de]/20"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent"
                 }`}
               >
                 {cat}

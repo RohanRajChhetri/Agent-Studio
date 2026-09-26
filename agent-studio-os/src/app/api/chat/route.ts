@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { executeChatCompletion, normalizeModelName } from "@/lib/llm-router";
-import { runOneshot } from "@/lib/hermes";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
+import {
+  resolveAgentAndSession,
+  persistChatMessages,
+  formatApiResponse,
+  handleApiError,
+} from "@/lib/api-middleware";
 
 export async function GET(request: Request) {
   try {
@@ -9,7 +15,7 @@ export async function GET(request: Request) {
     const agentId = searchParams.get("agentId");
     const sessionId = searchParams.get("sessionId");
 
-    const where: any = {};
+    const where: Prisma.ChatMessageWhereInput = {};
     if (sessionId) {
       where.sessionId = sessionId;
     } else if (agentId) {
@@ -24,11 +30,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(messages);
   } catch (error) {
-    console.error("Error fetching chat messages:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch chat messages" },
-      { status: 500 }
-    );
+    return handleApiError(error, "API Chat GET", "Failed to fetch chat messages", 500);
   }
 }
 
@@ -48,15 +50,13 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to clear chat history" },
-      { status: 500 }
-    );
+    return handleApiError(error, "API Chat DELETE", "Failed to clear chat history", 500);
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const body = await request.json();
     const {
       prompt,
       model,
@@ -65,147 +65,52 @@ export async function POST(request: Request) {
       sessionId,
       useVaultRAG,
       systemPrompt: customSystemPrompt,
-    } = await request.json();
+    } = body;
 
-    if (!prompt) {
-      return NextResponse.json(
-        { error: "Prompt is required" },
-        { status: 400 }
-      );
+    // 1. Validate prompt with early return
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
-    const start = Date.now();
-    let targetAgent = null;
+    // 2. Resolve agent and active session via reusable middleware
+    const { targetAgent, activeSessionId } = await resolveAgentAndSession({
+      agentId,
+      agentName,
+      sessionId,
+      prompt,
+      effectiveModel: normalizeModelName(model || null),
+    });
 
-    // 1. Resolve agent profile from database
-    if (agentId || agentName) {
-      targetAgent = await prisma.agent.findFirst({
-        where: {
-          OR: [
-            ...(agentId ? [{ id: agentId }] : []),
-            ...(agentName ? [{ name: agentName }, { displayName: agentName }] : []),
-          ],
-        },
-        include: { tools: true },
-      });
-    }
+    const effectiveModel = normalizeModelName(model || targetAgent?.model || null);
 
-    const effectiveModel = normalizeModelName(
-      model || targetAgent?.model || null
-    );
-
-    // 2. Resolve or create ChatSession
-    let activeSessionId = sessionId || null;
-    if (targetAgent?.id) {
-      if (!activeSessionId) {
-        // Find most recent session or create new
-        const latestSession = await prisma.chatSession.findFirst({
-          where: { agentId: targetAgent.id },
-          orderBy: { updatedAt: "desc" },
-        });
-
-        if (latestSession) {
-          activeSessionId = latestSession.id;
-        } else {
-          const title = prompt.slice(0, 45).replace(/[\r\n]+/g, " ").trim() || "New Session";
-          const newSession = await prisma.chatSession.create({
-            data: {
-              agentId: targetAgent.id,
-              title,
-              model: effectiveModel,
-            },
-          });
-          activeSessionId = newSession.id;
-        }
-      } else {
-        // Check if session exists; if title is "New Session", auto-title it
-        try {
-          const existingSession = await prisma.chatSession.findUnique({
-            where: { id: activeSessionId },
-            include: { _count: { select: { messages: true } } },
-          });
-
-          if (existingSession) {
-            const shouldAutoTitle =
-              existingSession.title === "New Session" ||
-              existingSession._count.messages === 0;
-
-            const autoTitle = prompt.slice(0, 45).replace(/[\r\n]+/g, " ").trim();
-            await prisma.chatSession.update({
-              where: { id: activeSessionId },
-              data: {
-                ...(shouldAutoTitle && autoTitle ? { title: autoTitle } : {}),
-                updatedAt: new Date(),
-              },
-            });
-          }
-        } catch {
-          // Ignore session title update errors
-        }
-      }
-    }
-
-    // 3. Primary Execution: Execute via LLM Router (Omniroute Primary Brain)
+    // 3. Primary Execution via Universal LLM Router
     const result = await executeChatCompletion({
       prompt,
       model: effectiveModel,
       systemPrompt: customSystemPrompt || targetAgent?.systemPrompt || undefined,
       agentName: targetAgent?.name || agentName,
+      useVaultRAG,
     });
 
-    const responseText = result.content;
-    const source = result.source;
-    const latency = result.latency || Date.now() - start;
-
-    // 4. Save to chat history linked to session
-    try {
-      if (targetAgent?.id) {
-        await prisma.chatMessage.create({
-          data: {
-            agentId: targetAgent.id,
-            sessionId: activeSessionId,
-            role: "user",
-            content: prompt,
-            model: effectiveModel,
-          },
-        });
-
-        await prisma.chatMessage.create({
-          data: {
-            agentId: targetAgent.id,
-            sessionId: activeSessionId,
-            role: "assistant",
-            content: responseText,
-            model: effectiveModel,
-            latency,
-          },
-        });
-      }
-    } catch (saveErr) {
-      console.warn("Failed to persist chat message:", saveErr);
-    }
-
-    return NextResponse.json({
-      response: responseText,
-      message: responseText,
-      content: responseText,
-      latency,
-      source,
-      model: effectiveModel,
-      agentName: targetAgent?.displayName || agentName || "Hermes Agent",
-      agentId: targetAgent?.id || null,
+    // 4. Persist chat messages non-blockingly
+    await persistChatMessages({
+      agentId: targetAgent?.id,
       sessionId: activeSessionId,
-      hermesProfile: targetAgent?.name || "default",
+      prompt,
+      response: result.content,
+      model: effectiveModel,
+      latency: result.latency,
+    });
+
+    // 5. Standardized response formatting
+    return formatApiResponse({
+      result,
+      targetAgent,
+      fallbackAgentName: agentName,
+      activeSessionId,
+      effectiveModel,
     });
   } catch (error) {
-    console.error("[API Chat] Error:", error);
-    return NextResponse.json(
-      {
-        error: "Failed to process chat",
-        response:
-          error instanceof Error ? error.message : "Unknown server error",
-      },
-      { status: 500 }
-    );
+    return handleApiError(error, "API Chat POST", "Failed to process chat", 500);
   }
 }
