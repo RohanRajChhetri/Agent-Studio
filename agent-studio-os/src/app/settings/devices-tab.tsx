@@ -649,6 +649,52 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                   </div>
                 </div>
 
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
+                    <span>Telegram Chat ID / Channel</span>
+                    <span className="text-[10px] text-muted-foreground">Required for briefings & proactive alerts</span>
+                  </label>
+                  <div className="flex gap-2 mt-1.5">
+                    <input
+                      type="text"
+                      value={channelConfigs.telegram?.chatId || ""}
+                      onChange={(e) => handleConfigChange("telegram", "chatId", e.target.value)}
+                      placeholder="e.g. 123456789 or click Auto-Detect"
+                      className="flex-1 px-3 py-2.5 rounded-xl bg-secondary/40 border border-border text-foreground text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const token = channelConfigs.telegram?.botToken;
+                        if (!token) {
+                          toast.error("Please enter a Telegram Bot Token first");
+                          return;
+                        }
+                        try {
+                          const res = await fetch("/api/integrations/telegram", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ action: "auto_detect_chat_id", token }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data.success && data.chatId) {
+                            handleConfigChange("telegram", "chatId", data.chatId);
+                            toast.success(`Chat ID detected: ${data.chatId} (${data.username ? `@${data.username}` : data.firstName || "Telegram User"})`);
+                          } else {
+                            toast.error(data.error || "No recent messages found. Please send /start to your bot in Telegram first.");
+                          }
+                        } catch {
+                          toast.error("Failed to auto-detect chat ID");
+                        }
+                      }}
+                      className="px-3 py-2 bg-secondary hover:bg-secondary/80 border border-border text-foreground rounded-xl text-xs font-semibold transition-all whitespace-nowrap cursor-pointer"
+                      title="Send /start to your bot in Telegram, then click Auto-Detect"
+                    >
+                      Auto-Detect
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex gap-2.5 pt-1">
                   <button
                     type="button"

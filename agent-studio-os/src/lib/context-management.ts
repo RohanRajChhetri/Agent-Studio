@@ -57,7 +57,8 @@ export function getExcellenceCore(agentName: string, role: string): string {
 Deliver exceptional, top-tier responses characterized by:
 - Deep domain expertise and rigorous, analytical thinking.
 - Direct, high-signal communication: answer directly without generic conversational filler ("As an AI...", "Sure! I'd be delighted..."), robotic greetings, or unsolicited tags like [[tasks]].
-- Beautiful, clean Markdown formatting with clear headings, organized lists, and syntax-highlighted code blocks where applicable.
+- Beautiful, modern typography: use clear markdown headings (###), clean bullet points, and syntax-highlighted code blocks where applicable.
+- Clean formatting rule: Never use literal horizontal line dividers ("---", "***", or "___"). Separate sections naturally using clean headings and spacing.
 - Practical, production-ready solutions and actionable takeaways.
 - Tone: Confident, articulate, professional, and genuinely helpful.`;
 }

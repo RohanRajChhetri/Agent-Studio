@@ -1,9 +1,67 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { GeminiLiveOrb } from "@/components/voice/gemini-live-orb";
 import { CostTrackerModal } from "@/components/telemetry/cost-tracker-modal";
+import {
+  DashboardChatProvider,
+  useDashboardChat,
+} from "@/context/dashboard-chat-context";
+import { DashboardChatPanel } from "@/components/dashboard/dashboard-chat-panel";
+
+/**
+ * Floating Persistent Chat Panel
+ * When on non-dashboard routes (pathname !== "/"), if chat is active, it stays open
+ * in floating mode so user never loses their active agent conversation or deliverable.
+ * It only closes when the user clicks the close button.
+ */
+function FloatingPersistentDashboardChat() {
+  const pathname = usePathname();
+  const {
+    isChatActive,
+    activeAgent,
+    currentSessionId,
+    chatMessages,
+    isChatSending,
+    followUpInput,
+    setFollowUpInput,
+    sendChatMessage,
+    closeChat,
+    sendToKanban,
+  } = useDashboardChat();
+
+  // On the dashboard ("/"), the chat panel is rendered in-page by page.tsx.
+  // On all other pages (e.g. /kanban, /agents, /routines, /settings, /memory),
+  // if active, it remains visible as a floating widget!
+  if (pathname === "/" || !isChatActive) {
+    return null;
+  }
+
+  return (
+    <DashboardChatPanel
+      isChatActive={isChatActive}
+      activeAgent={activeAgent}
+      currentSessionId={currentSessionId}
+      chatMessages={chatMessages}
+      isChatSending={isChatSending}
+      followUpInput={followUpInput}
+      setFollowUpInput={setFollowUpInput}
+      onFollowUpSubmit={(e) => {
+        e.preventDefault();
+        if (followUpInput.trim() && !isChatSending) {
+          const text = followUpInput.trim();
+          setFollowUpInput("");
+          sendChatMessage(text);
+        }
+      }}
+      onCloseChat={closeChat}
+      onSendToKanban={sendToKanban}
+      isFloating={true}
+    />
+  );
+}
 
 export function GlobalCockpitProvider({ children }: { children: React.ReactNode }) {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -19,12 +77,18 @@ export function GlobalCockpitProvider({ children }: { children: React.ReactNode 
         setIsCommandPaletteOpen((prev) => !prev);
       }
       // Alt+V or Ctrl+Shift+V -> Gemini Live Voice
-      if ((e.altKey && e.key.toLowerCase() === "v") || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "v")) {
+      if (
+        (e.altKey && e.key.toLowerCase() === "v") ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "v")
+      ) {
         e.preventDefault();
         setIsVoiceOpen((prev) => !prev);
       }
       // Alt+C or Ctrl+Shift+C -> Token & Cost Tracker
-      if ((e.altKey && e.key.toLowerCase() === "c") || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c")) {
+      if (
+        (e.altKey && e.key.toLowerCase() === "c") ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c")
+      ) {
         e.preventDefault();
         setIsCostTrackerOpen((prev) => !prev);
       }
@@ -50,7 +114,7 @@ export function GlobalCockpitProvider({ children }: { children: React.ReactNode 
   }, []);
 
   return (
-    <>
+    <DashboardChatProvider>
       {children}
 
       <CommandPalette
@@ -69,6 +133,9 @@ export function GlobalCockpitProvider({ children }: { children: React.ReactNode 
         isOpen={isCostTrackerOpen}
         onClose={() => setIsCostTrackerOpen(false)}
       />
-    </>
+
+      {/* Persistent floating chat widget on non-dashboard pages */}
+      <FloatingPersistentDashboardChat />
+    </DashboardChatProvider>
   );
 }

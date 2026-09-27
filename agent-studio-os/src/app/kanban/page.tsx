@@ -52,6 +52,7 @@ export default function KanbanPage() {
   const [swarmingTaskId, setSwarmingTaskId] = useState<string | null>(null);
   const [reflectingTaskId, setReflectingTaskId] = useState<string | null>(null);
   const [deconstructingTaskId, setDeconstructingTaskId] = useState<string | null>(null);
+  const [revisingTaskId, setRevisingTaskId] = useState<string | null>(null);
 
   // dnd-kit sensors: 8px threshold prevents accidental drag when clicking buttons/links
   const sensors = useSensors(
@@ -234,18 +235,19 @@ export default function KanbanPage() {
     }
   };
 
-  // Approve Deliverable -> Move to Done
+  // Approve Deliverable -> Move to Done via Review API
   const handleApproveTask = async (task: TaskItem) => {
     try {
-      const res = await fetch("/api/tasks", {
-        method: "PUT",
+      const res = await fetch(`/api/tasks/${task.id}/review`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: task.id, status: "done" }),
+        body: JSON.stringify({ action: "approve" }),
       });
 
       if (!res.ok) throw new Error("Failed to approve task");
 
-      const updated = await res.json();
+      const data = await res.json();
+      const updated = data.task || { ...task, status: "done" };
       setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
       if (selectedTask?.id === task.id) {
         setSelectedTask(updated);
@@ -253,6 +255,65 @@ export default function KanbanPage() {
       toast.success("Deliverable approved & synced to Obsidian Vault (`tasks/`)");
     } catch {
       toast.error("Failed to approve deliverable");
+    }
+  };
+
+  // Request Revision with Human Critique
+  const handleReviseTask = async (task: TaskItem, feedback: string) => {
+    setRevisingTaskId(task.id);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "revise",
+          feedback,
+          autoExecute: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to submit revision");
+      }
+
+      const data = await res.json();
+      const updated = data.task || task;
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+      if (selectedTask?.id === task.id) {
+        setSelectedTask(updated);
+      }
+      toast.success("Specialist agent revised deliverable addressing your feedback!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit revision");
+    } finally {
+      setRevisingTaskId(null);
+    }
+  };
+
+  // Reject Deliverable -> Move to Backlog with Reason
+  const handleRejectTask = async (task: TaskItem, reason: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reject",
+          reason,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to reject task");
+
+      const data = await res.json();
+      const updated = data.task || { ...task, status: "backlog" };
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
+      if (selectedTask?.id === task.id) {
+        setSelectedTask(updated);
+      }
+      toast.info(`Task returned to Backlog: ${reason}`);
+    } catch {
+      toast.error("Failed to reject deliverable");
     }
   };
 
@@ -769,6 +830,8 @@ export default function KanbanPage() {
         onSwarmTask={handleSwarmTask}
         onReflectTask={handleReflectTask}
         onApproveTask={handleApproveTask}
+        onReviseTask={handleReviseTask}
+        onRejectTask={handleRejectTask}
         onDeconstructTask={handleDeconstructTask}
         onDeleteTask={handleDeleteTask}
         onUpdateStatus={handleUpdateStatus}
@@ -777,6 +840,7 @@ export default function KanbanPage() {
         isSwarming={swarmingTaskId === selectedTask?.id}
         isReflecting={reflectingTaskId === selectedTask?.id}
         isDeconstructing={deconstructingTaskId === selectedTask?.id}
+        isRevising={revisingTaskId === selectedTask?.id}
       />
 
       {/* Create Task Modal */}

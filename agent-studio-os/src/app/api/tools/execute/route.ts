@@ -52,6 +52,23 @@ export async function POST(request: Request) {
       });
     }
 
+    if (
+      tool.startsWith("fs_") ||
+      tool.startsWith("github_") ||
+      tool.startsWith("postgres_") ||
+      tool === "mcp"
+    ) {
+      const { mcpManager } = await import("@/lib/mcp/client-manager");
+      const targetTool = tool === "mcp" ? body.toolName : tool;
+      const toolArgs = body.args || body;
+      const result = await mcpManager.executeTool(targetTool, toolArgs);
+      return NextResponse.json({
+        success: !result.isError,
+        tool: targetTool,
+        result,
+      });
+    }
+
     return NextResponse.json({ error: `Unsupported tool: ${tool}` }, { status: 400 });
   } catch (error) {
     console.error("[Tools Execute API] Error:", error);

@@ -147,8 +147,6 @@ Synthesize these inputs into a single, cohesive, C-level executive report. Inclu
 ## 👑 Executive Synthesis
 ${finalSynthesis.content}
 
----
-
 ## ⚡ Specialist Breakdown
 ${swarmSteps
   .map(
@@ -157,8 +155,7 @@ ${swarmSteps
 
 ${step.output}`
   )
-  .join("\n\n---\n\n")}
-
+  .join("\n\n")}
 `;
 
     // 4. Update task & Save to Obsidian Vault

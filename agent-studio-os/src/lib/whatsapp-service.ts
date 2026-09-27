@@ -272,17 +272,31 @@ export async function processWhatsAppMessage(
     const agentName = agent?.displayName || "Specialist";
     const prefix = isSelfChat ? `*${agentName}*:\n` : "";
 
-    const completion = await executeChatCompletion({
-      prompt: userText,
-      model: agent?.model || "auto/fast",
-      systemPrompt: agent?.systemPrompt,
-      agentName: agentName,
-      useVaultRAG: true,
-      useEpisodicMemory: true,
+    // Check for interactive mobile commands (/tasks, /run, /approve, /ask, /briefing, /status, /help)
+    const { routeMobileCommand } = await import("@/lib/omnichannel-router");
+    const cmdResult = await routeMobileCommand(userText, {
+      sender: senderName,
+      channel: "whatsapp",
+      defaultAgent: agent,
     });
 
-    const replyText = `${prefix}${completion.content || "I have received your message."}`;
-    const timeFormatted = formatResponseTime(completion.latency);
+    let replyText = "";
+    let latency: number | undefined;
+    if (cmdResult.handled) {
+      replyText = `${prefix}${cmdResult.replyText}`;
+    } else {
+      const completion = await executeChatCompletion({
+        prompt: userText,
+        model: agent?.model || "auto/fast",
+        systemPrompt: agent?.systemPrompt,
+        agentName: agentName,
+        useVaultRAG: true,
+        useEpisodicMemory: true,
+      });
+      replyText = `${prefix}${completion.content || "I have received your message."}`;
+      latency = completion.latency;
+    }
+    const timeFormatted = formatResponseTime(latency);
 
     await prisma.activityLog.create({
       data: {

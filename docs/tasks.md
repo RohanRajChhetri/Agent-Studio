@@ -22,15 +22,36 @@ This document serves as the single source of truth for all current sprint object
 - [x] **Implement Prisma schema improvements for agent hierarchy**: Created self-referential relations (`reportsToId`, `reportsTo`, `subordinates`, `role`, `department`) in [`schema.prisma`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/prisma/schema.prisma).
 - [x] **Add comprehensive test coverage for core modules**:
   - Configured Vitest runner with ESM path resolution and v8 coverage.
-  - 14/14 test suites passing (87/87 tests).
-  - 100% coverage on `hermes.ts`, `hermes-exec.ts`, `hermes-env.ts`, `hermes-tools.ts`, `provider-selection.ts`, and `router-types.ts`.
-  - Typecheck verification (`tsc --noEmit`) passing with 0 errors.
-- [x] **Optimize galaxy generation algorithm**: Replaced previous $O(N^2)$ pairwise node-matching with strictly $O(N)$ linear-time cluster-hub star topology in [`galaxy-generation.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/galaxy-generation.ts).
-- [x] **Add provider health checking and automatic failover**: Implemented live Omniroute ping testing with cached TTL checks and a waterfall zero-drop cascade across available providers in [`router-execution.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/router-execution.ts).
-- [x] **Implement agent memory persistence and retrieval enhancements**:
-  - Vault-based Retrieval-Augmented Generation (RAG) with wikilink support in [`rag.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/rag.ts).
-  - Agent episodic memory synthesis and prompt injection in [`episodic-memory.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/episodic-memory.ts).
-  - Persistent SQLite chat history and session management in [`chat-memory.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/chat-memory.ts).
+  - 17/17 test suites passing (104/104 tests).
+  - 100% coverage on `hermes.ts`, `hermes-exec.ts`, `hermes-env.ts`, `hermes-tools.ts`, `provider-selection.ts`, `router-types.ts`, `mcp.test.ts`, `omnichannel-router.test.ts`, and `task-review.test.ts`.
+  - Typecheck verification (`tsc --noEmit`): 0 errors.
+  - ESLint verification (`npm run lint`): 0 errors.
+- [x] **Fix ESLint config & harden SQLite concurrency**:
+  - Configured `eslint.config.mjs` with global ignores (`.git_backup/**`, `scratch/**`, `coverage/**`, `scripts/**`) and compiler rule overrides.
+  - Hardened SQLite with WAL mode (`PRAGMA journal_mode = WAL;`), `PRAGMA busy_timeout = 5000;`, `PRAGMA synchronous = NORMAL;`, `PRAGMA cache_size = -64000;`, and `PRAGMA temp_store = MEMORY;` in `prisma.ts`.
+- [x] **Upgrade MCP client to live tool execution**:
+  - Upgraded [`client-manager.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/mcp/client-manager.ts) with real execution for Filesystem (`fs_read_file`, `fs_write_file`, `fs_list_directory`), GitHub API (`github_list_repos`, `github_get_repo_issues`, `github_create_issue`), and PostgreSQL (`postgres_query`, `postgres_list_tables`).
+  - Added safe workspace boundary validation preventing directory traversal.
+  - Connected MCP execution to `/api/tools/execute` and `/api/mcp`.
+- [x] **Implement "Needs Review" human-in-the-loop validation on Kanban**:
+  - Added dedicated `/api/tasks/[id]/review` route supporting `approve`, `revise` (with autonomous re-execution loop addressing reviewer critique), and `reject`.
+  - Integrated interactive "Request Revision" and "Reject" controls inside [`task-drawer.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/kanban/task-drawer.tsx) and wired in [`kanban/page.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/kanban/page.tsx).
+- [x] **Omnichannel & Mobile Control (Telegram & WhatsApp)**:
+  - Created [`omnichannel-router.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/omnichannel-router.ts) providing unified two-way mobile command dispatching for `/tasks`, `/run <id>`, `/approve <id>`, `/ask <agent> <query>`, `/briefing`, `/status`, and `/help`.
+  - Integrated into both [`telegram-service.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/telegram-service.ts) and [`whatsapp-service.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/whatsapp-service.ts).
+- [x] **Refactor & Modularize Root Dashboard (`page.tsx`)**:
+  - Decomposed monolithic 1,235-line `page.tsx` into clean, focused components under `src/components/dashboard/`: [`dashboard-hero-header.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/dashboard/dashboard-hero-header.tsx), [`dashboard-command-bar.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/dashboard/dashboard-command-bar.tsx), [`dashboard-a2a-result.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/dashboard/dashboard-a2a-result.tsx), and [`dashboard-chat-panel.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/dashboard/dashboard-chat-panel.tsx).
+  - Maintained the clean, uncluttered aesthetic without introducing visual noise while significantly improving typing responsiveness and component maintainability.
+- [x] **Global Persistent Dashboard Chat**:
+  - Implemented [`DashboardChatProvider`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/context/dashboard-chat-context.tsx) mounted inside `GlobalCockpitProvider`.
+  - Chat panel transitions to a non-intrusive floating cockpit window when navigating away from the dashboard (e.g. to `/kanban`, `/agents`, `/routines`, `/settings`) and stays persistent until explicitly closed via the `[X]` button.
+- [x] **Enhanced Agent Output Formatting & Aesthetics**:
+  - Upgraded [`MarkdownRenderer`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/chat/markdown-renderer.tsx) to eliminate literal `"---"` text divider artifacts, strip YAML frontmatter, and cleanly render headers, lists, and callout blocks (`[!NOTE]`, `[!TIP]`, `[!WARNING]`).
+  - Added modern glassmorphic fenced code block view (`CodeBlockView`) with language tags and copy-to-clipboard functionality.
+  - Enabled standard markdown links (`[label](url)`) for internal route navigation and external links.
+  - Updated `getExcellenceCore` in [`context-management.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/context-management.ts) with strict instructions forbidding agents from generating decorative horizontal dividers (`---`, `***`, `___`).
+  - Removed hardcoded `"---"` separator strings from autonomous action dispatcher templates and executive briefing routes.
+  - Added 5 unit tests in [`markdown-renderer.test.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/__tests__/markdown-renderer.test.ts) (19/19 test suites passing, 119/119 tests passing).
 
 ---
 
@@ -101,22 +122,46 @@ Cross-referenced against [architecture.md](file:///c:/Users/rohan/Projects/Agent
 - [x] **3D Memory Galaxy Graph**: [`obsidian-graph.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/memory/obsidian-graph.tsx) with physics simulation, wikilink edge resolution, and note inspector.
 - [x] **Hermes CLI Terminal Modal**: [`hermes-terminal-modal.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/agents/hermes-terminal-modal.tsx) in-browser execution with profile switching.
 - [x] **Autonomous Kanban Pipeline**: [`kanban/page.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/kanban/page.tsx) with drag-and-drop task movements and one-click run execution.
-- [x] **Omniroute Telemetry & Provider Hub**: [`omniroute-telemetry.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/layout/omniroute-telemetry.tsx) and `/settings` for key management and live model latency checks.
+- [x] **Omniroute Telemetry & Provider Hub**: [`omniroute-telemetry.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/layout/omniroute-telemetry.tsx) and redesigned `/settings` with modular architecture ([`settings-header.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/settings/components/settings-header.tsx), [`providers-tab.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/settings/components/providers-tab.tsx), [`models-tab.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/settings/components/models-tab.tsx), [`mcp-tab.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/settings/components/mcp-tab.tsx), [`vault-tab.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/settings/components/vault-tab.tsx), and [`diagnostics-tab.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/settings/components/diagnostics-tab.tsx)).
+- [x] **Omnichannel & Mobile Control**: Integrated WhatsApp QR pairing and Telegram Bot command listener ([`devices-tab.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/settings/devices-tab.tsx) & [`omnichannel-router.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/omnichannel-router.ts)).
 - [x] **Fleet Activity Stream**: [`fleet-activity-stream.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/layout/fleet-activity-stream.tsx) displaying real-time agent system logs and status transitions.
 - [x] **Glassmorphism Design System**: Tailored dark/light mode palette (`slate-50` / `obsidian-950`) adhering strictly to [design.md](file:///c:/Users/rohan/Projects/Agent%20Os/docs/design.md).
+
+---
+
+## Feature: Autonomous Cognitive Action Engine for Dashboard Command Center
+
+Upgraded the dashboard message function into an **Autonomous Cognitive Action Engine** that reasons through user intent and carries out real operations across the OS without relying on static action buttons or rigid menus:
+
+- [x] **Natural Language Task Execution on Kanban**:
+  - The AI understands any natural phrasing or typos: `"execute task in kanvban"`, `"can you execute the task on kanban"`, `"work on the auth task"`, `"run task in kanban"`.
+  - Automatically queries the Kanban pipeline, moves the task to `in_progress` ➔ `review`, executes the technical specialist deliverable with RAG context, and syncs markdown to the local Obsidian vault (`tasks/${slug}.md`).
+- [x] **Autonomous Delegation & Dynamic Completion**:
+  - Supports delegating to specific or arbitrary agents: `"assign task to other agents and complete it"`, `"assign task to Coder: build auth endpoint and complete it"`, `"delegate this to Researcher"`.
+  - Automatically inspects the fleet, selects the best specialist, creates the Kanban ticket, executes immediately when requested, and returns the finished deliverable.
+- [x] **Small & Large Direct Technical Tasks (Not a Chatbot)**:
+  - When given technical missions (`"proforme this task: ..."`, `"write a script to..."`, `"calculate..."`, `"build..."`, `"implement..."`), the AI bypasses chatbot fluff and executes directly as a production-grade software specialist.
+  - Automatically enriches technical tasks with live web search context when external documentation, benchmarks, or current APIs are needed.
+- [x] **Tool & System Execution**:
+  - Live Web Search: `"search web for [query]"` executes DuckDuckGo search and formats real-time citations.
+  - Sandbox Code Execution: `"run code: [snippet]"` / `"run python: [snippet]"` executes JavaScript or Python with execution time, stdout, and stderr.
+  - Fleet & Kanban Telemetry: `"fleet status"`, `"show me the tasks"`.
+  - Natural Language Approval: `"approve task"`, `"mark task done"`.
+- [x] **Clean, Uncluttered UI**:
+  - Removed all artificial action buttons and suggestion chips from the UI. The intelligence resides in the AI agent itself.
 
 ---
 
 ## Verification & Quality Assurance (100% Passing)
 
 - [x] **Vitest Automated Testing**:
-  - Test suites: 14 passed (100%)
-  - Total tests: 87 passed (100%)
-  - Execution speed: ~350ms
+  - Test suites: 18 passed (100%)
+  - Total tests: 114 passed (100%)
+  - Execution speed: ~430ms
 - [x] **TypeScript Strict Compilation**:
   - `npx tsc --noEmit`: 0 errors
-- [x] **Module Resolution Mocking Resolution**:
-  - Fixed ES module mocking and path aliasing in `hermes-env.test.ts`, `hermes-exec.test.ts`, and `hermes-tools.test.ts`.
+- [x] **ESLint Linting**:
+  - `npm run lint`: 0 errors (clean compilation and rules enforced)
 
 ---
 

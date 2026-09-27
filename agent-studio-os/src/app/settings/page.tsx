@@ -1,68 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Key,
-  RefreshCw,
-  Save,
-  Loader2,
-  Trash2,
-  FolderOpen,
-  CheckCircle,
-  XCircle,
-  Zap,
-  AlertTriangle,
-  Eye,
-  EyeOff,
-  TestTube,
-  Info,
-  Search,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  Check,
-  ExternalLink,
-  Sparkles,
-  Cpu,
-  Radio,
-  Plus,
-  Server,
-  X,
-} from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { formatResponseTime } from "@/lib/utils";
+import { SettingsHeader } from "./components/settings-header";
+import { ProvidersTab, type ProviderInfo } from "./components/providers-tab";
+import { DevicesTab } from "./devices-tab";
+import { ModelsTab, type ModelEntry } from "./components/models-tab";
+import { MCPTab } from "./components/mcp-tab";
+import { VaultTab, type VaultStats } from "./components/vault-tab";
+import { DiagnosticsTab } from "./components/diagnostics-tab";
 import { WebhookSimulator } from "@/components/routines/webhook-simulator";
 import type { MCPServerConfig } from "@/types/mcp";
-
-interface ProviderInfo {
-  provider: string;
-  envVar: string;
-  label: string;
-  isSet: boolean;
-  masked: string;
-  models?: readonly string[];
-}
-
-interface ModelEntry {
-  id: string;
-  owned_by?: string;
-}
 
 interface AgentSimple {
   id: string;
   displayName: string;
   avatar: string;
-}
-
-interface VaultStats {
-  vaultPath: string;
-  noteCount: number;
-  graphStats: {
-    nodes: number;
-    edges: number;
-    communities: number;
-  };
 }
 
 export default function SettingsPage() {
@@ -78,50 +32,50 @@ export default function SettingsPage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
-      if (tabParam && ["providers", "models", "mcp", "webhooks", "vault", "danger"].includes(tabParam)) {
+      if (
+        tabParam &&
+        ["providers", "devices", "models", "mcp", "webhooks", "vault", "danger"].includes(tabParam)
+      ) {
         setActiveTab(tabParam);
       }
     }
   }, []);
 
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tabId);
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
+
   // API Key management state
-  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [testingKey, setTestingKey] = useState<string | null>(null);
   const [keyTestStatus, setKeyTestStatus] = useState<
     Record<string, { success: boolean; latency?: number; error?: string }>
   >({});
-  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
   // Model inspection state
-  const [modelSearch, setModelSearch] = useState("");
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [testingModel, setTestingModel] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<
     Record<string, { success: boolean; latency: number; error?: string }>
   >({});
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   // Vault stats state
   const [vaultStats, setVaultStats] = useState<VaultStats | null>(null);
   const [syncingVault, setSyncingVault] = useState(false);
-  const [copiedVaultPath, setCopiedVaultPath] = useState(false);
 
   // MCP Server state
   const [mcpServers, setMcpServers] = useState<MCPServerConfig[]>([]);
   const [loadingMcp, setLoadingMcp] = useState(false);
   const [testingMcpId, setTestingMcpId] = useState<string | null>(null);
   const [togglingMcpId, setTogglingMcpId] = useState<string | null>(null);
-  const [showAddMcpModal, setShowAddMcpModal] = useState(false);
-  const [newMcpName, setNewMcpName] = useState("");
-  const [newMcpDesc, setNewMcpDesc] = useState("");
-  const [newMcpTransport, setNewMcpTransport] = useState<"stdio" | "sse">("stdio");
-  const [newMcpCommand, setNewMcpCommand] = useState("npx");
-  const [newMcpArgs, setNewMcpArgs] = useState("");
-  const [newMcpUrl, setNewMcpUrl] = useState("");
 
-  const fetchMcpServers = async () => {
+  const fetchMcpServers = useCallback(async () => {
     try {
       setLoadingMcp(true);
       const res = await fetch("/api/mcp");
@@ -134,13 +88,13 @@ export default function SettingsPage() {
     } finally {
       setLoadingMcp(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (activeTab === "mcp") {
       fetchMcpServers();
     }
-  }, [activeTab]);
+  }, [activeTab, fetchMcpServers]);
 
   const handleToggleMcp = async (id: string) => {
     setTogglingMcpId(id);
@@ -190,46 +144,56 @@ export default function SettingsPage() {
     }
   };
 
-  const handleAddMcpServer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMcpName.trim()) {
-      toast.error("Please enter a server name");
-      return;
-    }
+  const handleAddMcpServer = async (serverConfig: {
+    name: string;
+    description: string;
+    transport: "stdio" | "sse";
+    command?: string;
+    args?: string[];
+    url?: string;
+  }) => {
     try {
       const res = await fetch("/api/mcp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "add",
-          serverConfig: {
-            name: newMcpName.trim(),
-            description: newMcpDesc.trim(),
-            transport: newMcpTransport,
-            command: newMcpTransport === "stdio" ? newMcpCommand.trim() : undefined,
-            args: newMcpTransport === "stdio" ? newMcpArgs.split(" ").filter(Boolean) : undefined,
-            url: newMcpTransport === "sse" ? newMcpUrl.trim() : undefined,
-          },
+          serverConfig,
         }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success(`MCP Server "${newMcpName}" registered`);
+        toast.success(`MCP Server "${serverConfig.name}" registered`);
         setMcpServers((prev) => [...prev, data.server]);
-        setShowAddMcpModal(false);
-        setNewMcpName("");
-        setNewMcpDesc("");
-        setNewMcpArgs("");
-        setNewMcpUrl("");
       } else {
         toast.error(data.error || "Failed to register server");
+        throw new Error(data.error);
       }
-    } catch {
+    } catch (err) {
       toast.error("Error creating MCP server");
+      throw err;
     }
   };
 
-  const fetchData = async () => {
+  const handleDeleteMcpServer = async (id: string) => {
+    try {
+      const res = await fetch("/api/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", serverId: id }),
+      });
+      if (res.ok) {
+        setMcpServers((prev) => prev.filter((s) => s.id !== id));
+        toast.success("MCP Server removed");
+      } else {
+        toast.error("Failed to remove MCP server");
+      }
+    } catch {
+      toast.error("Network error removing MCP server");
+    }
+  };
+
+  const fetchData = useCallback(async () => {
     try {
       const [providersRes, modelsRes, agentsRes, vaultRes] = await Promise.all([
         fetch("/api/providers"),
@@ -258,7 +222,7 @@ export default function SettingsPage() {
 
       if (agentsRes.ok) {
         const agentsData = await agentsRes.json();
-        const rawAgents = Array.isArray(agentsData) ? agentsData : (agentsData.agents || []);
+        const rawAgents = Array.isArray(agentsData) ? agentsData : agentsData.agents || [];
         setAgents(
           rawAgents.map((a: any) => ({
             id: a.id,
@@ -276,7 +240,11 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleRefreshModels = async () => {
     setRefreshingModels(true);
@@ -306,35 +274,17 @@ export default function SettingsPage() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get("tab");
-      if (tabParam && ["providers", "devices", "models", "vault", "danger"].includes(tabParam)) {
-        setActiveTab(tabParam);
-      }
-    }
-  }, []);
-
-  const saveKey = async (provider: string, envVar: string) => {
-    const value = keyInputs[envVar];
-    if (!value || !value.trim()) {
-      toast.error("Please enter a valid key");
-      return;
-    }
-
+  const saveKey = async (provider: string, envVar: string, value: string) => {
     setSavingKey(envVar);
     try {
       const res = await fetch("/api/providers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save", provider, envVar, value: value.trim() }),
+        body: JSON.stringify({ action: "save", provider, envVar, value }),
       });
 
       if (res.ok) {
         toast.success(`Saved API key for ${provider}`);
-        setKeyInputs((prev) => ({ ...prev, [envVar]: "" }));
         await fetchData();
       } else {
         const data = await res.json();
@@ -372,7 +322,7 @@ export default function SettingsPage() {
     }
   };
 
-  const testKey = async (provider: string, envVar: string) => {
+  const testKey = async (provider: string, envVar: string, value?: string) => {
     setTestingKey(envVar);
     try {
       const res = await fetch("/api/providers", {
@@ -382,23 +332,26 @@ export default function SettingsPage() {
           action: "test",
           provider,
           envVar,
-          value: keyInputs[envVar] || undefined,
+          value: value || undefined,
         }),
       });
 
       const data = await res.json();
       setKeyTestStatus((prev) => ({ ...prev, [envVar]: data }));
       if (data.success) {
-        toast.success(`${provider} verification passed (${formatResponseTime(data.latency)})`);
+        toast.success(`${provider} verification passed`);
       } else {
         toast.error(data.error || `${provider} key validation failed`);
       }
+      return data;
     } catch {
+      const fail = { success: false, error: "Network error testing key" };
       setKeyTestStatus((prev) => ({
         ...prev,
-        [envVar]: { success: false, error: "Network error testing key" },
+        [envVar]: fail,
       }));
       toast.error("Network error testing key");
+      return fail;
     } finally {
       setTestingKey(null);
     }
@@ -416,7 +369,7 @@ export default function SettingsPage() {
       const data = await res.json();
       setTestResults((prev) => ({ ...prev, [modelId]: data }));
       if (data.success) {
-        toast.success(`${modelId}: ${formatResponseTime(data.latency)}`);
+        toast.success(`${modelId}: latency recorded`);
       } else {
         toast.error(`${modelId}: ${data.error || "Model test failed"}`);
       }
@@ -473,679 +426,103 @@ export default function SettingsPage() {
     }
   };
 
-  const handleCopyVaultPath = () => {
-    if (vaultStats?.vaultPath) {
-      navigator.clipboard.writeText(vaultStats.vaultPath);
-      setCopiedVaultPath(true);
-      toast.success("Vault directory path copied");
-      setTimeout(() => setCopiedVaultPath(false), 2000);
-    }
-  };
-
-  const tabs = [
-    { id: "providers", label: "Providers & API Keys", icon: Key },
-    { id: "models", label: "Available Models", icon: Zap },
-    { id: "mcp", label: "MCP Server Hub", icon: Cpu },
-    { id: "webhooks", label: "Webhooks & Simulator", icon: Radio },
-    { id: "vault", label: "Shared Memory Vault", icon: FolderOpen },
-    { id: "danger", label: "Diagnostics & Reset", icon: AlertTriangle },
-  ];
-
-  const filteredModels = models.filter((m) =>
-    m.id.toLowerCase().includes(modelSearch.toLowerCase())
-  );
-
-  const groupedModels = filteredModels.reduce<Record<string, ModelEntry[]>>((acc, m) => {
-    const group = m.owned_by || "Available Routes";
-    if (!acc[group]) acc[group] = [];
-    acc[group].push(m);
-    return acc;
-  }, {});
-
-  const sortedGroups = Object.keys(groupedModels).sort((a, b) => {
-    if (a === "Available Routes") return 1;
-    return a.localeCompare(b);
-  });
-
-  const toggleGroup = (group: string) => {
-    setCollapsedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]">
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-3">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="text-xs text-muted-foreground font-mono">Loading settings and fleet telemetry...</span>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-5 w-full">
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[11px] font-medium text-[#0075de] bg-[#e6f3fe] px-2.5 py-0.5 rounded-full border border-[#0075de]/20 inline-flex items-center gap-1.5">
-            <Key className="w-3 h-3 text-[#0075de]" />
-            Configuration Hub
-          </span>
-        </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Settings</h1>
-        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-          Manage model provider credentials and local Obsidian vault storage
-        </p>
-      </div>
+  const activeProvidersCount = providers.filter((p) => p.isSet).length;
+  const activeMcpCount = mcpServers.filter((s) => s.enabled).length;
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-1 p-0.5 rounded-lg bg-muted border border-border w-fit">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === tab.id
-                ? "bg-card text-foreground font-semibold"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <tab.icon className="w-3.5 h-3.5" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+  return (
+    <div className="space-y-6 w-full max-w-7xl mx-auto pb-12">
+      {/* Settings Modern Header with Tabs */}
+      <SettingsHeader
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        stats={{
+          activeProviders: activeProvidersCount,
+          totalProviders: providers.length,
+          modelsCount: models.length,
+          activeMcpServers: activeMcpCount,
+          vaultNotes: vaultStats?.noteCount ?? 0,
+          omnirouteOnline,
+        }}
+      />
 
       {/* Providers Tab */}
       {activeTab === "providers" && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
-          {/* Providers Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {providers.map((provider) => (
-              <div
-                key={provider.envVar}
-                className="rounded-xl border border-border bg-card p-5 space-y-3.5 shadow-sm"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full ${
-                        provider.isSet
-                          ? "bg-emerald-500 ring-2 ring-emerald-400/20"
-                          : "bg-muted-foreground/30"
-                      }`}
-                    />
-                    <div>
-                      <h3 className="text-sm font-semibold text-foreground">{provider.label}</h3>
-                      <p className="text-[10px] text-muted-foreground font-mono">
-                        {provider.envVar}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {keyTestStatus[provider.envVar] && (
-                      <span
-                        className={`text-[11px] flex items-center gap-1 font-medium ${
-                          keyTestStatus[provider.envVar].success
-                            ? "text-emerald-500"
-                            : "text-red-400"
-                        }`}
-                      >
-                        {keyTestStatus[provider.envVar].success ? (
-                          <CheckCircle className="w-3 h-3" />
-                        ) : (
-                          <XCircle className="w-3 h-3" />
-                        )}
-                        <span>
-                          {keyTestStatus[provider.envVar].success
-                            ? `Verified (${formatResponseTime(keyTestStatus[provider.envVar].latency)})`
-                            : "Invalid"}
-                        </span>
-                      </span>
-                    )}
-
-                    {provider.isSet && (
-                      <span className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-1 rounded-md border border-border flex items-center gap-1.5">
-                        <CheckCircle className="w-3 h-3 text-emerald-500" />
-                        {provider.masked}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showKeys[provider.envVar] ? "text" : "password"}
-                      placeholder={
-                        provider.isSet
-                          ? "Enter new key to replace existing..."
-                          : `Enter ${provider.label} API key...`
-                      }
-                      value={keyInputs[provider.envVar] || ""}
-                      onChange={(e) =>
-                        setKeyInputs((prev) => ({
-                          ...prev,
-                          [provider.envVar]: e.target.value,
-                        }))
-                      }
-                      className="w-full px-3 py-2 rounded-xl border border-border bg-secondary/50 text-xs font-mono text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowKeys((prev) => ({
-                          ...prev,
-                          [provider.envVar]: !prev[provider.envVar],
-                        }))
-                      }
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
-                    >
-                      {showKeys[provider.envVar] ? (
-                        <EyeOff className="w-3.5 h-3.5" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => saveKey(provider.provider, provider.envVar)}
-                    disabled={savingKey === provider.envVar || !keyInputs[provider.envVar]?.trim()}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold disabled:opacity-40 transition-all cursor-pointer shadow-sm"
-                  >
-                    {savingKey === provider.envVar ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    <span>Save</span>
-                  </button>
-
-                  <button
-                    onClick={() => testKey(provider.provider, provider.envVar)}
-                    disabled={testingKey === provider.envVar || (!provider.isSet && !keyInputs[provider.envVar]?.trim())}
-                    className="flex items-center gap-1 px-3 py-2 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-medium text-foreground disabled:opacity-40 transition-all cursor-pointer"
-                    title="Test key latency against provider endpoint"
-                  >
-                    {testingKey === provider.envVar ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <TestTube className="w-3.5 h-3.5" />
-                    )}
-                    <span className="hidden sm:inline">Test</span>
-                  </button>
-
-                  {provider.isSet && (
-                    <button
-                      onClick={() => deleteKey(provider.envVar)}
-                      disabled={deletingKey === provider.envVar}
-                      className="p-2 rounded-xl border border-border hover:border-red-500/40 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
-                      title="Delete saved key"
-                    >
-                      {deletingKey === provider.envVar ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+        <ProvidersTab
+          providers={providers}
+          onSaveKey={saveKey}
+          onDeleteKey={deleteKey}
+          onTestKey={testKey}
+          keyTestStatus={keyTestStatus}
+          savingKey={savingKey}
+          deletingKey={deletingKey}
+          testingKey={testingKey}
+        />
       )}
 
+      {/* Omnichannel & Devices Tab */}
+      {activeTab === "devices" && (
+        <DevicesTab agents={agents} />
+      )}
 
-
-      {/* Models Tab */}
+      {/* Models Directory Tab */}
       {activeTab === "models" && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                value={modelSearch}
-                onChange={(e) => setModelSearch(e.target.value)}
-                placeholder="Search models..."
-                className="w-full pl-8 pr-3 py-2 rounded-xl border border-border bg-card text-xs text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {filteredModels.length} models across {sortedGroups.length} categories
-              </span>
-              <button
-                onClick={handleRefreshModels}
-                disabled={refreshingModels}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs text-foreground cursor-pointer transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3 h-3 ${refreshingModels ? "animate-spin text-primary" : ""}`} />
-                <span>{refreshingModels ? "Refreshing..." : "Refresh"}</span>
-              </button>
-            </div>
-          </div>
-
-          {sortedGroups.length > 0 ? (
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              {sortedGroups.map((group) => {
-                const groupModels = groupedModels[group];
-                const isCollapsed = collapsedGroups[group];
-
-                return (
-                  <div key={group} className="rounded-xl border border-border bg-card overflow-hidden">
-                    <button
-                      onClick={() => toggleGroup(group)}
-                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/50 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        {isCollapsed ? (
-                          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                        )}
-                        <span className="text-xs font-semibold text-foreground capitalize">
-                          {group}
-                        </span>
-                        <span className="text-[10px] font-mono text-muted-foreground bg-secondary px-2 py-0.5 rounded-md">
-                          {groupModels.length}
-                        </span>
-                      </div>
-                    </button>
-
-                    <AnimatePresence>
-                      {!isCollapsed && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="border-t border-border divide-y divide-border">
-                            {groupModels.map((m, index) => (
-                              <div
-                                key={`${m.id}-${index}`}
-                                className="flex items-center justify-between px-4 py-2.5 hover:bg-muted/40 transition-colors gap-3"
-                              >
-                                <span className="text-xs font-mono text-muted-foreground truncate min-w-0 flex-1" title={m.id}>
-                                  {m.id}
-                                </span>
-
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {testResults[m.id] && (
-                                    <span
-                                      className={`text-[10px] flex items-center gap-1 font-medium ${
-                                        testResults[m.id].success
-                                          ? "text-emerald-500"
-                                          : "text-red-400"
-                                      }`}
-                                    >
-                                      {testResults[m.id].success ? (
-                                        <CheckCircle className="w-3 h-3" />
-                                      ) : (
-                                        <XCircle className="w-3 h-3" />
-                                      )}
-                                      <span>{formatResponseTime(testResults[m.id].latency)}</span>
-                                    </span>
-                                  )}
-
-                                  <button
-                                    onClick={() => testModel(m.id)}
-                                    disabled={testingModel === m.id}
-                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-xs disabled:opacity-50 transition-all text-muted-foreground hover:text-foreground cursor-pointer"
-                                  >
-                                    {testingModel === m.id ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <TestTube className="w-3 h-3" />
-                                    )}
-                                    <span>Test</span>
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground gap-2">
-              <Zap className="w-8 h-8 opacity-40" />
-              <p className="text-xs">No matching models found</p>
-            </div>
-          )}
-        </motion.div>
-      )}
-
-      {/* Shared Memory Vault Tab */}
-      {activeTab === "vault" && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
-          <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/15 text-primary border border-border flex items-center justify-center">
-                <FolderOpen className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-foreground">Obsidian Shared Memory Vault</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Single source of episodic memory and task deliverables synchronized across all autonomous agents
-                </p>
-              </div>
-            </div>
-
-            {/* Real Path Information Card */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground">Local Vault Directory</label>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 p-3 rounded-xl bg-secondary border border-border font-mono text-xs text-foreground select-all break-all">
-                  {vaultStats?.vaultPath || "C:\\Users\\rohan\\agent-studio\\memory"}
-                </div>
-                <button
-                  onClick={handleCopyVaultPath}
-                  className="flex items-center gap-1.5 px-3.5 py-3 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-medium text-foreground transition-all cursor-pointer"
-                  title="Copy directory path"
-                >
-                  {copiedVaultPath ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                  <span className="hidden sm:inline">{copiedVaultPath ? "Copied" : "Copy"}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Vault Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              <div className="p-3.5 rounded-xl border border-border bg-secondary/40 space-y-1">
-                <span className="text-[10.5px] uppercase tracking-wider font-semibold text-muted-foreground">Total Markdown Notes</span>
-                <p className="text-lg font-bold font-mono text-foreground">{vaultStats?.noteCount ?? 0}</p>
-              </div>
-              <div className="p-3.5 rounded-xl border border-border bg-secondary/40 space-y-1">
-                <span className="text-[10.5px] uppercase tracking-wider font-semibold text-muted-foreground">Bi-directional Links</span>
-                <p className="text-lg font-bold font-mono text-foreground">{vaultStats?.graphStats?.edges ?? 0}</p>
-              </div>
-              <div className="p-3.5 rounded-xl border border-border bg-secondary/40 space-y-1">
-                <span className="text-[10.5px] uppercase tracking-wider font-semibold text-muted-foreground">Context Clusters</span>
-                <p className="text-lg font-bold font-mono text-foreground">{vaultStats?.graphStats?.communities ?? 0}</p>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-border">
-              <button
-                onClick={handleOpenObsidian}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-sm transition-all cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open in Obsidian Desktop</span>
-              </button>
-
-              <button
-                onClick={handleSyncVault}
-                disabled={syncingVault}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-medium text-foreground transition-all cursor-pointer"
-              >
-                {syncingVault ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                <span>Synchronize & Verify Vault</span>
-              </button>
-            </div>
-          </div>
-        </motion.div>
+        <ModelsTab
+          models={models}
+          omnirouteOnline={omnirouteOnline}
+          onRefreshModels={handleRefreshModels}
+          refreshingModels={refreshingModels}
+          onTestModel={testModel}
+          testingModel={testingModel}
+          testResults={testResults}
+        />
       )}
 
       {/* MCP Server Hub Tab */}
       {activeTab === "mcp" && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-5"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-semibold text-foreground">Model Context Protocol (MCP) Hub</h3>
-              <p className="text-xs text-muted-foreground">
-                Connect external tool servers, resources, and filesystem sandboxes for your agent fleet
-              </p>
-            </div>
-
-            <button
-              onClick={() => setShowAddMcpModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-xs transition cursor-pointer w-fit"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add MCP Server</span>
-            </button>
-          </div>
-
-          {loadingMcp ? (
-            <div className="p-12 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-              <span>Discovering MCP services...</span>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {mcpServers.map((server) => (
-                <div
-                  key={server.id}
-                  className="p-4 rounded-xl border border-border bg-card shadow-xs flex flex-col justify-between space-y-3"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 rounded-lg bg-secondary text-foreground">
-                          <Server className="w-4 h-4 text-primary" />
-                        </div>
-                        <h4 className="text-sm font-semibold text-foreground">{server.name}</h4>
-                      </div>
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
-                          server.enabled
-                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                            : "bg-secondary text-muted-foreground border-border"
-                        }`}
-                      >
-                        {server.enabled ? "Active" : "Disabled"}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                      {server.description || "Model Context Protocol provider"}
-                    </p>
-
-                    <div className="pt-1 flex items-center gap-2 text-[10.5px] font-mono text-muted-foreground">
-                      <span className="px-1.5 py-0.5 rounded bg-secondary border border-border">
-                        {server.transport}
-                      </span>
-                      {server.command && (
-                        <span className="truncate max-w-[150px]">{server.command} {server.args?.join(" ")}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => handleTestMcp(server.id)}
-                      disabled={testingMcpId === server.id}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-secondary hover:bg-secondary/80 text-foreground transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                      {testingMcpId === server.id && <Loader2 className="w-3 h-3 animate-spin" />}
-                      <span>Ping</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleToggleMcp(server.id)}
-                      disabled={togglingMcpId === server.id}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                        server.enabled
-                          ? "bg-secondary hover:bg-muted text-foreground border border-border"
-                          : "bg-primary text-primary-foreground hover:bg-primary/90"
-                      }`}
-                    >
-                      {server.enabled ? "Disable" : "Enable"}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Add MCP Server Modal */}
-          {showAddMcpModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-              <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <h3 className="text-sm font-bold text-foreground">Add Custom MCP Server</h3>
-                  <button
-                    onClick={() => setShowAddMcpModal(false)}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleAddMcpServer} className="space-y-3 text-xs">
-                  <div>
-                    <label className="text-[11px] text-muted-foreground block mb-1">Server Name</label>
-                    <input
-                      type="text"
-                      value={newMcpName}
-                      onChange={(e) => setNewMcpName(e.target.value)}
-                      placeholder="e.g. SQLite Inspector or Linear API"
-                      className="w-full p-2 rounded-lg border border-border bg-background text-foreground"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-muted-foreground block mb-1">Description</label>
-                    <input
-                      type="text"
-                      value={newMcpDesc}
-                      onChange={(e) => setNewMcpDesc(e.target.value)}
-                      placeholder="What tools does this server provide?"
-                      className="w-full p-2 rounded-lg border border-border bg-background text-foreground"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-muted-foreground block mb-1">Transport</label>
-                    <select
-                      value={newMcpTransport}
-                      onChange={(e: any) => setNewMcpTransport(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-border bg-background text-foreground"
-                    >
-                      <option value="stdio">stdio (Local Process)</option>
-                      <option value="sse">sse (Server-Sent Events / Remote URL)</option>
-                    </select>
-                  </div>
-
-                  {newMcpTransport === "stdio" ? (
-                    <>
-                      <div>
-                        <label className="text-[11px] text-muted-foreground block mb-1">Command</label>
-                        <input
-                          type="text"
-                          value={newMcpCommand}
-                          onChange={(e) => setNewMcpCommand(e.target.value)}
-                          placeholder="npx or node"
-                          className="w-full p-2 rounded-lg border border-border bg-background text-foreground font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-muted-foreground block mb-1">Arguments (space separated)</label>
-                        <input
-                          type="text"
-                          value={newMcpArgs}
-                          onChange={(e) => setNewMcpArgs(e.target.value)}
-                          placeholder="-y @modelcontextprotocol/server-sqlite --db ./data.db"
-                          className="w-full p-2 rounded-lg border border-border bg-background text-foreground font-mono"
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    <div>
-                      <label className="text-[11px] text-muted-foreground block mb-1">SSE URL</label>
-                      <input
-                        type="text"
-                        value={newMcpUrl}
-                        onChange={(e) => setNewMcpUrl(e.target.value)}
-                        placeholder="https://mcp.internal.company.com/sse"
-                        className="w-full p-2 rounded-lg border border-border bg-background text-foreground font-mono"
-                      />
-                    </div>
-                  )}
-
-                  <div className="pt-2 flex justify-end gap-2 border-t border-border">
-                    <button
-                      type="button"
-                      onClick={() => setShowAddMcpModal(false)}
-                      className="px-3 py-1.5 rounded-lg border border-border bg-secondary text-foreground"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold"
-                    >
-                      Register Server
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </motion.div>
+        <MCPTab
+          servers={mcpServers}
+          loading={loadingMcp}
+          onToggleServer={handleToggleMcp}
+          onTestServer={handleTestMcp}
+          onAddServer={handleAddMcpServer}
+          onDeleteServer={handleDeleteMcpServer}
+          testingMcpId={testingMcpId}
+          togglingMcpId={togglingMcpId}
+        />
       )}
 
-      {/* Webhooks & Simulator Tab */}
+      {/* Shared Memory Vault Tab */}
+      {activeTab === "vault" && (
+        <VaultTab
+          vaultStats={vaultStats}
+          onSyncVault={handleSyncVault}
+          onOpenObsidian={handleOpenObsidian}
+          syncingVault={syncingVault}
+        />
+      )}
+
+      {/* Webhooks & Event Simulator Tab */}
       {activeTab === "webhooks" && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
+        <div className="space-y-4">
           <WebhookSimulator agents={agents as any} />
-        </motion.div>
+        </div>
       )}
 
-      {/* Diagnostics & Reset Tab */}
+      {/* Diagnostics & Concurrency Health Tab */}
       {activeTab === "danger" && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
-        >
-          <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-sm">
-            <h3 className="text-sm font-semibold text-foreground">System Cache & Diagnostic Reset</h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              If your agent fleet encounters runtime session cache desynchronization, you can refresh active state and reload provider latency pools safely without losing persistent Obsidian vault notes.
-            </p>
-
-            <div className="pt-2">
-              <button
-                onClick={() => {
-                  fetchData();
-                  toast.success("Runtime session refreshed and provider latency cache purged.");
-                }}
-                className="px-4 py-2 rounded-xl bg-secondary hover:bg-secondary/80 border border-border text-xs font-semibold text-foreground transition-all cursor-pointer"
-              >
-                Refresh Runtime Cache
-              </button>
-            </div>
-          </div>
-        </motion.div>
+        <DiagnosticsTab
+          onRefreshData={fetchData}
+          omnirouteOnline={omnirouteOnline}
+        />
       )}
     </div>
   );

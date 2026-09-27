@@ -1,8 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Info, AlertTriangle, Lightbulb } from "lucide-react";
 
 interface MarkdownRendererProps {
   content: string;
@@ -10,16 +10,106 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
+/** Sleek, glassmorphic code block with copy button and language badge */
+function CodeBlockView({ code, language }: { code: string; language?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const displayLang = language?.trim() || "code";
+
+  return (
+    <div className="my-2.5 overflow-hidden rounded-xl border border-border/80 bg-zinc-950/95 dark:bg-zinc-950 text-zinc-100 shadow-md">
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-zinc-900/90 border-b border-white/5 text-[11px] font-mono text-zinc-400">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-rose-500/70 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-amber-500/70 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-emerald-500/70 inline-block" />
+          </div>
+          <span className="ml-1 text-[10.5px] uppercase tracking-wider text-zinc-400 font-semibold">{displayLang}</span>
+        </div>
+        <button
+          onClick={handleCopy}
+          type="button"
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] hover:bg-white/10 text-zinc-400 hover:text-white transition-all active:scale-95 cursor-pointer"
+          title="Copy code to clipboard"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3 h-3 text-emerald-400" />
+              <span className="text-emerald-400 font-medium">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <div className="p-3.5 overflow-x-auto text-[11.5px] font-mono leading-relaxed text-zinc-200">
+        <pre className="m-0 font-mono">
+          <code>{code}</code>
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+/** Callout block for blockquotes with [!NOTE], [!TIP], [!WARNING], etc. */
+function CalloutBlock({ type, content, isUser }: { type: string; content: string; isUser: boolean }) {
+  const isTip = type === "TIP";
+  const isWarning = type === "WARNING" || type === "CAUTION";
+
+  return (
+    <div
+      className={`my-2.5 p-3 rounded-xl border text-xs leading-relaxed ${
+        isUser
+          ? "border-white/20 bg-white/10 text-white"
+          : isTip
+          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-950 dark:text-emerald-200"
+          : isWarning
+          ? "border-amber-500/30 bg-amber-500/10 text-amber-950 dark:text-amber-200"
+          : "border-primary/30 bg-primary/10 text-foreground"
+      }`}
+    >
+      <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10.5px] mb-1 opacity-90">
+        {isTip ? (
+          <Lightbulb className="w-3.5 h-3.5 text-emerald-500" />
+        ) : isWarning ? (
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+        ) : (
+          <Info className="w-3.5 h-3.5 text-primary" />
+        )}
+        <span>{type}</span>
+      </div>
+      <div>{renderInlineFormatting(content, isUser)}</div>
+    </div>
+  );
+}
+
 /**
  * High-performance, zero-dependency Markdown Renderer for Chat Studio.
  * Formats raw markdown headers, bold, italics, lists, tables, blockquotes,
- * inline code, and Obsidian [[wiki-links]] into beautiful, human-readable typography.
+ * code blocks, inline code, links, and Obsidian [[wiki-links]] into beautiful typography.
+ * Strips unsightly dividers ("---") and YAML frontmatter.
  */
 export function MarkdownRenderer({ content, isUser = false, className }: MarkdownRendererProps) {
   if (!content) return null;
 
-  // Split content into blocks (paragraphs, headers, tables, lists, quotes)
-  const lines = content.split(/\r?\n/);
+  // 1. Strip leading YAML frontmatter if present (e.g., Obsidian notes / task files)
+  let cleanContent = content;
+  if (cleanContent.startsWith("---")) {
+    cleanContent = cleanContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  }
+
+  // Split content into blocks (paragraphs, headers, tables, lists, quotes, code)
+  const lines = cleanContent.split(/\r?\n/);
   const elements: React.ReactNode[] = [];
 
   let i = 0;
@@ -29,12 +119,41 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
 
     // 1. Empty lines
     if (!trimmed) {
-      elements.push(<div key={`empty-${i}`} className="h-2" />);
+      elements.push(<div key={`empty-${i}`} className="h-1.5" />);
       i++;
       continue;
     }
 
-    // 2. Markdown Tables
+    // 2. Filter out raw divider lines ('---', '***', '___', or repetitive dashes/underscores)
+    // This removes literal "---" that agents often output, keeping formatting clean and uncluttered.
+    if (/^([-*_])\1{2,}$/.test(trimmed)) {
+      i++;
+      continue;
+    }
+
+    // 3. Fenced Code Blocks (```language ... ```)
+    if (trimmed.startsWith("```")) {
+      const language = trimmed.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length && lines[i].trim().startsWith("```")) {
+        i++; // skip closing ```
+      }
+      elements.push(
+        <CodeBlockView
+          key={`codeblock-${i}`}
+          code={codeLines.join("\n")}
+          language={language}
+        />
+      );
+      continue;
+    }
+
+    // 4. Markdown Tables
     if (trimmed.startsWith("|") && trimmed.endsWith("|") && i + 1 < lines.length && lines[i + 1].trim().startsWith("|") && lines[i + 1].includes("---")) {
       const tableLines: string[] = [];
       while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
@@ -97,7 +216,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
       }
     }
 
-    // 3. Headers
+    // 5. Headers
     if (trimmed.startsWith("#### ")) {
       elements.push(
         <h4 key={`h4-${i}`} className={`text-xs font-bold mt-2.5 mb-1 tracking-tight ${isUser ? "text-white" : "text-foreground"}`}>
@@ -109,8 +228,8 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
     }
     if (trimmed.startsWith("### ")) {
       elements.push(
-        <h3 key={`h3-${i}`} className={`text-sm font-bold mt-3 mb-1 tracking-tight flex items-center gap-1.5 ${isUser ? "text-white" : "text-foreground"}`}>
-          <span className={`w-1.5 h-1.5 rounded-md ${isUser ? "bg-white" : "bg-primary"}`} />
+        <h3 key={`h3-${i}`} className={`text-xs font-bold mt-3 mb-1 tracking-tight flex items-center gap-1.5 ${isUser ? "text-white" : "text-foreground"}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${isUser ? "bg-white" : "bg-primary"}`} />
           <span>{renderInlineFormatting(trimmed.slice(4), isUser)}</span>
         </h3>
       );
@@ -119,8 +238,9 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
     }
     if (trimmed.startsWith("## ")) {
       elements.push(
-        <h2 key={`h2-${i}`} className={`text-sm font-bold mt-3.5 mb-1.5 pb-1 border-b tracking-tight ${isUser ? "text-white border-white/20" : "text-foreground border-border"}`}>
-          {renderInlineFormatting(trimmed.slice(3), isUser)}
+        <h2 key={`h2-${i}`} className={`text-sm font-bold mt-3.5 mb-1.5 tracking-tight flex items-center gap-2 ${isUser ? "text-white" : "text-foreground"}`}>
+          <span className={`w-2 h-2 rounded-full ${isUser ? "bg-white" : "bg-primary/90"}`} />
+          <span>{renderInlineFormatting(trimmed.slice(3), isUser)}</span>
         </h2>
       );
       i++;
@@ -128,7 +248,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
     }
     if (trimmed.startsWith("# ")) {
       elements.push(
-        <h1 key={`h1-${i}`} className={`text-base font-extrabold mt-4 mb-2 pb-1.5 border-b tracking-tight ${isUser ? "text-white border-white/20" : "text-foreground border-border"}`}>
+        <h1 key={`h1-${i}`} className={`text-base font-extrabold mt-4 mb-2 pb-1 tracking-tight ${isUser ? "text-white" : "text-foreground"}`}>
           {renderInlineFormatting(trimmed.slice(2), isUser)}
         </h1>
       );
@@ -136,25 +256,45 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
       continue;
     }
 
-    // 4. Blockquotes
+    // 6. Blockquotes & Callouts
     if (trimmed.startsWith("> ")) {
-      elements.push(
-        <blockquote
-          key={`quote-${i}`}
-          className={`border-l-2 px-3 py-1.5 my-2 rounded-r-lg italic text-xs leading-relaxed ${
-            isUser
-              ? "border-white/40 bg-white/10 text-white/90"
-              : "border-primary bg-primary/5 text-muted-foreground"
-          }`}
-        >
-          {renderInlineFormatting(trimmed.slice(2), isUser)}
-        </blockquote>
-      );
-      i++;
+      const quoteLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith(">")) {
+        quoteLines.push(lines[i].trim().replace(/^>\s?/, ""));
+        i++;
+      }
+      const quoteText = quoteLines.join("\n");
+      const calloutMatch = quoteText.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*([\s\S]*)$/i);
+
+      if (calloutMatch) {
+        const type = calloutMatch[1].toUpperCase();
+        const calloutBody = calloutMatch[2].trim();
+        elements.push(
+          <CalloutBlock
+            key={`callout-${i}`}
+            type={type}
+            content={calloutBody}
+            isUser={isUser}
+          />
+        );
+      } else {
+        elements.push(
+          <blockquote
+            key={`quote-${i}`}
+            className={`border-l-2 pl-3 py-1.5 my-2 rounded-r-lg italic text-xs leading-relaxed ${
+              isUser
+                ? "border-white/40 bg-white/10 text-white/90"
+                : "border-primary/70 bg-primary/5 text-muted-foreground"
+            }`}
+          >
+            {renderInlineFormatting(quoteText, isUser)}
+          </blockquote>
+        );
+      }
       continue;
     }
 
-    // 5. Bullet Lists (- or * or •)
+    // 7. Bullet Lists (- or * or •)
     if (/^[-*•]\s+/.test(trimmed)) {
       const listItems: string[] = [];
       while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
@@ -165,7 +305,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
         <ul key={`ul-${i}`} className="my-1.5 space-y-1 pl-1">
           {listItems.map((item, lIdx) => (
             <li key={lIdx} className={`flex items-start gap-2 text-xs leading-relaxed ${isUser ? "text-white" : "text-foreground"}`}>
-              <span className={`w-1.5 h-1.5 rounded-md mt-1.5 shrink-0 ${isUser ? "bg-white/80" : "bg-primary/80"}`} />
+              <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isUser ? "bg-white/80" : "bg-primary/80"}`} />
               <span className="flex-1">{renderInlineFormatting(item, isUser)}</span>
             </li>
           ))}
@@ -174,7 +314,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
       continue;
     }
 
-    // 6. Numbered Lists (1. 2. 3.)
+    // 8. Numbered Lists (1. 2. 3.)
     if (/^\d+\.\s+/.test(trimmed)) {
       const listItems: string[] = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
@@ -196,7 +336,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
       continue;
     }
 
-    // 7. Standard Paragraph
+    // 9. Standard Paragraph
     elements.push(
       <p key={`p-${i}`} className={`my-1 text-xs leading-relaxed ${isUser ? "text-white" : "text-foreground"}`}>
         {renderInlineFormatting(trimmed, isUser)}
@@ -210,17 +350,18 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
 
 /**
  * Parse inline Markdown: bold (**text**), italics (*text*), inline code (`code`),
- * and Obsidian wiki-links ([[note]]).
+ * links ([text](url)), and Obsidian wiki-links ([[note]]).
  */
 function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
   if (!text) return null;
 
   // Regex pattern matching:
   // 1) Wiki links: [[Note Title]]
-  // 2) Inline code: `code`
-  // 3) Bold: **bold**
-  // 4) Italics: *italic* or _italic_
-  const tokenRegex = /(\[\[.*?\]\]|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g;
+  // 2) Standard links: [Label](url)
+  // 3) Inline code: `code`
+  // 4) Bold: **bold**
+  // 5) Italics: *italic* or _italic_
+  const tokenRegex = /(\[\[.*?\]\]|\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g;
 
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
@@ -251,6 +392,46 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
           <span>{noteTitle}</span>
         </Link>
       );
+    } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
+      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        const [, label, url] = linkMatch;
+        const isInternal = url.startsWith("/") || url.startsWith("#");
+        if (isInternal) {
+          parts.push(
+            <Link
+              key={key}
+              href={url}
+              className={
+                isUser
+                  ? "font-semibold underline underline-offset-2 text-white hover:text-white/80 transition-colors"
+                  : "font-semibold text-primary underline underline-offset-2 hover:text-primary/80 transition-colors"
+              }
+            >
+              {label}
+            </Link>
+          );
+        } else {
+          parts.push(
+            <a
+              key={key}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={
+                isUser
+                  ? "font-semibold underline underline-offset-2 text-white hover:text-white/80 transition-colors inline-flex items-center gap-0.5"
+                  : "font-semibold text-primary underline underline-offset-2 hover:text-primary/80 transition-colors inline-flex items-center gap-0.5"
+              }
+            >
+              <span>{label}</span>
+              <ExternalLink className="w-2.5 h-2.5 inline opacity-70" />
+            </a>
+          );
+        }
+      } else {
+        parts.push(token);
+      }
     } else if (token.startsWith("`") && token.endsWith("`")) {
       const codeText = token.slice(1, -1);
       parts.push(

@@ -21,6 +21,7 @@ import {
   FileText,
   CheckSquare,
   Layers,
+  Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { TaskItem, SubtaskItem } from "@/types";
@@ -34,6 +35,8 @@ interface TaskDrawerProps {
   onSwarmTask?: (task: TaskItem) => void;
   onReflectTask?: (task: TaskItem, feedback: string) => void;
   onApproveTask: (task: TaskItem) => void;
+  onReviseTask?: (task: TaskItem, feedback: string) => Promise<void> | void;
+  onRejectTask?: (task: TaskItem, reason: string) => Promise<void> | void;
   onDeconstructTask: (task: TaskItem) => void;
   onDeleteTask: (id: string) => void;
   onUpdateStatus: (id: string, status: string) => void;
@@ -42,6 +45,7 @@ interface TaskDrawerProps {
   isSwarming?: boolean;
   isReflecting?: boolean;
   isDeconstructing?: boolean;
+  isRevising?: boolean;
 }
 
 export function TaskDrawer({
@@ -51,6 +55,8 @@ export function TaskDrawer({
   onSwarmTask,
   onReflectTask,
   onApproveTask,
+  onReviseTask,
+  onRejectTask,
   onDeconstructTask,
   onDeleteTask,
   onUpdateStatus,
@@ -59,10 +65,16 @@ export function TaskDrawer({
   isSwarming = false,
   isReflecting = false,
   isDeconstructing = false,
+  isRevising = false,
 }: TaskDrawerProps) {
   const [copiedResult, setCopiedResult] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [critiqueInput, setCritiqueInput] = useState("");
+  const [showRevisionForm, setShowRevisionForm] = useState(false);
+  const [revisionFeedback, setRevisionFeedback] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   // Close on Escape key press
   useEffect(() => {
@@ -358,17 +370,151 @@ export function TaskDrawer({
                 </h5>
 
                 {task.status === "review" && (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
+                    {/* Primary Approval Button */}
                     <button
                       type="button"
                       onClick={() => onApproveTask(task)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-500/20 transition cursor-pointer"
+                      disabled={submittingReview || isRunning}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-500/20 transition cursor-pointer disabled:opacity-50"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       <span>Approve & Move to Done</span>
                     </button>
 
+                    {/* Secondary Review Actions: Request Revision & Reject */}
                     <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRevisionForm((prev) => !prev);
+                          setShowRejectForm(false);
+                        }}
+                        className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          showRevisionForm
+                            ? "bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                            : "border-border bg-secondary hover:bg-secondary/80 text-foreground"
+                        }`}
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span>Request Revision</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRejectForm((prev) => !prev);
+                          setShowRevisionForm(false);
+                        }}
+                        className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          showRejectForm
+                            ? "bg-red-500/20 border-red-500/40 text-red-700 dark:text-red-300"
+                            : "border-border bg-secondary hover:bg-secondary/80 text-foreground"
+                        }`}
+                      >
+                        <X className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                        <span>Reject Deliverable</span>
+                      </button>
+                    </div>
+
+                    {/* Revision Form */}
+                    {showRevisionForm && (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 animate-fadeIn">
+                        <label className="text-[11px] font-bold text-amber-800 dark:text-amber-300 block">
+                          Reviewer Critique & Feedback:
+                        </label>
+                        <textarea
+                          value={revisionFeedback}
+                          onChange={(e) => setRevisionFeedback(e.target.value)}
+                          placeholder="Specify changes needed (e.g. 'Add unit test cases', 'Shorten executive summary')..."
+                          rows={3}
+                          className="w-full text-xs p-2 rounded-lg bg-background border border-border focus:ring-1 focus:ring-amber-500 focus:outline-none resize-none"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowRevisionForm(false)}
+                            className="px-2.5 py-1 text-xs rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!revisionFeedback.trim() || submittingReview || isRevising}
+                            onClick={async () => {
+                              if (!revisionFeedback.trim()) return;
+                              setSubmittingReview(true);
+                              try {
+                                if (onReviseTask) {
+                                  await onReviseTask(task, revisionFeedback.trim());
+                                  setShowRevisionForm(false);
+                                  setRevisionFeedback("");
+                                }
+                              } finally {
+                                setSubmittingReview(false);
+                              }
+                            }}
+                            className="px-3 py-1 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                          >
+                            {submittingReview || isRevising ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3" />
+                            )}
+                            <span>Submit to Agent</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reject Form */}
+                    {showRejectForm && (
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 space-y-2 animate-fadeIn">
+                        <label className="text-[11px] font-bold text-red-800 dark:text-red-300 block">
+                          Reason for Rejection:
+                        </label>
+                        <input
+                          type="text"
+                          value={rejectReason}
+                          onChange={(e) => setRejectReason(e.target.value)}
+                          placeholder="Reason (e.g. Scope changed, off-target)..."
+                          className="w-full text-xs p-2 rounded-lg bg-background border border-border focus:ring-1 focus:ring-red-500 focus:outline-none"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowRejectForm(false)}
+                            className="px-2.5 py-1 text-xs rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!rejectReason.trim() || submittingReview}
+                            onClick={async () => {
+                              if (!rejectReason.trim()) return;
+                              setSubmittingReview(true);
+                              try {
+                                if (onRejectTask) {
+                                  await onRejectTask(task, rejectReason.trim());
+                                  setShowRejectForm(false);
+                                  setRejectReason("");
+                                }
+                              } finally {
+                                setSubmittingReview(false);
+                              }
+                            }}
+                            className="px-3 py-1 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-500 text-white flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Return to Backlog</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Re-run and Swarm Options */}
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
                       <button
                         type="button"
                         onClick={() => onRunTask(task)}

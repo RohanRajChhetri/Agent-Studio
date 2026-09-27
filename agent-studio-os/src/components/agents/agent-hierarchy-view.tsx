@@ -25,6 +25,7 @@ import {
   GripVertical,
   ArrowUpCircle,
   Trash2,
+  CornerDownRight,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -322,6 +323,34 @@ export function AgentHierarchyView({
     [searchQuery, selectedDept]
   );
 
+  // Check if an agent or any of its descendants matches search & department
+  const hasMatchingDescendant = useCallback(
+    (agentId: string): boolean => {
+      const children = childrenMap.get(agentId) || [];
+      for (const child of children) {
+        if (isAgentMatched(child) || hasMatchingDescendant(child.id)) {
+          return true;
+        }
+      }
+      return false;
+    },
+    [childrenMap, isAgentMatched]
+  );
+
+  const expandAllBranches = () => {
+    setCollapsedBranches({});
+  };
+
+  const collapseAllBranches = () => {
+    const collapsed: Record<string, boolean> = {};
+    localAgents.forEach((a) => {
+      if ((childrenMap.get(a.id) || []).length > 0) {
+        collapsed[a.id] = true;
+      }
+    });
+    setCollapsedBranches(collapsed);
+  };
+
   // Pan interaction handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (
@@ -373,9 +402,9 @@ export function AgentHierarchyView({
           </p>
         </div>
 
-        {/* View Switcher & Graph Controls */}
+        {/* View Switcher & Graph/Tree Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {viewMode === "graph" && (
+          {viewMode === "graph" ? (
             <div className="flex items-center gap-1 bg-secondary/50 p-1 rounded-lg border border-border text-xs">
               <button
                 type="button"
@@ -401,6 +430,23 @@ export function AgentHierarchyView({
               >
                 <RotateCcw className="w-3 h-3" />
                 <span>{Math.round(zoom * 100)}%</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs">
+              <button
+                type="button"
+                onClick={expandAllBranches}
+                className="px-2.5 py-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition cursor-pointer"
+              >
+                Expand All
+              </button>
+              <button
+                type="button"
+                onClick={collapseAllBranches}
+                className="px-2.5 py-1 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition cursor-pointer"
+              >
+                Collapse All
               </button>
             </div>
           )}
@@ -750,115 +796,272 @@ export function AgentHierarchyView({
           </div>
         </div>
       ) : (
-        /* Alternative Tree List Mode */
+        /* Alternative Interactive Tree List Mode */
         <div className="space-y-3">
-          {rootNodes.map((root) => {
-            const children = childrenMap.get(root.id) || [];
-            const isMatched = isAgentMatched(root);
+          {rootNodes.filter((r) => isAgentMatched(r) || hasMatchingDescendant(r.id)).length === 0 ? (
+            <div className="p-12 text-center text-muted-foreground bg-card rounded-2xl border border-border space-y-2">
+              <GitBranch className="w-8 h-8 mx-auto opacity-30 text-muted-foreground" />
+              <p className="text-sm font-semibold text-foreground">No agents match your filter</p>
+              <p className="text-xs text-muted-foreground">Try clearing your search query or department filter.</p>
+            </div>
+          ) : (
+            rootNodes
+              .filter((r) => isAgentMatched(r) || hasMatchingDescendant(r.id))
+              .map((root) => (
+                <RecursiveTreeNode
+                  key={root.id}
+                  agent={root}
+                  level={0}
+                  childrenMap={childrenMap}
+                  agentMap={agentMap}
+                  collapsedBranches={collapsedBranches}
+                  toggleBranch={toggleBranch}
+                  isAgentMatched={isAgentMatched}
+                  hasMatchingDescendant={hasMatchingDescendant}
+                  searchQuery={searchQuery}
+                  selectedDept={selectedDept}
+                  onOpenHermes={onOpenHermes}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onReassignManager={handleReassignManager}
+                  allAgents={localAgents}
+                  isDescendant={isDescendant}
+                />
+              ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-            return (
-              <div
-                key={root.id}
-                className="p-3.5 rounded-xl border border-border bg-card space-y-2 shadow-xs"
+// Recursive Tree Row Component for arbitrary depth hierarchy navigation
+function RecursiveTreeNode({
+  agent,
+  level,
+  childrenMap,
+  agentMap,
+  collapsedBranches,
+  toggleBranch,
+  isAgentMatched,
+  hasMatchingDescendant,
+  searchQuery,
+  selectedDept,
+  onOpenHermes,
+  onEdit,
+  onDelete,
+  onReassignManager,
+  allAgents,
+  isDescendant,
+}: {
+  agent: AgentProfile;
+  level: number;
+  childrenMap: Map<string, AgentProfile[]>;
+  agentMap: Map<string, AgentProfile>;
+  collapsedBranches: Record<string, boolean>;
+  toggleBranch: (id: string, e?: React.MouseEvent) => void;
+  isAgentMatched: (agent: AgentProfile) => boolean;
+  hasMatchingDescendant: (agentId: string) => boolean;
+  searchQuery: string;
+  selectedDept: string;
+  onOpenHermes: (agent: AgentProfile) => void;
+  onEdit?: (agent: AgentProfile) => void;
+  onDelete?: (agent: AgentProfile) => void;
+  onReassignManager: (draggedId: string, newManagerId: string | null) => Promise<void>;
+  allAgents: AgentProfile[];
+  isDescendant: (parentId: string, targetChildId: string) => boolean;
+}) {
+  const children = childrenMap.get(agent.id) || [];
+  const childrenCount = children.length;
+
+  const isMatched = isAgentMatched(agent);
+  const hasMatchBelow = hasMatchingDescendant(agent.id);
+  const isFilterActive = Boolean(searchQuery.trim() || (selectedDept && selectedDept !== "all"));
+
+  if (isFilterActive && !isMatched && !hasMatchBelow) {
+    return null;
+  }
+
+  // Force expand when search query is active and children match
+  const forceExpanded = searchQuery.trim().length > 0 && hasMatchBelow;
+  const isCollapsed = !forceExpanded && Boolean(collapsedBranches[agent.id]);
+
+  const roleKey = agent.role || "specialist";
+  const roleMeta = ROLE_CONFIG[roleKey] || ROLE_CONFIG.specialist;
+  const RoleIcon = roleMeta.icon;
+  const manager = agent.reportsToId ? agentMap.get(agent.reportsToId) : null;
+
+  // Eligible potential managers (excluding self and any descendants)
+  const candidateManagers = allAgents.filter(
+    (a) => a.id !== agent.id && !isDescendant(agent.id, a.id)
+  );
+
+  return (
+    <div className={`space-y-2 ${level > 0 ? "pt-1" : ""}`}>
+      <div
+        className={`p-3 sm:p-3.5 rounded-xl border transition-all ${
+          isMatched && isFilterActive
+            ? "border-primary bg-primary/5 shadow-xs ring-1 ring-primary/20"
+            : "border-border bg-card hover:border-border/90 shadow-xs"
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Left: Avatar + Details */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            {childrenCount > 0 ? (
+              <button
+                type="button"
+                onClick={(e) => toggleBranch(agent.id, e)}
+                className="p-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer shrink-0"
+                title={isCollapsed ? "Expand branch" : "Collapse branch"}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-base shrink-0">
-                      {root.avatar || "🤖"}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-xs text-foreground">
-                          {root.displayName}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#e6f3fe] text-[#0075de] font-medium border border-[#0075de]/20">
-                          {root.role}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground truncate max-w-md">
-                        {root.description || root.department}
-                      </p>
-                    </div>
-                  </div>
+                {isCollapsed ? (
+                  <ChevronRight className="w-4 h-4 text-primary" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+            ) : (
+              <div className="w-6 shrink-0 flex items-center justify-center">
+                {level > 0 && <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground/40" />}
+              </div>
+            )}
 
-                  <div className="flex items-center gap-1.5">
-                    <Link
-                      href={`/chat?agentId=${root.id}`}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-secondary text-foreground hover:bg-secondary/80 border border-border flex items-center gap-1"
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      <span>Chat</span>
-                    </Link>
-                    {onEdit && (
-                      <button
-                        type="button"
-                        onClick={() => onEdit(root)}
-                        className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
-                        title="Edit agent"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                    )}
-                    {onDelete && (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(root)}
-                        className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition cursor-pointer"
-                        title="Delete agent"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
+            <span className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-base shrink-0 border border-border">
+              {agent.avatar || "🤖"}
+            </span>
 
-                {children.length > 0 && (
-                  <div className="pl-6 border-l-2 border-border/70 ml-4 space-y-2 pt-1">
-                    {children.map((child) => (
-                      <div
-                        key={child.id}
-                        className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 border border-border/60 text-xs"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span>{child.avatar || "🤖"}</span>
-                          <span className="font-medium text-foreground">{child.displayName}</span>
-                          <span className="text-[10px] text-muted-foreground">({child.role})</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Link
-                            href={`/chat?agentId=${child.id}`}
-                            className="text-xs text-[#0075de] hover:underline"
-                          >
-                            Chat &rarr;
-                          </Link>
-                          {onEdit && (
-                            <button
-                              type="button"
-                              onClick={() => onEdit(child)}
-                              className="text-muted-foreground hover:text-foreground p-0.5 transition cursor-pointer"
-                              title="Edit agent"
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                          )}
-                          {onDelete && (
-                            <button
-                              type="button"
-                              onClick={() => onDelete(child)}
-                              className="text-muted-foreground hover:text-red-500 p-0.5 transition cursor-pointer"
-                              title="Delete agent"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-xs text-foreground truncate">{agent.displayName}</span>
+                <span
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9.5px] font-semibold border ${roleMeta.badgeClass}`}
+                >
+                  <RoleIcon className="w-2.5 h-2.5" />
+                  {roleMeta.label}
+                </span>
+
+                {agent.department && (
+                  <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.2 rounded border border-border/80">
+                    {agent.department}
+                  </span>
+                )}
+
+                {childrenCount > 0 && (
+                  <span className="text-[9.5px] font-mono text-primary bg-primary/10 px-1.5 py-0.2 rounded-full border border-primary/20">
+                    {childrenCount} direct {childrenCount === 1 ? "report" : "reports"}
+                  </span>
                 )}
               </div>
-            );
-          })}
+
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5 truncate">
+                {manager ? (
+                  <span className="text-[10px] text-muted-foreground/80 flex items-center gap-1">
+                    <span>Reports to:</span>
+                    <span className="font-semibold text-foreground/90">{manager.displayName}</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-[#0075de] font-medium">Top-Level Orchestrator</span>
+                )}
+                {agent.model && (
+                  <>
+                    <span className="text-muted-foreground/40">•</span>
+                    <span className="font-mono text-[10px] truncate max-w-[140px]">
+                      {agent.model.split("/").pop()}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Quick Manager Reassign + Actions */}
+          <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0 flex-wrap">
+            {/* Quick Reassign Manager Selector */}
+            <select
+              value={agent.reportsToId || ""}
+              onChange={(e) => {
+                const newManagerId = e.target.value ? e.target.value : null;
+                onReassignManager(agent.id, newManagerId);
+              }}
+              className="text-[11px] px-2 py-1 rounded-lg border border-border bg-secondary/60 text-foreground hover:bg-secondary cursor-pointer outline-none focus:border-primary transition"
+              title="Change reporting line"
+            >
+              <option value="">Top-Level (Independent)</option>
+              {candidateManagers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  Reports to: {m.displayName} ({m.role})
+                </option>
+              ))}
+            </select>
+
+            <Link
+              href={`/chat?agentId=${agent.id}`}
+              className="p-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground text-xs font-medium transition cursor-pointer flex items-center gap-1"
+              title="Chat with agent"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-primary" />
+              <span className="hidden md:inline text-[11px]">Chat</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => onOpenHermes(agent)}
+              className="p-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/80 text-foreground transition cursor-pointer"
+              title="Hermes CLI Terminal"
+            >
+              <Terminal className="w-3.5 h-3.5" />
+            </button>
+
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(agent)}
+                className="p-1.5 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+                title="Edit agent profile"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(agent)}
+                className="p-1.5 rounded-lg border border-border hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition cursor-pointer"
+                title="Delete agent"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Recursive Children Sub-tree */}
+      {!isCollapsed && children.length > 0 && (
+        <div className="pl-4 sm:pl-6 border-l-2 border-border/80 ml-3 sm:ml-4 space-y-2 mt-2">
+          {children.map((child) => (
+            <RecursiveTreeNode
+              key={child.id}
+              agent={child}
+              level={level + 1}
+              childrenMap={childrenMap}
+              agentMap={agentMap}
+              collapsedBranches={collapsedBranches}
+              toggleBranch={toggleBranch}
+              isAgentMatched={isAgentMatched}
+              hasMatchingDescendant={hasMatchingDescendant}
+              searchQuery={searchQuery}
+              selectedDept={selectedDept}
+              onOpenHermes={onOpenHermes}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onReassignManager={onReassignManager}
+              allAgents={allAgents}
+              isDescendant={isDescendant}
+            />
+          ))}
         </div>
       )}
     </div>

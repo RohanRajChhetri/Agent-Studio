@@ -46,23 +46,17 @@ export class GeminiProvider extends BaseLLMProvider {
     if (clean.includes("pro-latest") || clean.includes("3.1-pro")) {
       return "gemini-pro-latest";
     }
+    if (clean.includes("flash-latest") || clean === "gemini-flash") {
+      return "gemini-flash-latest";
+    }
     if (clean.includes("3.8")) {
       return "gemini-3.8-flash";
     }
     if (clean.includes("3.7")) {
       return "gemini-3.7-flash";
     }
-    if (clean.includes("flash-latest") || clean === "gemini-flash") {
-      return "gemini-flash-latest";
-    }
-    if (clean.includes("3.6")) {
-      return "gemini-3.6-flash";
-    }
-    if (clean.includes("3.5")) {
-      return "gemini-3.5-flash";
-    }
     // High-reliability default with full current generation capacity
-    return "gemini-3.5-flash";
+    return "gemini-3.8-flash";
   }
 
   async call(
@@ -78,9 +72,9 @@ export class GeminiProvider extends BaseLLMProvider {
     const primaryModel = this.normalizeGeminiModel(model);
     const candidateModels = [
       primaryModel,
-      "gemini-3.5-flash",
-      "gemini-3.6-flash",
+      "gemini-3.8-flash",
       "gemini-flash-latest",
+      "gemini-pro-latest",
     ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
     // Extract system instructions and conversation contents

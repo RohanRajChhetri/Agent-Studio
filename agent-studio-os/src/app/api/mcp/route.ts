@@ -69,6 +69,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, server: newConfig });
     }
 
+    if (action === "execute") {
+      const { toolName, args } = body;
+      if (!toolName) {
+        return NextResponse.json({ error: "toolName is required for execution" }, { status: 400 });
+      }
+      const result = await mcpManager.executeTool(toolName, args || {});
+      return NextResponse.json({
+        success: !result.isError,
+        result,
+      });
+    }
+
     if (action === "delete" && serverId) {
       const deleted = mcpManager.removeServer(serverId);
       return NextResponse.json({ success: deleted });

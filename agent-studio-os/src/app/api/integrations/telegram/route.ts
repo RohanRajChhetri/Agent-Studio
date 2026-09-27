@@ -7,6 +7,8 @@ import {
   stopTelegramPoller,
   getTelegramPollerStatus,
   sendTelegramMessage,
+  autoDetectTelegramChatId,
+  saveTelegramConfig,
 } from "@/lib/telegram-service";
 
 export async function GET(request: Request) {
@@ -29,6 +31,8 @@ export async function GET(request: Request) {
     const pollerState = getTelegramPollerStatus();
     return NextResponse.json({
       configured: Boolean(parsedConfig.botToken),
+      hasToken: Boolean(parsedConfig.botToken),
+      hasChatId: Boolean(parsedConfig.chatId),
       enabled: integration?.enabled ?? false,
       config: parsedConfig,
       agent: integration?.agent,
@@ -40,9 +44,15 @@ export async function GET(request: Request) {
   const pollerState = getTelegramPollerStatus();
 
   return NextResponse.json({
-    configured: Boolean(config.token),
+    configured: Boolean(config.token && config.chatId),
+    hasToken: Boolean(config.token),
+    hasChatId: Boolean(config.chatId),
     enabled: config.enabled,
-    config: { botToken: config.token },
+    config: {
+      botToken: config.token,
+      chatId: config.chatId,
+      botUsername: config.botUsername,
+    },
     assignedAgents:
       config.assignedAgents?.map((a: any) => ({
         id: a.id,
@@ -92,7 +102,114 @@ export async function POST(request: Request) {
       }
     }
 
-    // 1. Trigger an immediate poll and process pending messages
+    // 1. Auto-detect user Chat ID from incoming bot messages
+    if (action === "auto_detect_chat_id") {
+      const token = body.token || (await getTelegramConfig()).token;
+      if (!token) {
+        return NextResponse.json(
+          { success: false, error: "Bot token is required for auto-detect" },
+          { status: 400 }
+        );
+      }
+      const detectResult = await autoDetectTelegramChatId(token);
+      return NextResponse.json(detectResult);
+    }
+
+    // 2. Save Telegram Configuration
+    if (action === "save_config") {
+      const token = body.token || body.botToken;
+      if (!token) {
+        return NextResponse.json(
+          { success: false, error: "Bot token is required to save configuration" },
+          { status: 400 }
+        );
+      }
+      const saveResult = await saveTelegramConfig({
+        token,
+        chatId: body.chatId,
+        agentId: body.agentId,
+      });
+      return NextResponse.json(saveResult);
+    }
+
+    // 3. Dispatch Briefing or Arbitrary Message to Telegram
+    if (
+      action === "send_briefing" ||
+      action === "send_message" ||
+      (body.message && !action)
+    ) {
+      const config = await getTelegramConfig();
+      const token = body.token || config.token;
+
+      if (!token) {
+        return NextResponse.json(
+          {
+            success: false,
+            notConfigured: true,
+            reason: "missing_token",
+            error: "Telegram bot token is not configured yet. Please configure your bot token in Settings or setup modal.",
+          },
+          { status: 400 }
+        );
+      }
+
+      let chatId = body.chatId || config.chatId;
+
+      // If no chatId is stored, attempt one-shot auto-detect in case user already sent /start
+      if (!chatId) {
+        const auto = await autoDetectTelegramChatId(token);
+        if (auto.success && auto.chatId) {
+          chatId = auto.chatId;
+        }
+      }
+
+      if (!chatId) {
+        return NextResponse.json(
+          {
+            success: false,
+            notConfigured: true,
+            reason: "missing_chat_id",
+            botUsername: config.botUsername,
+            error: "Telegram Chat ID is not configured. Send /start to your Telegram bot or specify your Chat ID.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const messageText = body.message;
+      if (!messageText || typeof messageText !== "string") {
+        return NextResponse.json(
+          { success: false, error: "Message content is required" },
+          { status: 400 }
+        );
+      }
+
+      const result = await sendTelegramMessage(token, chatId, messageText, "Markdown");
+      if (result.ok) {
+        await prisma.activityLog.create({
+          data: {
+            type: "telegram_dispatch",
+            message: `Dispatched Daily Executive Briefing to Telegram (Chat ID: ${chatId})`,
+            metadata: JSON.stringify({ chatId, length: messageText.length }),
+          },
+        });
+        return NextResponse.json({
+          success: true,
+          message: "Daily Executive Briefing successfully delivered to Telegram!",
+          chatId,
+        });
+      } else {
+        return NextResponse.json(
+          {
+            success: false,
+            error: result.description || "Failed to deliver message to Telegram",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    // 4. Trigger an immediate poll and process pending messages
     if (action === "poll_now") {
       const result = await pollTelegramOnce();
       return NextResponse.json({
@@ -103,10 +220,9 @@ export async function POST(request: Request) {
       });
     }
 
-    // 2. Start background polling loop
+    // 5. Start background polling loop
     if (action === "start_poller") {
       startTelegramPoller();
-      // Also run one cycle immediately
       const firstPoll = await pollTelegramOnce();
       return NextResponse.json({
         success: true,
@@ -116,7 +232,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3. Stop background polling loop
+    // 6. Stop background polling loop
     if (action === "stop_poller") {
       stopTelegramPoller();
       return NextResponse.json({
@@ -126,7 +242,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 4. Set Webhook URL if user has a public tunnel / ngrok
+    // 7. Set Webhook URL if user has a public tunnel / ngrok
     if (action === "set_webhook") {
       const config = await getTelegramConfig();
       if (!config.token) {
@@ -134,7 +250,6 @@ export async function POST(request: Request) {
       }
 
       if (!webhookUrl) {
-        // Delete webhook to re-enable getUpdates polling
         const delRes = await fetch(`https://api.telegram.org/bot${config.token}/deleteWebhook`);
         const delData = await delRes.json();
         return NextResponse.json({ success: delData.ok, message: "Webhook deleted. Polling mode active." });
@@ -145,20 +260,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: data.ok, details: data });
     }
 
-    // 5. Send test message
+    // 8. Send test message
     if (action === "send_test") {
       const config = await getTelegramConfig();
-      if (!config.token) {
+      const token = body.token || config.token;
+      if (!token) {
         return NextResponse.json({ error: "Telegram bot token not configured" }, { status: 400 });
       }
-      const chatId = body.chatId;
+      const chatId = body.chatId || config.chatId;
       if (!chatId) {
         return NextResponse.json({ error: "Chat ID required for test message" }, { status: 400 });
       }
       const result = await sendTelegramMessage(
-        config.token,
+        token,
         chatId,
-        "👋 Hello from Agent Studio OS! Your integration is working perfectly."
+        "👋 Hello from Agent Studio OS! Your Telegram integration is fully operational."
       );
       return NextResponse.json(result);
     }
