@@ -106,7 +106,7 @@ export class OmniRouteGatewayProvider extends BaseLLMProvider {
               return {
                 content,
                 latency: Date.now() - start,
-                source: "omniroute",
+                source: "omniroute" as const,
                 modelUsed: candidate,
                 usage: data.usage,
               };
