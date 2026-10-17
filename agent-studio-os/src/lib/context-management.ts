@@ -75,6 +75,19 @@ export function getRoleDirective(agentName: string, role: string): string {
   return DEFAULT_DIRECTIVE;
 }
 
+const FILE_DELIVERABLE_DIRECTIVE = `[AUTONOMOUS FILE GENERATION & COMPILATION]
+You have direct autonomous access to compile and deliver real downloadable files of multiple formats:
+- PDF Documents (.pdf): Call create_file(path="document_name.pdf", content="...") or create_pdf(path="document_name.pdf", content="...")
+- Word Documents (.doc, .docx): Call create_file(path="document_name.doc", content="...") or create_doc(path="document_name.doc", content="...")
+- Spreadsheets / Datasets (.csv, .xlsx): Call create_file(path="dataset.csv", content="...") or create_csv(path="dataset.csv", content="...")
+- Markdown & Text (.md, .txt): Call create_file(path="document.md", content="...")
+- JSON Datasets (.json): Call create_file(path="data.json", content="...")
+
+CRITICAL DIRECTIVE: When the user asks for a file, document, PDF, spreadsheet, dataset, or report (e.g., "give me a pdf about X", "generate a pdf", "create an excel/csv file", "can I get a word doc"):
+- NEVER output code (e.g. Python scripts using reportlab, fpdf, or pandas) telling the user to create it themselves.
+- Instead, invoke the file tool: create_file(path="filename.pdf", content="...") with complete, thorough, beautifully formatted content.
+- The system will immediately compile your content into an authentic, downloadable binary file (.pdf, .doc, .csv) and present a direct download card to the user!`;
+
 /** Build an elite, role-tailored system prompt */
 export function buildDefaultSystemPrompt(params: {
   agentName?: string;
@@ -88,13 +101,13 @@ export function buildDefaultSystemPrompt(params: {
   const excellenceCore = getExcellenceCore(agentName, role);
 
   if (custom && custom.length > 50) {
-    return `${excellenceCore}\n\n[SPECIALIST DIRECTIVES & PERSONA]\n${custom}`;
+    return `${excellenceCore}\n\n[SPECIALIST DIRECTIVES & PERSONA]\n${custom}\n\n${FILE_DELIVERABLE_DIRECTIVE}`;
   }
 
   const roleDirective = getRoleDirective(agentName, role);
   return `${excellenceCore}\n\n[SPECIALIST DIRECTIVES]\n${roleDirective}${
     custom ? `\n\nAdditional Guidance: ${custom}` : ""
-  }`;
+  }\n\n${FILE_DELIVERABLE_DIRECTIVE}`;
 }
 
 /** Pre-compiled intent detection regex patterns */

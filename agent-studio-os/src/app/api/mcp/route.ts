@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { mcpManager } from "@/lib/mcp/client-manager";
 import type { MCPServerConfig } from "@/types/mcp";
+import { getAuthUserId } from "@/lib/user-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const servers = mcpManager.listServers();
     const tools = mcpManager.listTools();
     return NextResponse.json({
@@ -23,6 +29,11 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { action, serverId, serverConfig } = body;
 

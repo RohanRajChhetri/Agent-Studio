@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 export async function GET(request: Request) {
   try {
@@ -26,8 +27,10 @@ export async function GET(request: Request) {
       ];
     }
 
+    const scopedWhere = await getUserScopedWhere(whereClause);
+
     const sessions = await prisma.chatSession.findMany({
-      where: whereClause,
+      where: scopedWhere,
       include: {
         agent: {
           select: {
@@ -81,6 +84,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { agentId, title, model } = body;
+    const userId = await getAuthUserId();
 
     if (!agentId) {
       return NextResponse.json(
@@ -89,9 +93,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify agent exists
-    const agent = await prisma.agent.findUnique({
-      where: { id: agentId },
+    // Verify agent exists and belongs to current user
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id: agentId }),
     });
 
     if (!agent) {
@@ -106,6 +110,7 @@ export async function POST(request: Request) {
         agentId,
         title: title?.trim() || "New Session",
         model: model || agent.model || null,
+        userId,
       },
       include: {
         agent: {
@@ -127,6 +132,7 @@ export async function POST(request: Request) {
           type: "agent_chat",
           message: `Created new session "${session.title}" for ${agent.displayName}`,
           agentId: agent.id,
+          userId,
         },
       });
     } catch {

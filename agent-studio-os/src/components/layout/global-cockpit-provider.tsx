@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { CommandPalette } from "@/components/layout/command-palette";
 import { GeminiLiveOrb } from "@/components/voice/gemini-live-orb";
 import { CostTrackerModal } from "@/components/telemetry/cost-tracker-modal";
 import {
@@ -10,6 +9,9 @@ import {
   useDashboardChat,
 } from "@/context/dashboard-chat-context";
 import { DashboardChatPanel } from "@/components/dashboard/dashboard-chat-panel";
+import { ProjectBuilderProvider } from "@/context/project-builder-context";
+import { GlobalAgentTaskTracker } from "@/components/layout/global-agent-task-tracker";
+import { CommandPalette } from "@/components/layout/command-palette";
 
 /**
  * Floating Persistent Chat Panel
@@ -64,18 +66,12 @@ function FloatingPersistentDashboardChat() {
 }
 
 export function GlobalCockpitProvider({ children }: { children: React.ReactNode }) {
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [isCostTrackerOpen, setIsCostTrackerOpen] = useState(false);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+K or Ctrl+K -> Command Palette
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setIsCommandPaletteOpen((prev) => !prev);
-      }
       // Alt+V or Ctrl+Shift+V -> Gemini Live Voice
       if (
         (e.altKey && e.key.toLowerCase() === "v") ||
@@ -95,19 +91,16 @@ export function GlobalCockpitProvider({ children }: { children: React.ReactNode 
     };
 
     const handleCustomEvents = (e: any) => {
-      if (e.type === "open-command-palette") setIsCommandPaletteOpen(true);
       if (e.type === "open-voice-cockpit") setIsVoiceOpen(true);
       if (e.type === "open-cost-tracker") setIsCostTrackerOpen(true);
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("open-command-palette", handleCustomEvents);
     window.addEventListener("open-voice-cockpit", handleCustomEvents);
     window.addEventListener("open-cost-tracker", handleCustomEvents);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("open-command-palette", handleCustomEvents);
       window.removeEventListener("open-voice-cockpit", handleCustomEvents);
       window.removeEventListener("open-cost-tracker", handleCustomEvents);
     };
@@ -115,27 +108,28 @@ export function GlobalCockpitProvider({ children }: { children: React.ReactNode 
 
   return (
     <DashboardChatProvider>
-      {children}
+      <ProjectBuilderProvider>
+        {children}
 
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onOpenVoice={() => setIsVoiceOpen(true)}
-        onOpenCostTracker={() => setIsCostTrackerOpen(true)}
-      />
+        <GeminiLiveOrb
+          isOpen={isVoiceOpen}
+          onClose={() => setIsVoiceOpen(false)}
+        />
 
-      <GeminiLiveOrb
-        isOpen={isVoiceOpen}
-        onClose={() => setIsVoiceOpen(false)}
-      />
+        <CostTrackerModal
+          isOpen={isCostTrackerOpen}
+          onClose={() => setIsCostTrackerOpen(false)}
+        />
 
-      <CostTrackerModal
-        isOpen={isCostTrackerOpen}
-        onClose={() => setIsCostTrackerOpen(false)}
-      />
+        {/* Global Agent Task Tracker across all pages */}
+        <GlobalAgentTaskTracker />
 
-      {/* Persistent floating chat widget on non-dashboard pages */}
-      <FloatingPersistentDashboardChat />
+        {/* Global Command Palette (Cmd+K / Ctrl+K) */}
+        <CommandPalette />
+
+        {/* Persistent floating chat widget on non-dashboard pages */}
+        <FloatingPersistentDashboardChat />
+      </ProjectBuilderProvider>
     </DashboardChatProvider>
   );
 }

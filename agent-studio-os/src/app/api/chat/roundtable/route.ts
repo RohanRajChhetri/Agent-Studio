@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { executeChatCompletion } from "@/lib/llm-router";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export interface RoundtableMessage {
   agentId: string;
@@ -36,22 +37,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Topic is required" }, { status: 400 });
     }
 
-    // 1. Resolve agents
+    // 1. Resolve agents scoped to current user
     let agents: any[] = [];
     if (agentIds && Array.isArray(agentIds) && agentIds.length > 0) {
       agents = await prisma.agent.findMany({
-        where: { id: { in: agentIds } },
+        where: await getUserScopedWhere({ id: { in: agentIds } }),
       });
       // Maintain order requested by user
       agents.sort((a, b) => agentIds.indexOf(a.id) - agentIds.indexOf(b.id));
     }
 
     if (agents.length < 2) {
-      // Pick top 3 default agents
+      // Pick top default agents scoped to current user
       agents = await prisma.agent.findMany({
+        where: await getUserScopedWhere(),
         take: 3,
         orderBy: { createdAt: "asc" },
       });
+    }
+
+    if (agents.length < 2) {
+      return NextResponse.json(
+        { error: "At least 2 agents are required to hold a roundtable debate. Please create or deploy agents first." },
+        { status: 400 }
+      );
     }
 
     const conversationHistory: RoundtableMessage[] = [];

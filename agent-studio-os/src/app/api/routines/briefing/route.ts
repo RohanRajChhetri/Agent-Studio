@@ -4,9 +4,25 @@ import { writeVaultFile, readVaultFile } from "@/lib/vault";
 import { executeChatCompletion, getActiveApiKeys } from "@/lib/llm-router";
 import { isOmnirouteOnline } from "@/lib/omniroute";
 
+import { getUserScopedWhere, getAuthUserId, PRIMARY_LEGACY_USER_ID } from "@/lib/user-auth";
+
 function getTodayKey(): string {
   const d = new Date();
   return d.toISOString().split("T")[0];
+}
+
+function getBriefingRelPath(userId: string | null, today: string): { primaryPath: string; fallbackPath?: string } {
+  const cleanId = userId ? userId.replace(/[^a-zA-Z0-9_-]/g, "_") : "guest";
+  const userScopedPath = `briefings/Daily_Briefing_${cleanId}_${today}.md`;
+
+  if (userId === PRIMARY_LEGACY_USER_ID) {
+    return {
+      primaryPath: userScopedPath,
+      fallbackPath: `briefings/Daily_Briefing_${today}.md`,
+    };
+  }
+
+  return { primaryPath: userScopedPath };
 }
 
 interface KanbanTelemetry {
@@ -33,12 +49,16 @@ async function fetchKanbanTelemetry(): Promise<{
   tasks: any[];
   agents: any[];
 }> {
+  const scopedWhere = await getUserScopedWhere();
   const [tasks, agents] = await Promise.all([
     prisma.task.findMany({
+      where: scopedWhere,
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
       include: { agent: true },
     }),
-    prisma.agent.findMany(),
+    prisma.agent.findMany({
+      where: scopedWhere,
+    }),
   ]);
 
   const backlog = tasks.filter((t) => t.status === "backlog").length;
@@ -137,7 +157,11 @@ function buildTruthfulBriefing(params: {
 - ⚡ Autonomous agent workforce (${agents.length} specialists) standing by for immediate task intake.
 
 ## 🤖 Autonomous Workforce Directive
-${agents.slice(0, 4).map((a) => `- **${a.avatar} ${a.displayName}** (${a.role} | ${a.department}): Ready for task assignments.`).join("\n")}
+${
+  agents.length > 0
+    ? agents.slice(0, 4).map((a) => `- **${a.avatar} ${a.displayName}** (${a.role} | ${a.department}): Ready for task assignments.`).join("\n")
+    : "- No specialist agents deployed yet. Head to **Agents** or deploy an agent pack to build your autonomous fleet."
+}
 
 ## 💡 Chief of Staff Proactive Recommendation
 Your task queue is clear. Take 5 minutes to define your highest-leverage goal for this week and initialize tickets in Kanban to empower background agent swarms.`;
@@ -204,17 +228,21 @@ ${
 }
 
 ## 🤖 Autonomous Workforce Directive
-${agents
-  .slice(0, 5)
-  .map((a) => {
-    const assignedCount = tasks.filter((t) => t.agentId === a.id && t.status !== "done").length;
-    return `- **${a.avatar} ${a.displayName}** (${a.role} | ${a.department}): ${
-      assignedCount > 0
-        ? `Actively driving ${assignedCount} assigned Kanban ticket${assignedCount > 1 ? "s" : ""}.`
-        : "Standing by for autonomous delegation."
-    }`;
-  })
-  .join("\n")}
+${
+  agents.length > 0
+    ? agents
+        .slice(0, 5)
+        .map((a) => {
+          const assignedCount = tasks.filter((t) => t.agentId === a.id && t.status !== "done").length;
+          return `- **${a.avatar} ${a.displayName}** (${a.role} | ${a.department}): ${
+            assignedCount > 0
+              ? `Actively driving ${assignedCount} assigned Kanban ticket${assignedCount > 1 ? "s" : ""}.`
+              : "Standing by for autonomous delegation."
+          }`;
+        })
+        .join("\n")
+    : "- No specialist agents deployed yet. Head to **Agents** or deploy an agent pack to build your autonomous fleet."
+}
 
 ## 💡 Chief of Staff Proactive Recommendation
 ${
@@ -228,21 +256,44 @@ ${
 
 export async function GET() {
   try {
+    const userId = await getAuthUserId();
     const today = getTodayKey();
-    const briefingRelPath = `briefings/Daily_Briefing_${today}.md`;
+    const { primaryPath, fallbackPath } = getBriefingRelPath(userId, today);
 
-    // Fetch real-time Kanban telemetry
+    // Fetch real-time Kanban telemetry scoped to current user
     const { telemetry } = await fetchKanbanTelemetry();
 
     try {
-      const file = await readVaultFile(briefingRelPath);
+      let file: { content: string; modifiedAt: string } | null = null;
+      let activePath = primaryPath;
+      try {
+        file = await readVaultFile(primaryPath);
+      } catch {
+        if (fallbackPath) {
+          try {
+            file = await readVaultFile(fallbackPath);
+            activePath = fallbackPath;
+          } catch {}
+        }
+      }
+
+      if (!file) {
+        return NextResponse.json({
+          exists: false,
+          date: today,
+          path: primaryPath,
+          kanbanStats: telemetry,
+          isOutOfSync: false,
+        });
+      }
+
       const fileModifiedTime = new Date(file.modifiedAt).getTime();
       const isOutOfSync = telemetry.latestTaskUpdate > fileModifiedTime;
 
       return NextResponse.json({
         exists: true,
         date: today,
-        path: briefingRelPath,
+        path: activePath,
         content: file.content,
         modifiedAt: file.modifiedAt,
         kanbanStats: telemetry,
@@ -252,7 +303,7 @@ export async function GET() {
       return NextResponse.json({
         exists: false,
         date: today,
-        path: briefingRelPath,
+        path: primaryPath,
         kanbanStats: telemetry,
         isOutOfSync: false,
       });
@@ -267,8 +318,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getAuthUserId();
     const today = getTodayKey();
-    const briefingRelPath = `briefings/Daily_Briefing_${today}.md`;
+    const { primaryPath } = getBriefingRelPath(userId, today);
+    const briefingRelPath = primaryPath;
     const todayFormatted = new Date().toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
@@ -276,10 +329,13 @@ export async function POST(request: Request) {
       day: "numeric",
     });
 
-    // Gather live contextual workspace telemetry
+    const scopedWhere = await getUserScopedWhere();
+
+    // Gather live contextual workspace telemetry scoped to current user
     const [{ telemetry, tasks, agents }, recentLogs, omnirouteOnline] = await Promise.all([
       fetchKanbanTelemetry(),
       prisma.activityLog.findMany({
+        where: scopedWhere,
         take: 15,
         orderBy: { createdAt: "desc" },
       }),
@@ -368,9 +424,10 @@ ${reviewTasks.length > 0 ? "- Executive Review Gate (highlighting tickets needin
     // Persist to Obsidian Markdown Vault
     await writeVaultFile(briefingRelPath, briefingContent);
 
-    // Record activity log
+    // Record activity log scoped to user
     await prisma.activityLog.create({
       data: {
+        userId,
         type: "briefing_generated",
         message: `Executive Morning Briefing generated for ${today} (${telemetry.total} Kanban tasks tracked)`,
         metadata: JSON.stringify({

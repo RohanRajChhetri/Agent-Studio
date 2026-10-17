@@ -57,3 +57,18 @@ prisma/*.db-shm
 scratch/
 .system_generated/
 
+# IDE/editor configs
+.vscode/
+.idea/
+.vitest/
+
+# backup folder
+.git_backup/
+
+# Agents configuration & skills
+.agent/
+.agents/
+**/.agent/
+**/.agents/
+.agent
+.agents

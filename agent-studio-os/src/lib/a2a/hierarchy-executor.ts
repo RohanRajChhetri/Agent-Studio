@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { executeChatCompletion } from "@/lib/llm-router";
 import { a2aBroker } from "./protocol";
+import { createProjectFile, createProjectFolder } from "@/lib/project-filesystem";
+import { saveDocumentFile } from "@/lib/document-generator";
 import type {
   A2AHierarchyExecutionResult,
   A2AHierarchyNodeExecution,
+  ConferenceFileDeliverable,
 } from "@/types/a2a";
 
 interface SubordinateAgent {
@@ -294,6 +297,85 @@ Synthesize all subordinate work into a unified, publication-grade Master Executi
     subordinates: subordinateExecutions,
   };
 
+  // 5. Dedicate a folder for conference deliverables and write the conference discussion minutes file
+  const conferenceFolder = "agent-workspace/conference";
+  await createProjectFolder(conferenceFolder);
+
+  const cleanSlug =
+    missionTopic
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .slice(0, 32)
+      .replace(/^_|_$/g, "") || "mission";
+  const timestampStr = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const minutesFileName = `conference_minutes_${cleanSlug}_${timestampStr}.md`;
+  const minutesRelPath = `${conferenceFolder}/${minutesFileName}`;
+
+  // Build structured discussion markdown
+  const participantsSummary = directSubordinates
+    .map((s) => `- **${s.displayName}** (${s.role} | Department: ${s.department || "General"})`)
+    .join("\n");
+
+  const subordinateSections = subordinateExecutions
+    .map(
+      (sub) => `### Work Package: ${sub.taskTitle}
+- **Assigned Specialist**: ${sub.agentName} (${sub.agentRole})
+- **Directive**: ${sub.directive}
+- **Status**: ${sub.status} (Execution Time: ${Math.round((sub.latencyMs || 0) / 1000)}s)
+
+#### Specialist Report:
+${sub.output || "(No output recorded)"}
+`
+    )
+    .join("\n\n");
+
+  const conferenceMinutesContent = `# A2A Executive Conference Minutes & Master Deliverable
+
+**Mission Topic**: ${missionTopic}
+**Mission ID**: \`${missionId}\`
+**Date / Timestamp**: ${new Date().toLocaleString()}
+**Presiding Orchestrator**: ${orchestrator.displayName} (${orchestrator.role})
+**Dedicated Artifacts Folder**: \`${conferenceFolder}/\`
+**Subtasks Executed**: ${totalTasksExecuted} subtasks across ${directSubordinates.length} specialists
+**Total Duration**: ${Math.round(totalDuration / 1000)} seconds
+
+---
+
+## 1. Conference Participants & Hierarchy
+- **Executive Orchestrator**: ${orchestrator.displayName} (${orchestrator.role})
+${participantsSummary}
+
+---
+
+## 2. Master Executive Deliverable & Architectural Decisions
+${synthesisRes.content}
+
+---
+
+## 3. Detailed Specialist Reports & Tactical Artifacts
+${subordinateSections}
+
+---
+*Recorded autonomously by Agent Studio OS A2A Protocol Engine*
+`;
+
+  const conferenceFileMeta: ConferenceFileDeliverable = {
+    fileName: minutesFileName,
+    filePath: minutesRelPath,
+    fileUrl: `/downloads/${encodeURIComponent(minutesFileName)}`,
+    size: 0,
+  };
+
+  try {
+    const written = await createProjectFile(minutesRelPath, conferenceMinutesContent, { overwrite: true });
+    conferenceFileMeta.size = written.size;
+    // Also save to downloads for instant browser download
+    const dlDoc = await saveDocumentFile(minutesFileName, conferenceMinutesContent);
+    conferenceFileMeta.fileUrl = dlDoc.fileUrl;
+  } catch (fileErr) {
+    console.warn("[Hierarchy Executor] Failed to persist conference minutes file:", fileErr);
+  }
+
   return {
     missionId,
     missionTopic,
@@ -305,5 +387,7 @@ Synthesize all subordinate work into a unified, publication-grade Master Executi
     totalSubtasks: totalTasksExecuted,
     totalLatencyMs: totalDuration,
     createdAt: new Date().toISOString(),
+    dedicatedFolder: conferenceFolder,
+    conferenceFile: conferenceFileMeta,
   };
 }

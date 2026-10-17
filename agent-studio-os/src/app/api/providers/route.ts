@@ -9,11 +9,17 @@ import { PROVIDER_DEFINITIONS } from "@/types";
 import { maskKey } from "@/lib/utils";
 import { testProviderKey, getActiveApiKeys, invalidateActiveApiKeysCache } from "@/lib/llm-router";
 import { invalidateProviderLatencyCache } from "@/app/api/dashboard/route";
+import { getAuthUserId } from "@/lib/user-auth";
 import path from "path";
 import fs from "fs/promises";
 
 export async function GET() {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const activeKeys = await getActiveApiKeys();
     const envPath = getProfileEnvPath();
     const hermesVars = await readEnvFile(envPath);
@@ -40,6 +46,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { action, provider, envVar, value } = body;
 

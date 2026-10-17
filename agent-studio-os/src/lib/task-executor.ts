@@ -3,6 +3,8 @@ import { executeChatCompletion } from "@/lib/llm-router";
 import { writeVaultFile, ensureVaultExists } from "@/lib/vault";
 import { slugify, formatResponseTime } from "@/lib/utils";
 import type { Task, Agent } from "@prisma/client";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
+import { compileAndDeliverFile } from "@/lib/file-deliverable-engine";
 
 export interface TaskExecutionResult {
   success: boolean;
@@ -24,6 +26,7 @@ export async function executeTask(
   task: Task & { agent?: Agent | null },
   options?: { overrideAgentId?: string }
 ): Promise<TaskExecutionResult> {
+  const originalStatus = task.status;
   try {
     let agent = task.agent;
     if (options?.overrideAgentId) {
@@ -46,11 +49,13 @@ export async function executeTask(
       },
     });
 
+    const authUserId = task.userId || (await getAuthUserId());
     await prisma.activityLog.create({
       data: {
         type: "task_moved",
         message: `${agent ? agent.displayName : "Agent"} started working on "${task.title}"`,
         agentId: agent?.id || null,
+        userId: authUserId,
       },
     });
 
@@ -79,19 +84,32 @@ EXECUTION GUIDELINES:
       agentName: agent?.name,
     });
 
+    let finalContent = executionResult.content;
+    try {
+      const compiled = await compileAndDeliverFile({
+        userPrompt: `${task.title}\n${task.description || ""}`,
+        assistantContent: executionResult.content,
+      });
+      if (compiled && compiled.downloadCardMarkdown) {
+        finalContent = compiled.cleanedContent || `${executionResult.content}\n${compiled.downloadCardMarkdown}`;
+      }
+    } catch (deliverableErr) {
+      console.warn("Could not auto-compile file deliverable:", deliverableErr);
+    }
+
     // 3. Transition to review with result
     const updatedTask = await prisma.task.update({
       where: { id: task.id },
       data: {
         status: "review",
-        result: executionResult.content,
+        result: finalContent,
         agentId: agent?.id || null,
       },
       include: { agent: true },
     });
 
     // 4. Save deliverable to shared Obsidian vault
-    let vaultPath = `tasks/${slugify(task.title || "task")}.md`;
+    const vaultPath = `tasks/${slugify(task.title || "task")}.md`;
     try {
       await ensureVaultExists();
       const vaultContent = `---
@@ -118,7 +136,7 @@ tags:
 ${task.description || "N/A"}
 
 ## Execution Deliverable
-${executionResult.content}
+${finalContent}
 
 ## Verification
 - Status: Ready for Human-in-the-loop review
@@ -135,18 +153,27 @@ ${executionResult.content}
         type: "task_completed",
         message: `${agent ? agent.displayName : "Agent"} completed deliverable for "${task.title}" (moved to Review)`,
         agentId: agent?.id || null,
+        userId: task.userId || (await getAuthUserId()),
       },
     });
 
     return {
       success: true,
       task: updatedTask,
-      deliverable: executionResult.content,
+      deliverable: finalContent,
       vaultPath,
       latency: executionResult.latency,
       modelUsed: executionResult.modelUsed,
     };
   } catch (error: any) {
+    // Revert status in DB so task is never permanently stranded in 'in_progress'
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: originalStatus === "in_progress" ? "backlog" : originalStatus,
+      },
+    }).catch(() => {});
+
     return {
       success: false,
       error: error.message || "Execution failed",
@@ -161,8 +188,8 @@ export async function executeTaskById(
   taskId: string,
   overrideAgentId?: string
 ): Promise<TaskExecutionResult> {
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
+  const task = await prisma.task.findFirst({
+    where: await getUserScopedWhere({ id: taskId }),
     include: { agent: true },
   });
 
@@ -186,33 +213,33 @@ export async function findAndExecuteMatchingTask(
   let task = null;
 
   if (cleanQuery && cleanQuery !== "all" && cleanQuery.length > 2) {
-    // 1. Try finding by ID first
-    task = await prisma.task.findUnique({
-      where: { id: cleanQuery },
+    // 1. Try finding by ID first scoped to user
+    task = await prisma.task.findFirst({
+      where: await getUserScopedWhere({ id: cleanQuery }),
       include: { agent: true },
     });
 
-    // 2. Try searching by title or description
+    // 2. Try searching by title or description scoped to user
     if (!task) {
       task = await prisma.task.findFirst({
-        where: {
+        where: await getUserScopedWhere({
           OR: [
             { title: { contains: cleanQuery } },
             { description: { contains: cleanQuery } },
           ],
-        },
+        }),
         include: { agent: true },
         orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
       });
     }
   }
 
-  // 3. Fallback: find highest-priority pending task on the board
+  // 3. Fallback: find highest-priority pending task on the board scoped to user
   if (!task) {
     task = await prisma.task.findFirst({
-      where: {
+      where: await getUserScopedWhere({
         status: { in: ["in_progress", "backlog", "review"] },
-      },
+      }),
       include: { agent: true },
       orderBy: [
         { status: "desc" }, // in_progress first, then backlog
@@ -251,10 +278,13 @@ export async function createAndAssignTask(params: {
   } = params;
 
   let assignedAgentId = agentId;
+  const userId = await getAuthUserId();
 
-  // If no agentId passed, pick an agent
+  // If no agentId passed, pick an agent scoped to user
   if (!assignedAgentId) {
-    const agents = await prisma.agent.findMany();
+    const agents = await prisma.agent.findMany({
+      where: await getUserScopedWhere(),
+    });
     if (agents.length > 0) {
       // Find agent whose name or role matches the task
       const lower = (title + " " + description).toLowerCase();
@@ -268,8 +298,10 @@ export async function createAndAssignTask(params: {
     }
   }
 
-  // Count existing tasks for position
-  const count = await prisma.task.count({ where: { status: "backlog" } });
+  // Count existing tasks for position scoped to user
+  const count = await prisma.task.count({
+    where: await getUserScopedWhere({ status: "backlog" }),
+  });
 
   const createdTask = await prisma.task.create({
     data: {
@@ -279,6 +311,7 @@ export async function createAndAssignTask(params: {
       status: "backlog",
       position: count + 1,
       agentId: assignedAgentId,
+      userId,
     },
     include: { agent: true },
   });
@@ -290,6 +323,7 @@ export async function createAndAssignTask(params: {
         createdTask.agent?.displayName || "Specialist"
       }`,
       agentId: assignedAgentId,
+      userId,
     },
   });
 
@@ -317,21 +351,21 @@ export async function approveTaskByQuery(query?: string): Promise<{
 
   if (clean && clean.length > 2) {
     task = await prisma.task.findFirst({
-      where: {
+      where: await getUserScopedWhere({
         status: "review",
         OR: [
           { id: clean },
           { title: { contains: clean } },
         ],
-      },
+      }),
       include: { agent: true },
     });
   }
 
   if (!task) {
-    // Top task in review
+    // Top task in review scoped to user
     task = await prisma.task.findFirst({
-      where: { status: "review" },
+      where: await getUserScopedWhere({ status: "review" }),
       include: { agent: true },
       orderBy: { updatedAt: "desc" },
     });
@@ -350,11 +384,13 @@ export async function approveTaskByQuery(query?: string): Promise<{
     include: { agent: true },
   });
 
+  const authUserId = task.userId || (await getAuthUserId());
   await prisma.activityLog.create({
     data: {
       type: "task_completed",
       message: `Approved deliverable for "${task.title}" (moved to Done)`,
       agentId: task.agentId,
+      userId: authUserId,
     },
   });
 

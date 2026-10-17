@@ -11,11 +11,28 @@ import {
   saveTelegramConfig,
 } from "@/lib/telegram-service";
 
+import { getUserScopedWhere, getAuthUserId, PRIMARY_LEGACY_USER_ID } from "@/lib/user-auth";
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const agentId = url.searchParams.get("agentId");
+  const userId = await getAuthUserId();
 
   if (agentId) {
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id: agentId }),
+    });
+
+    if (!agent) {
+      return NextResponse.json({
+        configured: false,
+        hasToken: false,
+        hasChatId: false,
+        enabled: false,
+        poller: getTelegramPollerStatus(),
+      });
+    }
+
     const integration = await prisma.agentIntegration.findUnique({
       where: { agentId_platform: { agentId, platform: "telegram" } },
       include: { agent: true },
@@ -40,26 +57,87 @@ export async function GET(request: Request) {
     });
   }
 
-  const config = await getTelegramConfig();
-  const pollerState = getTelegramPollerStatus();
+  // If user is primary legacy user, return their existing system/agent telegram configs
+  if (userId === PRIMARY_LEGACY_USER_ID) {
+    const config = await getTelegramConfig();
+    const pollerState = getTelegramPollerStatus();
 
+    return NextResponse.json({
+      configured: Boolean(config.token && config.chatId),
+      hasToken: Boolean(config.token),
+      hasChatId: Boolean(config.chatId),
+      enabled: config.enabled,
+      config: {
+        botToken: config.token,
+        chatId: config.chatId,
+        botUsername: config.botUsername,
+      },
+      assignedAgents:
+        config.assignedAgents?.map((a: any) => ({
+          id: a.id,
+          displayName: a.displayName,
+          avatar: a.avatar,
+        })) || [],
+      poller: pollerState,
+    });
+  }
+
+  // For any new user, only search for integrations attached to their own agents
+  const userAgents = await prisma.agent.findMany({
+    where: await getUserScopedWhere(),
+    select: { id: true, displayName: true, avatar: true },
+  });
+  const userAgentIds = userAgents.map((a) => a.id);
+
+  if (userAgentIds.length > 0) {
+    const integration = await prisma.agentIntegration.findFirst({
+      where: {
+        agentId: { in: userAgentIds },
+        platform: "telegram",
+      },
+      include: { agent: true },
+    });
+
+    if (integration?.config) {
+      try {
+        const parsed = JSON.parse(integration.config);
+        const pollerState = getTelegramPollerStatus();
+        return NextResponse.json({
+          configured: Boolean(parsed.botToken && parsed.chatId),
+          hasToken: Boolean(parsed.botToken),
+          hasChatId: Boolean(parsed.chatId),
+          enabled: integration.enabled,
+          config: {
+            botToken: parsed.botToken,
+            chatId: parsed.chatId,
+            botUsername: parsed.botUsername,
+          },
+          assignedAgents: [
+            {
+              id: integration.agent.id,
+              displayName: integration.agent.displayName,
+              avatar: integration.agent.avatar,
+            },
+          ],
+          poller: pollerState,
+        });
+      } catch {}
+    }
+  }
+
+  // Clean unconfigured slate for new users
   return NextResponse.json({
-    configured: Boolean(config.token && config.chatId),
-    hasToken: Boolean(config.token),
-    hasChatId: Boolean(config.chatId),
-    enabled: config.enabled,
+    configured: false,
+    hasToken: false,
+    hasChatId: false,
+    enabled: false,
     config: {
-      botToken: config.token,
-      chatId: config.chatId,
-      botUsername: config.botUsername,
+      botToken: null,
+      chatId: null,
+      botUsername: null,
     },
-    assignedAgents:
-      config.assignedAgents?.map((a: any) => ({
-        id: a.id,
-        displayName: a.displayName,
-        avatar: a.avatar,
-      })) || [],
-    poller: pollerState,
+    assignedAgents: [],
+    poller: getTelegramPollerStatus(),
   });
 }
 

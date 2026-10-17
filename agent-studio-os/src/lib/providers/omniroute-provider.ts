@@ -70,12 +70,14 @@ export class OmniRouteGatewayProvider extends BaseLLMProvider {
       }
     }
 
-    // Models to attempt in order (requested model, then high-availability free tier candidates)
+    // Models to attempt in order (requested model, then high-availability capable candidates)
     const modelCandidates = [
       cleanModel,
-      "liquid/lfm-2.5-2.6b:free",
-      "qwen/qwen3.8-27b:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "google/gemini-2.0-flash-exp:free",
+      "qwen/qwen-2.5-coder-32b-instruct",
       "nvidia/nemotron-3.5-lightning:free",
+      "qwen/qwen3.8-27b:free",
     ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
     for (const candidate of modelCandidates) {

@@ -242,14 +242,21 @@ export default function MemoryPage() {
         fetch("/api/vault?action=galaxy"),
       ]);
 
-      const filesJson = await filesRes.json();
-      setFiles(Array.isArray(filesJson) ? filesJson : []);
-      const gData: GalaxyData = await galaxyRes.json();
-      setGalaxyData(gData);
+      if (filesRes.ok) {
+        const filesJson = await filesRes.json();
+        setFiles(Array.isArray(filesJson) ? filesJson : []);
+      }
 
-      // Auto select first file if none selected
-      if (!selectedPath && gData.nodes?.length > 0) {
-        loadFile(gData.nodes[0].path);
+      if (galaxyRes.ok) {
+        const gData: GalaxyData = await galaxyRes.json();
+        if (gData && Array.isArray(gData.nodes)) {
+          setGalaxyData(gData);
+
+          // Auto select first file if none selected
+          if (!selectedPath && gData.nodes.length > 0) {
+            loadFile(gData.nodes[0].path);
+          }
+        }
       }
     } catch (error) {
       console.error("Error fetching memory vault data:", error);

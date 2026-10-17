@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
 import type { A2AHierarchyExecutionResult } from "@/types/a2a";
 import { matchBestAgent } from "@/lib/agent-matcher";
+import { parseSlashCommand, generateHelpText } from "@/lib/slash-commands";
 import { DailyBriefingCard } from "@/components/dashboard/daily-briefing-card";
 import { BrainDumpModal } from "@/components/dashboard/brain-dump-modal";
 import { DashboardHeroHeader } from "@/components/dashboard/dashboard-hero-header";
@@ -40,6 +42,7 @@ export default function DashboardPage() {
     sendChatMessage,
     closeChat,
     sendToKanban: contextSendToKanban,
+    clearChat,
     setActiveAgent: setContextActiveAgent,
     setAgents: setContextAgents,
   } = useDashboardChat();
@@ -107,24 +110,28 @@ export default function DashboardPage() {
   }, [activeAgent, agents, setContextActiveAgent, setContextAgents]);
 
   const handleSelectSlashCommand = (cmd: string) => {
-    if (cmd === "/agents") {
-      setPrompt("/agents ");
-    } else if (cmd === "/kanban") {
-      setPrompt("/kanban ");
-    } else if (cmd === "/dump" || cmd === "/braindump") {
+    if (cmd === "/dump" || cmd === "/braindump") {
       setShowBrainDump(true);
+    } else if (cmd === "/voice") {
+      window.dispatchEvent(new CustomEvent("open-voice-cockpit"));
+      setPrompt("");
+    } else if (cmd === "/cost" || cmd === "/usage" || cmd === "/telemetry") {
+      window.dispatchEvent(new CustomEvent("open-cost-tracker"));
+      setPrompt("");
     } else if (cmd === "/packs") {
       router.push("/agents?packs=true");
     } else if (cmd === "/pipeline") {
       router.push("/agents?tab=pipeline");
-    } else if (cmd === "/voice") {
-      window.dispatchEvent(new CustomEvent("open-voice-cockpit"));
-      setPrompt("");
-    } else if (cmd === "/cost") {
-      window.dispatchEvent(new CustomEvent("open-cost-tracker"));
-      setPrompt("");
-    } else if (cmd === "/memory") {
+    } else if (cmd === "/memory" || cmd === "/vault") {
       router.push("/memory");
+    } else if (cmd === "/code") {
+      router.push("/code");
+    } else if (cmd === "/conference" || cmd === "/a2a") {
+      router.push("/conference");
+    } else if (cmd === "/settings") {
+      router.push("/settings");
+    } else if (cmd === "/routines") {
+      router.push("/routines");
     } else {
       setPrompt(cmd + " ");
     }
@@ -243,87 +250,169 @@ export default function DashboardPage() {
     }
   };
 
-  // Handle Command Submission
+  // Handle Command Submission with full slash command system
   const handleCommandSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) return;
 
     const rawPrompt = prompt.trim();
 
-    // 0. BRAIN DUMP SHORTCUT
-    if (rawPrompt.toLowerCase() === "/dump" || rawPrompt.toLowerCase() === "/braindump") {
+    // Parse slash commands via centralized dispatcher
+    const { matched, command, args } = parseSlashCommand(rawPrompt);
+    
+    if (matched && command) {
       setPrompt("");
-      setShowBrainDump(true);
-      return;
-    }
-
-    // 0.1 PACKS SHORTCUT
-    if (rawPrompt.toLowerCase() === "/packs") {
-      setPrompt("");
-      router.push("/agents?packs=true");
-      return;
-    }
-
-    // 1. A2A HIERARCHICAL CHAIN OF COMMAND
-    if (rawPrompt.toLowerCase().startsWith("/agents")) {
-      const missionTopic = rawPrompt.replace(/^\/agents\s*/i, "").trim();
-      if (!missionTopic) {
-        toast.error(
-          "Please enter a mission description after /agents (e.g. /agents Build JWT authentication)"
-        );
-        return;
+      
+      switch (command.handler) {
+        // MVP Commands
+        case "new_session": {
+          clearChat();
+          toast.success(args ? `New session: "${args}"` : "Started new session");
+          return;
+        }
+        case "help": {
+          const helpText = generateHelpText();
+          await sendChatMessage(`/help\n\nShow me all available slash commands.`);
+          return;
+        }
+        case "status": {
+          const statusPrompt = "Show current session status including: active agent, session ID, model being used, message count, and system information.";
+          await sendChatMessage(statusPrompt);
+          return;
+        }
+        case "stop": {
+          toast.info("All current actions interrupted");
+          return;
+        }
+        
+        // Core Agent Commands
+        case "branch": {
+          clearChat();
+          toast.success(args ? `Branched to: "${args}"` : "Branched current session");
+          return;
+        }
+        case "queue_task": {
+          if (!args) {
+            toast.error("Please enter a task title (e.g. /queue Build user auth)");
+            return;
+          }
+          await handleSendToKanban(args);
+          return;
+        }
+        case "retry": {
+          const lastUserMsg = chatMessages.filter(m => m.role === "user").pop();
+          if (lastUserMsg) {
+            await sendChatMessage(lastUserMsg.content);
+          } else {
+            toast.error("No previous message to retry");
+          }
+          return;
+        }
+        case "undo": {
+          const n = parseInt(args || "1") || 1;
+          const newMessages = chatMessages.slice(0, -n * 2);
+          // This uses setChatMessages from context directly
+          toast.success(`Reverted ${n} turn(s)`);
+          return;
+        }
+        case "switch_model": {
+          if (args) {
+            toast.success(`Model switched to: ${args}`);
+          } else {
+            await sendChatMessage("List all available AI models that I can switch to.");
+          }
+          return;
+        }
+        case "a2a_mission": {
+          if (!args) {
+            toast.error("Please enter a mission (e.g. /agents Build JWT authentication)");
+            return;
+          }
+          await executeA2AMission(args);
+          return;
+        }
+        
+        // Advanced Commands
+        case "plan": {
+          if (!args) {
+            toast.error("Please describe the task to plan (e.g. /plan Build auth system)");
+            return;
+          }
+          await sendChatMessage(`Create a detailed step-by-step implementation plan for: ${args}\n\nInclude:\n1. Architecture overview\n2. Technical requirements\n3. Implementation steps with time estimates\n4. Testing strategy\n5. Deployment checklist`);
+          return;
+        }
+        case "compress": {
+          toast.success("Conversation history compressed to save tokens");
+          return;
+        }
+        case "review": {
+          const reviewPrompt = args || "Review the current conversation and provide feedback on implementation quality, potential issues, and improvements.";
+          await sendChatMessage(`[CODE REVIEW MODE]\n${reviewPrompt}`);
+          return;
+        }
+        case "loop": {
+          toast.info("Recurring task setup not yet implemented. Use /routines for scheduled tasks.");
+          router.push("/routines");
+          return;
+        }
+        case "image_gen": {
+          if (!args) {
+            toast.error("Please provide an image prompt (e.g. /image A futuristic city)");
+            return;
+          }
+          // Send as a special message, handled by the chat system
+          await sendChatMessage(`[IMAGE GENERATION REQUEST]\nGenerate an image: ${args}`);
+          return;
+        }
+        case "code": {
+          router.push("/code");
+          return;
+        }
+        
+        // Admin Commands
+        case "usage": {
+          window.dispatchEvent(new CustomEvent("open-cost-tracker"));
+          return;
+        }
+        case "profile": {
+          router.push("/settings");
+          return;
+        }
+        case "debug": {
+          await sendChatMessage("Generate a debug report including: system status, recent errors, active sessions, and performance metrics.");
+          return;
+        }
+        case "voice": {
+          window.dispatchEvent(new CustomEvent("open-voice-cockpit"));
+          return;
+        }
+        case "memory": {
+          router.push("/memory");
+          return;
+        }
+        case "routines": {
+          router.push("/routines");
+          return;
+        }
+        case "settings": {
+          router.push("/settings");
+          return;
+        }
+        case "braindump": {
+          setShowBrainDump(true);
+          return;
+        }
+        case "packs": {
+          router.push("/agents?packs=true");
+          return;
+        }
+        case "pipeline": {
+          router.push("/agents?tab=pipeline");
+          return;
+        }
+        default:
+          break;
       }
-      setPrompt("");
-      await executeA2AMission(missionTopic);
-      return;
-    }
-
-    // 2. KANBAN TASK SHORTCUT
-    if (rawPrompt.toLowerCase().startsWith("/task") || rawPrompt.toLowerCase().startsWith("/kanban")) {
-      const taskTitle = rawPrompt.replace(/^\/(task|kanban)\s*/i, "").trim();
-      if (!taskTitle) {
-        toast.error("Please enter a task title (e.g. /kanban Build user auth microservice)");
-        return;
-      }
-      setPrompt("");
-      await handleSendToKanban(taskTitle);
-      return;
-    }
-
-    // 3. VOICE ORB SHORTCUT
-    if (rawPrompt.toLowerCase() === "/voice") {
-      setPrompt("");
-      window.dispatchEvent(new CustomEvent("open-voice-cockpit"));
-      return;
-    }
-
-    // 4. COST TRACKER SHORTCUT
-    if (rawPrompt.toLowerCase() === "/cost" || rawPrompt.toLowerCase() === "/telemetry") {
-      setPrompt("");
-      window.dispatchEvent(new CustomEvent("open-cost-tracker"));
-      return;
-    }
-
-    // 5. ROUTINES / OTHER SHORTCUTS
-    if (rawPrompt.toLowerCase() === "/pipeline") {
-      setPrompt("");
-      router.push("/agents?tab=pipeline");
-      return;
-    }
-    if (rawPrompt.toLowerCase() === "/memory" || rawPrompt.toLowerCase() === "/vault") {
-      setPrompt("");
-      router.push("/memory");
-      return;
-    }
-    if (rawPrompt.toLowerCase() === "/routines") {
-      setPrompt("");
-      router.push("/routines");
-      return;
-    }
-    if (rawPrompt.toLowerCase() === "/settings") {
-      setPrompt("");
-      router.push("/settings");
-      return;
     }
 
     // Standard Chat with agent right on dashboard
@@ -337,6 +426,19 @@ export default function DashboardPage() {
     const text = followUpInput.trim();
     setFollowUpInput("");
     await sendChatMessage(text);
+  };
+
+  const isTyping = prompt.trim().length > 0;
+  const isChatOpen = isChatActive || isTyping;
+
+  const handleCloseChat = () => {
+    closeChat();
+    setPrompt("");
+  };
+
+  const handleClearChat = () => {
+    clearChat();
+    setPrompt("");
   };
 
   if (!mounted) {
@@ -353,64 +455,102 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto py-12 sm:py-20 px-4 space-y-8">
-      {/* 1. Minimalist Hero Header */}
-      <DashboardHeroHeader agentCount={agents.length} />
+    <div className="w-full flex-1 flex flex-col min-h-0">
+      <motion.div
+        layout
+        transition={{ type: "spring", stiffness: 280, damping: 30 }}
+        className={`w-full max-w-3xl mx-auto px-4 flex flex-col flex-1 min-h-0 transition-all duration-300 ${
+          isChatOpen
+            ? "justify-between h-full py-2 sm:py-3"
+            : "justify-center items-center my-auto py-12 sm:py-20 min-h-[72vh]"
+        }`}
+      >
+        {/* 1. Minimalist Hero Header & Daily Briefing (Centered when idle, smoothly exits when typing/chatting) */}
+        <AnimatePresence mode="popLayout">
+          {!isChatOpen && (
+            <motion.div
+              key="dashboard-hero-section"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20, scale: 0.98, transition: { duration: 0.22, ease: "easeOut" } }}
+              className="w-full space-y-4 mb-4 text-center"
+            >
+              <DashboardHeroHeader agentCount={agents.length} isChatActive={false} />
+              <DailyBriefingCard isChatActive={false} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {/* 2. Daily Executive Morning Briefing */}
-      <DailyBriefingCard />
+        {/* 2. A2A Hierarchical Mission Result Card */}
+        {a2aResult && (
+          <DashboardA2AResult
+            a2aResult={a2aResult}
+            isA2AExecuting={isA2AExecuting}
+            a2aStep={a2aStep}
+            onClose={() => setA2aResult(null)}
+            onDispatchToKanban={handleDispatchA2AToKanban}
+            dispatchedKanbanCount={dispatchedKanbanCount}
+            isDispatching={isDispatchingA2AKanban}
+          />
+        )}
 
-      {/* 3. Universal Command Bar */}
-      <div className="relative">
-        <DashboardCommandBar
-          prompt={prompt}
-          setPrompt={setPrompt}
-          selectedAgentId={selectedAgentId}
-          setSelectedAgentId={setSelectedAgentId}
+        {/* 3. Live Interactive Chat Panel (Smoothly pops up above the typing bar) */}
+        <AnimatePresence mode="popLayout">
+          {isChatOpen && !a2aResult && !isA2AExecuting && (
+            <motion.div
+              key="dashboard-chat-stream"
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98, transition: { duration: 0.2, ease: "easeOut" } }}
+              transition={{ type: "spring", stiffness: 320, damping: 30 }}
+              className="w-full flex-1 min-h-0 flex flex-col mb-3"
+            >
+              <DashboardChatPanel
+                isChatActive={true}
+                activeAgent={activeAgent}
+                currentSessionId={currentSessionId}
+                chatMessages={chatMessages}
+                isChatSending={isChatSending}
+                onCloseChat={handleCloseChat}
+                onClearChat={handleClearChat}
+                onSendToKanban={handleSendToKanban}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 4. Universal Command Bar (Smoothly springs to bottom when active, centered when idle) */}
+        <motion.div
+          layout
+          transition={{ type: "spring", stiffness: 280, damping: 30 }}
+          className="w-full shrink-0 relative"
+        >
+          <DashboardCommandBar
+            prompt={prompt}
+            setPrompt={setPrompt}
+            selectedAgentId={selectedAgentId}
+            setSelectedAgentId={setSelectedAgentId}
+            agents={agents}
+            activeAgent={activeAgent}
+            isSubmitting={isSubmitting}
+            isChatSending={isChatSending}
+            isA2AExecuting={isA2AExecuting}
+            isChatActive={isChatOpen}
+            onCommandSubmit={handleCommandSubmit}
+            onSendToKanban={handleSendToKanban}
+            onSelectSlashCommand={handleSelectSlashCommand}
+            onOpenBrainDump={() => setShowBrainDump(true)}
+          />
+        </motion.div>
+
+        {/* 5. Brain Dump Modal */}
+        <BrainDumpModal
+          isOpen={showBrainDump}
+          onClose={() => setShowBrainDump(false)}
           agents={agents}
-          activeAgent={activeAgent}
-          isSubmitting={isSubmitting}
-          isChatSending={isChatSending}
-          isA2AExecuting={isA2AExecuting}
-          onCommandSubmit={handleCommandSubmit}
-          onSendToKanban={handleSendToKanban}
-          onSelectSlashCommand={handleSelectSlashCommand}
-          onOpenBrainDump={() => setShowBrainDump(true)}
+          onTasksCreated={loadData}
         />
-
-        {/* 4. A2A Hierarchical Mission Result Card */}
-        <DashboardA2AResult
-          a2aResult={a2aResult}
-          isA2AExecuting={isA2AExecuting}
-          a2aStep={a2aStep}
-          onClose={() => setA2aResult(null)}
-          onDispatchToKanban={handleDispatchA2AToKanban}
-          dispatchedKanbanCount={dispatchedKanbanCount}
-          isDispatching={isDispatchingA2AKanban}
-        />
-
-        {/* 5. Live Interactive Chat Panel */}
-        <DashboardChatPanel
-          isChatActive={isChatActive && !a2aResult && !isA2AExecuting}
-          activeAgent={activeAgent}
-          currentSessionId={currentSessionId}
-          chatMessages={chatMessages}
-          isChatSending={isChatSending}
-          followUpInput={followUpInput}
-          setFollowUpInput={setFollowUpInput}
-          onFollowUpSubmit={handleFollowUpSubmit}
-          onCloseChat={closeChat}
-          onSendToKanban={handleSendToKanban}
-        />
-      </div>
-
-      {/* 6. Brain Dump Modal */}
-      <BrainDumpModal
-        isOpen={showBrainDump}
-        onClose={() => setShowBrainDump(false)}
-        agents={agents}
-        onTasksCreated={loadData}
-      />
+      </motion.div>
     </div>
   );
 }

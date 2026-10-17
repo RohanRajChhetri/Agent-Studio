@@ -51,7 +51,11 @@ interface BriefingData {
   isOutOfSync?: boolean;
 }
 
-export function DailyBriefingCard() {
+interface DailyBriefingCardProps {
+  isChatActive?: boolean;
+}
+
+export function DailyBriefingCard({ isChatActive = false }: DailyBriefingCardProps) {
   const [briefing, setBriefing] = useState<BriefingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -290,7 +294,7 @@ export function DailyBriefingCard() {
     }
   };
 
-  if (loading) return null;
+  if (loading || isChatActive) return null;
 
   const todayStr = new Date().toLocaleDateString("en-US", {
     weekday: "short",
@@ -302,40 +306,36 @@ export function DailyBriefingCard() {
 
   return (
     <>
-      <div className="w-full rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/5 via-card to-card p-4 sm:p-5 shadow-xs transition-all">
+      <div className="w-full rounded-xl border border-border/70 bg-card/60 hover:bg-card/90 p-3 sm:p-3.5 transition-all shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Title and Telemetry Badges */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20 shadow-xs">
-              <Sun className="w-5 h-5" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+              <Sun className="w-4 h-4" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm sm:text-base font-bold text-foreground">
-                  Daily Executive Briefing
+                <h3 className="text-xs sm:text-sm font-semibold text-foreground">
+                  Daily Briefing
                 </h3>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 font-semibold border border-amber-500/20">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium border border-border">
                   {todayStr}
                 </span>
 
                 {/* Real-time Kanban Board Telemetry Badge */}
                 {kanban && (
                   <span
-                    className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border flex items-center gap-1 font-semibold ${
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1 font-medium ${
                       kanban.hasTasks
-                        ? "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20"
-                        : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
+                        ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20"
+                        : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
                     }`}
                   >
                     <Columns3 className="w-3 h-3" />
                     {kanban.hasTasks ? (
-                      <span>
-                        {kanban.total} Tasks ({kanban.review > 0 ? `${kanban.review} Review · ` : ""}
-                        {kanban.inProgress > 0 ? `${kanban.inProgress} Active · ` : ""}
-                        {kanban.done} Done)
-                      </span>
+                      <span>{kanban.total} Tasks</span>
                     ) : (
-                      <span>Kanban: Clean Slate (0 tasks)</span>
+                      <span>Clean Slate</span>
                     )}
                   </span>
                 )}
@@ -349,21 +349,15 @@ export function DailyBriefingCard() {
                     title="Kanban tasks have changed since this briefing was generated. Click to sync."
                   >
                     <RefreshCw className={`w-2.5 h-2.5 ${generating ? "animate-spin" : ""}`} />
-                    <span>Kanban Updated · Sync</span>
+                    <span>Sync</span>
                   </button>
                 )}
               </div>
-
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {kanban?.hasTasks
-                  ? `Live synthesis: ${kanban.total} tracked tasks across backlog, in-progress execution & review gates`
-                  : "Kanban board is at a clean slate. Ready for mission intake & autonomous specialist delegation."}
-              </p>
             </div>
           </div>
 
           {/* Action Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {briefing?.exists ? (
               <>
                 <button

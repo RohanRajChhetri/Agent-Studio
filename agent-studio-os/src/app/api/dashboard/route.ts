@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isOmnirouteOnline } from "@/lib/omniroute";
 import { countVaultNotes } from "@/lib/vault";
 import { getActiveApiKeys, testProviderKey } from "@/lib/llm-router";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 // In-memory cache for live ping latencies (15s TTL to avoid flooding upstream APIs)
 let cachedProviderLatencies: { data: any[]; expiresAt: number } | null = null;
@@ -13,20 +14,25 @@ export function invalidateProviderLatencyCache() {
 
 export async function GET() {
   try {
+    const scopedWhere = await getUserScopedWhere();
+
     const [agentCount, taskStats, recentActivity, omnirouteOnline, vaultNotes, allAgents, activeKeys] =
       await Promise.all([
-        prisma.agent.count(),
+        prisma.agent.count({ where: scopedWhere }),
         prisma.task.groupBy({
           by: ["status"],
+          where: scopedWhere,
           _count: true,
         }),
         prisma.activityLog.findMany({
+          where: scopedWhere,
           orderBy: { createdAt: "desc" },
           take: 20,
         }),
         isOmnirouteOnline(),
         countVaultNotes(),
         prisma.agent.findMany({
+          where: scopedWhere,
           select: {
             id: true,
             name: true,

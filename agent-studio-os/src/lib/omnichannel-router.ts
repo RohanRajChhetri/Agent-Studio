@@ -25,6 +25,7 @@ export async function routeMobileCommand(
       displayName?: string | null;
       model?: string | null;
       systemPrompt?: string | null;
+      userId?: string | null;
     } | null;
   }
 ): Promise<MobileCommandResult> {
@@ -37,6 +38,7 @@ export async function routeMobileCommand(
   const command = parts[0].toLowerCase();
   const args = parts.slice(1).join(" ").trim();
   const aName = context.defaultAgent?.displayName || "Agent Studio OS";
+  const userFilter = context.defaultAgent?.userId ? { userId: context.defaultAgent.userId } : {};
 
   // 1. HELP & START
   if (command === "/start" || command === "/help") {
@@ -61,8 +63,8 @@ _Tip: You can also send any normal text to chat directly with your primary agent
   // 2. STATUS & FLEET OVERVIEW
   if (command === "/status") {
     const [agentCount, taskCounts, omniOnline] = await Promise.all([
-      prisma.agent.count(),
-      prisma.task.groupBy({ by: ["status"], _count: { id: true } }),
+      prisma.agent.count({ where: userFilter }),
+      prisma.task.groupBy({ by: ["status"], where: userFilter, _count: { id: true } }),
       isOmnirouteOnline().catch(() => false),
     ]);
 
@@ -83,7 +85,10 @@ _Tip: You can also send any normal text to chat directly with your primary agent
   // 3. TASKS
   if (command === "/tasks" || command === "/task") {
     const tasks = await prisma.task.findMany({
-      where: { status: { in: ["backlog", "in_progress", "review"] } },
+      where: {
+        status: { in: ["backlog", "in_progress", "review"] },
+        ...userFilter,
+      },
       include: { agent: true },
       orderBy: [{ status: "asc" }, { priority: "asc" }, { updatedAt: "desc" }],
       take: 12,
@@ -140,9 +145,9 @@ _Tip: You can also send any normal text to chat directly with your primary agent
       };
     }
 
-    // Match task by prefix or exact ID
+    // Match task by prefix or exact ID scoped to user
     const target = await prisma.task.findFirst({
-      where: { id: { startsWith: args } },
+      where: { id: { startsWith: args }, ...userFilter },
       include: { agent: true },
     });
 
@@ -160,7 +165,7 @@ _Tip: You can also send any normal text to chat directly with your primary agent
       data: { status: "in_progress" },
     });
 
-    const agent = target.agent || (await prisma.agent.findFirst());
+    const agent = target.agent || (await prisma.agent.findFirst({ where: userFilter }));
     const prompt = `You are ${agent ? agent.displayName : "an autonomous AI specialist"} executing an assigned task in Agent Studio OS.
 TASK TO EXECUTE:
 - Title: ${target.title}
@@ -211,6 +216,7 @@ ${execution.content}
           type: "task_moved",
           message: `${agent?.displayName || "Agent"} completed "${target.title}" in ${formatResponseTime(execution.latency)} via Mobile Command`,
           agentId: agent?.id || null,
+          userId: context.defaultAgent?.userId || null,
         },
       });
 
@@ -253,7 +259,7 @@ ${preview}
     }
 
     const target = await prisma.task.findFirst({
-      where: { id: { startsWith: args } },
+      where: { id: { startsWith: args }, ...userFilter },
       include: { agent: true },
     });
 
@@ -275,6 +281,7 @@ ${preview}
         type: "task_moved",
         message: `Human Reviewer approved "${target.title}" via Mobile Command (moved to Done)`,
         agentId: target.agentId,
+        userId: context.defaultAgent?.userId || null,
       },
     });
 
@@ -290,7 +297,10 @@ ${preview}
   if (command === "/ask") {
     const askMatch = args.match(/^(\S+)\s+([\s\S]+)$/);
     if (!askMatch) {
-      const agents = await prisma.agent.findMany({ select: { name: true, displayName: true } });
+      const agents = await prisma.agent.findMany({
+        where: userFilter,
+        select: { name: true, displayName: true },
+      });
       const agentList = agents.map((a) => `• \`${a.name}\` (${a.displayName})`).join("\n");
       return {
         handled: true,
@@ -304,6 +314,7 @@ ${preview}
 
     const targetAgent = await prisma.agent.findFirst({
       where: {
+        ...userFilter,
         OR: [
           { name: { equals: targetName } },
           { displayName: { contains: targetName } },
@@ -346,7 +357,11 @@ ${preview}
   if (command === "/briefing") {
     try {
       const today = new Date().toISOString().split("T")[0];
-      const cached = await readVaultFile(`briefings/${today}.md`);
+      const cleanUserId = context.defaultAgent?.userId?.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const briefingRelPath = cleanUserId
+        ? `briefings/Daily_Briefing_${cleanUserId}_${today}.md`
+        : `briefings/Daily_Briefing_${today}.md`;
+      const cached = await readVaultFile(briefingRelPath).catch(() => null);
       if (cached && cached.content) {
         const preview = cached.content.length > 1000
           ? cached.content.slice(0, 1000) + "\n\n...(Full briefing saved to Obsidian Vault `briefings/`)"
@@ -360,8 +375,8 @@ ${preview}
 
       // Generate on-demand summary
       const [tasks, agents] = await Promise.all([
-        prisma.task.findMany({ include: { agent: true } }),
-        prisma.agent.findMany(),
+        prisma.task.findMany({ where: userFilter, include: { agent: true } }),
+        prisma.agent.findMany({ where: userFilter }),
       ]);
 
       const reviewCount = tasks.filter((t) => t.status === "review").length;

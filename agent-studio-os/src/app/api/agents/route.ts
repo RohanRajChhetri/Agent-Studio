@@ -3,10 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { createProfile, deleteProfile as hermesDeleteProfile, listProfiles, setConfig, enableTool, disableTool } from "@/lib/hermes";
 import { slugify } from "@/lib/utils";
 import { TOOL_DEFINITIONS, INTEGRATION_DEFINITIONS } from "@/types";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 export async function GET() {
   try {
+    const where = await getUserScopedWhere();
     const agents = await prisma.agent.findMany({
+      where,
       include: {
         tools: true,
         integrations: true,
@@ -66,10 +69,12 @@ export async function POST(request: Request) {
       );
     }
 
+    const userId = await getAuthUserId();
+
     const uniqueName = slugify(displayName) || "agent";
     let candidate = uniqueName;
     let counter = 1;
-    while (await prisma.agent.findUnique({ where: { name: candidate } })) {
+    while (await prisma.agent.findFirst({ where: { name: candidate, userId } })) {
       candidate = `${uniqueName}-${counter++}`;
     }
     const name = candidate;
@@ -115,9 +120,10 @@ export async function POST(request: Request) {
       // Continue anyway — the agent will be saved to DB
     }
 
-    // Save to database
+    // Save to database with user scoping
     const agent = await prisma.agent.create({
       data: {
+        userId,
         name,
         displayName,
         avatar,
@@ -151,6 +157,7 @@ export async function POST(request: Request) {
         type: "agent_created",
         message: `Agent "${displayName}" created`,
         agentId: agent.id,
+        userId,
       },
     });
 

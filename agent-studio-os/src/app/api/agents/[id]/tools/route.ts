@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { enableTool, disableTool } from "@/lib/hermes";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function PUT(
   request: Request,
@@ -11,7 +12,9 @@ export async function PUT(
     const body = await request.json();
     const { toolId, enabled } = body;
 
-    const agent = await prisma.agent.findUnique({ where: { id } });
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
     if (!agent) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }

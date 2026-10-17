@@ -13,6 +13,8 @@ import {
   Columns3,
   Minus,
   Maximize2,
+  RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
@@ -38,10 +40,11 @@ interface DashboardChatPanelProps {
   currentSessionId?: string | null;
   chatMessages: DashboardChatMessage[];
   isChatSending: boolean;
-  followUpInput: string;
-  setFollowUpInput: (val: string) => void;
-  onFollowUpSubmit: (e: React.FormEvent) => void;
+  followUpInput?: string;
+  setFollowUpInput?: (val: string) => void;
+  onFollowUpSubmit?: (e: React.FormEvent) => void;
   onCloseChat: () => void;
+  onClearChat?: () => void;
   onSendToKanban: (title?: string, desc?: string) => void;
   isFloating?: boolean;
 }
@@ -52,10 +55,11 @@ export function DashboardChatPanel({
   currentSessionId,
   chatMessages,
   isChatSending,
-  followUpInput,
+  followUpInput = "",
   setFollowUpInput,
   onFollowUpSubmit,
   onCloseChat,
+  onClearChat,
   onSendToKanban,
   isFloating = false,
 }: DashboardChatPanelProps) {
@@ -81,52 +85,52 @@ export function DashboardChatPanel({
     <AnimatePresence>
       {isChatActive && (
         <motion.div
-          initial={{ opacity: 0, y: isFloating ? 20 : -8, scale: 0.98 }}
+          initial={{ opacity: 0, y: isFloating ? 20 : 6, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: isFloating ? 20 : -8, scale: 0.98 }}
+          exit={{ opacity: 0, y: isFloating ? 20 : 6, scale: 0.99 }}
+          transition={{ duration: 0.2 }}
           className={
             isFloating
-              ? "fixed bottom-5 right-5 z-50 w-[95vw] sm:w-[480px] md:w-[520px] rounded-2xl border border-border bg-card/98 shadow-2xl backdrop-blur-xl overflow-hidden transition-all divide-y divide-border"
-              : "mt-4 rounded-2xl border border-border bg-card shadow-xl backdrop-blur-md overflow-hidden transition-all divide-y divide-border"
+              ? "fixed bottom-5 right-5 z-50 w-[95vw] sm:w-[460px] rounded-2xl border border-border bg-card/95 shadow-2xl backdrop-blur-xl overflow-hidden transition-all divide-y divide-border"
+              : "w-full flex-1 min-h-0 flex flex-col rounded-2xl border border-border/70 bg-card/50 backdrop-blur-sm overflow-hidden transition-all shadow-xs divide-y divide-border/60"
           }
         >
-          {/* Chat Panel Header */}
-          <div className="flex items-center justify-between p-3.5 bg-secondary/25">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="relative shrink-0">
-                <span className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-sm shadow-xs">
-                  {activeAgent?.avatar || "🤖"}
-                </span>
-                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-card" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold text-foreground truncate">
-                    {activeAgent?.displayName || "Specialist Agent"}
-                  </p>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary border border-border text-muted-foreground font-medium shrink-0">
-                    {activeAgent?.department || activeAgent?.role || "Specialist"}
-                  </span>
-                  {isFloating && (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20 font-mono">
-                      Persistent
-                    </span>
-                  )}
-                </div>
-                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 truncate">
-                  <span className="text-emerald-500 font-semibold">● Active</span>
-                  <span>•</span>
-                  <span>Memory Vault Synced</span>
+          {/* Minimalist Header */}
+          <div className="flex items-center justify-between px-3.5 py-2.5 bg-secondary/20 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-7 h-7 rounded-lg bg-secondary border border-border/80 flex items-center justify-center text-xs shrink-0 shadow-xs">
+                {activeAgent?.avatar || "🤖"}
+              </span>
+              <div className="min-w-0 flex items-center gap-2">
+                <p className="text-xs font-semibold text-foreground truncate">
+                  {activeAgent?.displayName || "Specialist"}
                 </p>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground font-medium shrink-0 border border-border/50">
+                  {activeAgent?.role || "Specialist"}
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Active session" />
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Clear chat button */}
+              {onClearChat && !isFloating && (
+                <button
+                  type="button"
+                  onClick={onClearChat}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition cursor-pointer text-xs flex items-center gap-1"
+                  title="Clear conversation"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline text-[11px]">Clear</span>
+                </button>
+              )}
+
               {isFloating && (
                 <button
                   type="button"
                   onClick={() => setIsMinimized((prev) => !prev)}
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition cursor-pointer"
                   title={isMinimized ? "Expand chat" : "Minimize chat"}
                 >
                   {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
@@ -137,230 +141,197 @@ export function DashboardChatPanel({
                 href={`/chat?agentId=${activeAgent?.id || ""}${
                   currentSessionId ? `&sessionId=${currentSessionId}` : ""
                 }`}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-primary hover:bg-[#e6f3fe] transition border border-primary/20"
-                title="Open in full screen Chat Workspace"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition cursor-pointer flex items-center gap-1"
+                title="Open in full screen workspace"
               >
-                <span>Full Screen</span>
-                <ExternalLink className="w-3 h-3" />
+                <ExternalLink className="w-3.5 h-3.5" />
               </Link>
 
               <button
                 type="button"
                 onClick={onCloseChat}
-                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
-                title="Close chat (will remain open until you close it)"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition cursor-pointer"
+                title="Close chat thread"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
           {!isMinimized && (
             <>
-              {/* Chat Messages Body */}
+              {/* Chat Messages Stream */}
               <div
                 ref={chatScrollRef}
-                className={`p-4 sm:p-5 space-y-4 overflow-y-auto scrollbar-thin ${
-                  isFloating ? "max-h-[380px]" : "max-h-[440px]"
+                className={`p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 ${
+                  isFloating ? "max-h-[380px]" : "min-h-[160px] max-h-[calc(100vh-270px)]"
                 }`}
               >
-            {chatMessages.map((msg) => {
-              const isUser = msg.role === "user";
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}
-                >
-                  {!isUser && (
-                    <span className="w-8 h-8 rounded-xl bg-secondary border border-border flex items-center justify-center text-sm shrink-0 mt-0.5 shadow-xs">
-                      {msg.agentAvatar || activeAgent?.avatar || "🤖"}
+                {chatMessages.length === 0 && (
+                  <div className="text-center py-12 text-xs text-muted-foreground space-y-2 my-auto">
+                    <span className="w-9 h-9 rounded-xl bg-secondary border border-border/80 flex items-center justify-center text-base mx-auto shadow-xs">
+                      {activeAgent?.avatar || "🤖"}
                     </span>
-                  )}
+                    <p className="font-semibold text-foreground text-sm">
+                      {activeAgent?.displayName || "Specialist"} is ready
+                    </p>
+                    <p className="text-muted-foreground text-xs max-w-xs mx-auto">
+                      Type your prompt below and press Enter to start the conversation.
+                    </p>
+                  </div>
+                )}
 
-                  <div className={`space-y-1.5 ${isUser ? "max-w-[80%]" : "max-w-[90%] w-full"}`}>
-                    {!isUser && (
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-foreground">
-                            {msg.agentName || activeAgent?.displayName || "Specialist"}
-                          </span>
-                          {msg.actionExecuted === "execute_kanban" && (
-                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 inline-flex items-center gap-1">
-                              <span>⚡</span>
-                              <span>Task Executed</span>
-                            </span>
-                          )}
-                          {msg.actionExecuted === "assign_task" && (
-                            <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 inline-flex items-center gap-1">
-                              <span>📋</span>
-                              <span>Task Delegated</span>
-                            </span>
-                          )}
-                          {msg.actionExecuted === "approve_task" && (
-                            <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 inline-flex items-center gap-1">
-                              <span>✅</span>
-                              <span>Approved</span>
-                            </span>
-                          )}
-                          {msg.actionExecuted === "direct_task" && (
-                            <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full border border-purple-500/20 inline-flex items-center gap-1">
-                              <span>🚀</span>
-                              <span>Autonomous Work</span>
-                            </span>
-                          )}
-                          {msg.actionExecuted === "search_web" && (
-                            <span className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 inline-flex items-center gap-1">
-                              <span>🌐</span>
-                              <span>Web Search</span>
-                            </span>
-                          )}
-                          {msg.actionExecuted === "execute_code" && (
-                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 inline-flex items-center gap-1">
-                              <span>💻</span>
-                              <span>Code Executed</span>
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] font-mono opacity-70">
-                          {new Date(msg.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                    )}
-
+                {chatMessages.map((msg) => {
+                  const isUser = msg.role === "user";
+                  return (
                     <div
-                      className={`rounded-2xl p-4 text-xs sm:text-[13px] leading-relaxed relative group shadow-xs ${
-                        isUser
-                          ? "bg-primary text-primary-foreground font-medium rounded-tr-xs"
-                          : "bg-secondary/40 border border-border text-foreground"
-                      }`}
+                      key={msg.id}
+                      className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}
                     >
-                      {!isUser ? (
-                        <div className="prose prose-xs dark:prose-invert max-w-none">
-                          <MarkdownRenderer content={msg.content} />
-                        </div>
-                      ) : (
-                        <div className="whitespace-pre-wrap">{msg.content}</div>
-                      )}
-
                       {!isUser && (
-                        <div className="mt-3 pt-2.5 border-t border-border/80 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground font-mono">
-                          <div className="flex items-center gap-1.5">
-                            {msg.latency && <span>{msg.latency}ms</span>}
-                            {msg.latency && <span>•</span>}
-                            <span>{msg.model || "auto"}</span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
-                            <button
-                              type="button"
-                              onClick={() => handleCopyChat(msg.id, msg.content)}
-                              className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
-                              title="Copy response text"
-                            >
-                              {copiedMessageId === msg.id ? (
-                                <>
-                                  <Check className="w-3 h-3 text-emerald-400" />
-                                  <span className="text-emerald-400 font-semibold font-sans">
-                                    Copied
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3 h-3" />
-                                  <span className="font-sans">Copy</span>
-                                </>
-                              )}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const snippetTitle =
-                                  msg.content
-                                    .split("\n")[0]
-                                    .replace(/^#*\s*/, "")
-                                    .slice(0, 60) || "Agent Deliverable";
-                                onSendToKanban(snippetTitle, msg.content);
-                              }}
-                              className="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary hover:bg-muted text-muted-foreground hover:text-foreground border border-border font-semibold font-sans transition cursor-pointer"
-                              title="Send this deliverable as a Kanban task"
-                            >
-                              <Columns3 className="w-3 h-3" />
-                              <span>Send to Kanban</span>
-                            </button>
-
-                            {(msg.actionExecuted === "execute_kanban" || msg.actionExecuted === "assign_task") && (
-                              <Link
-                                href="/kanban"
-                                className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-semibold font-sans hover:bg-primary/90 transition cursor-pointer"
-                              >
-                                <Columns3 className="w-3 h-3" />
-                                <span>Open Kanban</span>
-                              </Link>
-                            )}
-                          </div>
-                        </div>
+                        <span className="w-7 h-7 rounded-lg bg-secondary border border-border/80 flex items-center justify-center text-xs shrink-0 mt-0.5 shadow-xs">
+                          {msg.agentAvatar || activeAgent?.avatar || "🤖"}
+                        </span>
                       )}
+
+                      <div className={`space-y-1 ${isUser ? "max-w-[85%]" : "max-w-[92%] w-full"}`}>
+                        {/* Header for assistant message */}
+                        {!isUser && (
+                          <div className="flex items-center justify-between text-[11px] text-muted-foreground px-0.5 pb-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-foreground">
+                                {msg.agentName || activeAgent?.displayName || "Specialist"}
+                              </span>
+                              {msg.actionExecuted === "execute_kanban" && (
+                                <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded-full border border-emerald-500/20">
+                                  ⚡ Task Executed
+                                </span>
+                              )}
+                              {msg.actionExecuted === "assign_task" && (
+                                <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded-full border border-amber-500/20">
+                                  📋 Delegated
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] font-mono opacity-60">
+                              {new Date(msg.createdAt).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Message content */}
+                        <div
+                          className={`rounded-2xl text-xs sm:text-[13px] leading-relaxed relative group ${
+                            isUser
+                              ? "bg-primary text-primary-foreground font-medium rounded-br-xs px-4 py-2.5 shadow-xs"
+                              : "bg-secondary/35 border border-border/60 text-foreground p-3.5 sm:p-4 rounded-tl-xs"
+                          }`}
+                        >
+                          {!isUser ? (
+                            <div className="prose prose-xs dark:prose-invert max-w-none">
+                              <MarkdownRenderer content={msg.content} />
+                            </div>
+                          ) : (
+                            <div className="whitespace-pre-wrap">{msg.content}</div>
+                          )}
+
+                          {/* Subtle assistant message action footer */}
+                          {!isUser && (
+                            <div className="mt-2.5 pt-2 border-t border-border/50 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                              <div className="flex items-center gap-1.5 font-mono text-[10px] opacity-60">
+                                {msg.latency && <span>{msg.latency}ms</span>}
+                                {msg.latency && <span>•</span>}
+                                <span>{msg.model || "auto"}</span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyChat(msg.id, msg.content)}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+                                  title="Copy response text"
+                                >
+                                  {copiedMessageId === msg.id ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-500" />
+                                      <span className="text-emerald-500 font-medium">Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const snippetTitle =
+                                      msg.content
+                                        .split("\n")[0]
+                                        .replace(/^#*\s*/, "")
+                                        .slice(0, 60) || "Agent Deliverable";
+                                    onSendToKanban(snippetTitle, msg.content);
+                                  }}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground border border-border/50 font-medium transition cursor-pointer"
+                                  title="Send deliverable to Kanban board"
+                                >
+                                  <Columns3 className="w-3 h-3" />
+                                  <span>To Kanban</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Minimalist Loading / Thinking Indicator */}
+                {isChatSending && (
+                  <div className="flex gap-2.5 items-center text-xs text-muted-foreground pl-1 py-1">
+                    <span className="w-7 h-7 rounded-lg bg-secondary border border-border/80 flex items-center justify-center text-xs shrink-0 shadow-xs">
+                      {activeAgent?.avatar || "🤖"}
+                    </span>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-secondary/40 border border-border/50">
+                      <span className="inline-flex gap-1 items-center">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" />
+                      </span>
+                      <span className="text-xs text-foreground font-medium">
+                        {activeAgent?.displayName || "Specialist"} is synthesizing...
+                      </span>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-
-            {/* Generating Response Skeleton */}
-            {isChatSending && (
-              <div className="flex gap-3 items-center pl-1 text-xs text-muted-foreground">
-                <span className="w-8 h-8 rounded-xl bg-secondary border border-border flex items-center justify-center text-sm shrink-0 shadow-xs animate-pulse">
-                  {activeAgent?.avatar || "🤖"}
-                </span>
-                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-secondary/40 border border-border">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                  <span className="font-medium text-foreground">
-                    {activeAgent?.displayName || "Specialist"} is synthesizing response...
-                  </span>
-                </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Follow-up input form */}
-          <form onSubmit={onFollowUpSubmit} className="flex items-center gap-2 p-3 bg-secondary/15">
-            <input
-              type="text"
-              value={followUpInput}
-              onChange={(e) => setFollowUpInput(e.target.value)}
-              placeholder={`Reply to ${activeAgent?.displayName || "agent"}... (Press Enter)`}
-              disabled={isChatSending}
-              className="flex-1 bg-secondary/50 border border-border px-3.5 py-2 rounded-xl text-xs sm:text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition"
-            />
-
-            {followUpInput.trim() && (
-              <button
-                type="button"
-                onClick={() => {
-                  onSendToKanban(followUpInput);
-                  setFollowUpInput("");
-                }}
-                className="flex items-center gap-1 px-2.5 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold transition cursor-pointer"
-                title="Send follow-up as a task to Kanban"
-              >
-                <Columns3 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">To Kanban</span>
-              </button>
-            )}
-
-            <button
-              type="submit"
-              disabled={!followUpInput.trim() || isChatSending}
-              className="p-2 rounded-xl bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition cursor-pointer shrink-0 shadow-xs"
-              title="Send message"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+              {/* Floating mode only: include self-contained input bar */}
+              {isFloating && onFollowUpSubmit && setFollowUpInput && (
+                <form onSubmit={onFollowUpSubmit} className="flex items-center gap-2 p-2.5 bg-secondary/10 border-t border-border">
+                  <input
+                    type="text"
+                    value={followUpInput}
+                    onChange={(e) => setFollowUpInput(e.target.value)}
+                    placeholder={`Reply to ${activeAgent?.displayName || "agent"}...`}
+                    disabled={isChatSending}
+                    className="flex-1 bg-secondary/40 border border-border px-3 py-1.5 rounded-xl text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary transition"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!followUpInput.trim() || isChatSending}
+                    className="p-1.5 rounded-xl bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition cursor-pointer shrink-0"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              )}
             </>
           )}
         </motion.div>

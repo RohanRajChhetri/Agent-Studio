@@ -6,6 +6,7 @@ import type {
   A2ADispatchedTaskItem,
   A2AMessage,
 } from "@/types/a2a";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 interface DispatchConsensusOptions {
   topic: string;
@@ -36,13 +37,19 @@ export async function dispatchConsensusToKanban(
     executeNow = false,
   } = options;
 
-  // 1. Fetch eligible agents
+  // 1. Fetch eligible agents scoped to user
+  const scopedWhere = await getUserScopedWhere(
+    participatingAgentIds.length > 0 ? { id: { in: participatingAgentIds } } : {}
+  );
   let eligibleAgents = await prisma.agent.findMany({
-    where: participatingAgentIds.length > 0 ? { id: { in: participatingAgentIds } } : undefined,
+    where: scopedWhere,
   });
 
   if (eligibleAgents.length === 0) {
-    eligibleAgents = await prisma.agent.findMany({ take: 5 });
+    eligibleAgents = await prisma.agent.findMany({
+      where: await getUserScopedWhere(),
+      take: 5,
+    });
   }
 
   // 2. Synthesize actionable Kanban tasks via LLM decomposition
@@ -133,6 +140,7 @@ Respond ONLY with a valid JSON array of objects with structure:
       ) || eligibleAgents[idx % eligibleAgents.length];
 
     // Create Task record
+    const authUserId = await getAuthUserId();
     const newTask = await prisma.task.create({
       data: {
         title: t.title,
@@ -141,6 +149,7 @@ Respond ONLY with a valid JSON array of objects with structure:
         status: targetStatus,
         agentId: matchedAgent?.id || null,
         position: idx,
+        userId: authUserId,
       },
     });
 
@@ -174,11 +183,13 @@ Respond ONLY with a valid JSON array of objects with structure:
   }
 
   // Log dispatch in OS activity log
+  const authUserId = await getAuthUserId();
   await prisma.activityLog.create({
     data: {
       type: "a2a_dispatch",
       message: `[A2A Dispatch] Deployed ${createdTasks.length} tasks to Kanban board from debate: "${topic.slice(0, 45)}..."`,
       agentId: eligibleAgents[0]?.id || null,
+      userId: authUserId,
     },
   });
 

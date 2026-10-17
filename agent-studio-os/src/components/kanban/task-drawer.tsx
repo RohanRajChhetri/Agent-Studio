@@ -22,6 +22,7 @@ import {
   CheckSquare,
   Layers,
   Edit3,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { TaskItem, SubtaskItem } from "@/types";
@@ -314,7 +315,7 @@ export function TaskDrawer({
                     <MarkdownRenderer content={cleanResult} />
                   </div>
                 </div>
-              ) : task.status === "in_progress" || isRunning ? (
+              ) : isRunning || isSwarming ? (
                 <div className="p-8 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-200 text-center space-y-3">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-700 dark:text-amber-400" />
                   <h4 className="text-base font-bold text-amber-950 dark:text-amber-200">Autonomous Execution in Progress</h4>
@@ -328,17 +329,19 @@ export function TaskDrawer({
                     <Sparkles className="w-5 h-5 opacity-70" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-foreground">No Deliverable Generated Yet</h4>
+                    <h4 className="text-sm font-bold text-foreground">
+                      {task.status === "in_progress" ? "Task Queued in In Progress" : "No Deliverable Generated Yet"}
+                    </h4>
                     <p className="text-xs text-foreground/75 dark:text-muted-foreground max-w-sm mx-auto mt-1">
                       Trigger autonomous execution to have the specialist agent analyze the requirements and produce the completed deliverable.
                     </p>
                   </div>
-                  {task.status === "backlog" && (
+                  {(task.status === "backlog" || task.status === "in_progress") && (
                     <button
                       type="button"
                       onClick={() => onRunTask(task)}
-                      disabled={isRunning}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold shadow-md transition cursor-pointer"
+                      disabled={isRunning || isSwarming}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold shadow-md transition cursor-pointer disabled:opacity-50"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
                       <span>Execute Task Now</span>
@@ -585,9 +588,47 @@ export function TaskDrawer({
                 )}
 
                 {task.status === "in_progress" && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-200 flex items-center gap-2 text-xs">
-                    <Loader2 className="w-4 h-4 animate-spin shrink-0 text-amber-700 dark:text-amber-400" />
-                    <span className="font-semibold">{isSwarming ? "Multi-Agent Swarm running..." : "Autonomous agent running..."}</span>
+                  <div className="space-y-2">
+                    {isRunning || isSwarming ? (
+                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-200 flex items-center gap-2 text-xs">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0 text-amber-700 dark:text-amber-400" />
+                        <span className="font-semibold">{isSwarming ? "Multi-Agent Swarm running..." : "Autonomous agent running..."}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onRunTask(task)}
+                          disabled={isRunning || isSwarming}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold shadow-md transition cursor-pointer disabled:opacity-50"
+                        >
+                          <Play className="w-4 h-4 fill-current" />
+                          <span>Run Agent Now</span>
+                        </button>
+
+                        {onSwarmTask && (
+                          <button
+                            type="button"
+                            onClick={() => onSwarmTask(task)}
+                            disabled={isRunning || isSwarming}
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-[#e6f3fe] dark:bg-purple-950/30 text-[#0075de] dark:text-purple-300 border border-[#0075de]/30 dark:border-purple-500/30 hover:bg-[#e6f3fe]/80 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                            title="Collaborative multi-agent swarm pipeline"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                            <span>Run Multi-Agent Swarm</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => onUpdateStatus(task.id, "backlog")}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-medium text-foreground transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Return to Backlog</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
 

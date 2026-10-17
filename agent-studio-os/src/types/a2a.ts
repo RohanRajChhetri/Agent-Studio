@@ -66,6 +66,13 @@ export interface A2AHierarchyNodeExecution {
   subordinates?: A2AHierarchyNodeExecution[];
 }
 
+export interface ConferenceFileDeliverable {
+  fileName: string;
+  filePath: string;
+  fileUrl: string;
+  size: number;
+}
+
 export interface A2AHierarchyExecutionResult {
   missionId: string;
   missionTopic: string;
@@ -77,6 +84,8 @@ export interface A2AHierarchyExecutionResult {
   totalSubtasks: number;
   totalLatencyMs: number;
   createdAt: string;
+  dedicatedFolder?: string;
+  conferenceFile?: ConferenceFileDeliverable;
 }
 
 export interface A2ADispatchedTaskItem {

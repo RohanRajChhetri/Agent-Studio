@@ -56,11 +56,22 @@ export async function listVaultFiles(dirPath?: string): Promise<VaultFile[]> {
   }
 }
 
+/** Safely resolve a path within the vault root to prevent path traversal */
+export function resolveSafeVaultPath(relativePath: string): string {
+  const vaultRoot = path.resolve(getVaultPath());
+  const cleanPath = relativePath.replace(/^[/\\]+/, "").trim();
+  const resolved = path.resolve(vaultRoot, cleanPath);
+  if (!resolved.startsWith(vaultRoot)) {
+    throw new Error(`Security violation: Access outside vault directory denied for path "${relativePath}"`);
+  }
+  return resolved;
+}
+
 /** Read a file from the vault */
 export async function readVaultFile(
   relativePath: string
 ): Promise<{ content: string; modifiedAt: string }> {
-  const fullPath = path.join(getVaultPath(), relativePath);
+  const fullPath = resolveSafeVaultPath(relativePath);
   const content = await fs.readFile(fullPath, "utf-8");
   const stat = await fs.stat(fullPath);
   return { content, modifiedAt: stat.mtime.toISOString() };
@@ -71,20 +82,20 @@ export async function writeVaultFile(
   relativePath: string,
   content: string
 ): Promise<void> {
-  const fullPath = path.join(getVaultPath(), relativePath);
+  const fullPath = resolveSafeVaultPath(relativePath);
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
   await fs.writeFile(fullPath, content, "utf-8");
 }
 
 /** Delete a file from the vault */
 export async function deleteVaultFile(relativePath: string): Promise<void> {
-  const fullPath = path.join(getVaultPath(), relativePath);
+  const fullPath = resolveSafeVaultPath(relativePath);
   await fs.unlink(fullPath);
 }
 
 /** Create a folder in the vault */
 export async function createVaultFolder(relativePath: string): Promise<void> {
-  const fullPath = path.join(getVaultPath(), relativePath);
+  const fullPath = resolveSafeVaultPath(relativePath);
   await fs.mkdir(fullPath, { recursive: true });
 }
 
@@ -93,15 +104,15 @@ export async function renameVaultPath(
   oldRelativePath: string,
   newRelativePath: string
 ): Promise<void> {
-  const oldPath = path.join(getVaultPath(), oldRelativePath);
-  const newPath = path.join(getVaultPath(), newRelativePath);
+  const oldPath = resolveSafeVaultPath(oldRelativePath);
+  const newPath = resolveSafeVaultPath(newRelativePath);
   await fs.mkdir(path.dirname(newPath), { recursive: true });
   await fs.rename(oldPath, newPath);
 }
 
 /** Delete a folder and its contents recursively from the vault */
 export async function deleteVaultFolder(relativePath: string): Promise<void> {
-  const fullPath = path.join(getVaultPath(), relativePath);
+  const fullPath = resolveSafeVaultPath(relativePath);
   await fs.rm(fullPath, { recursive: true, force: true });
 }
 

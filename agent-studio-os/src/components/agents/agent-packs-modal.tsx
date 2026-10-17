@@ -105,7 +105,7 @@ export function AgentPacksModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 15 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-3xl rounded-2xl border border-border bg-card text-foreground shadow-2xl p-5 sm:p-6 space-y-5 max-h-[88vh] flex flex-col"
+          className="w-full max-w-4xl rounded-2xl border border-border bg-card text-foreground shadow-2xl p-5 sm:p-6 space-y-5 max-h-[90vh] flex flex-col"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-border shrink-0">
@@ -114,9 +114,14 @@ export function AgentPacksModal({
                 <Sparkles className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-foreground">
-                  Agent Workforce Starter Packs
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-foreground">
+                    Agent Workforce Starter Packs
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold">
+                    {packs.length} Pre-Configured Fleets
+                  </span>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   1-Click deploy specialized AI agent teams with configured hierarchies, personas & starter tasks
                 </p>
@@ -137,9 +142,9 @@ export function AgentPacksModal({
           ) : (
             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 min-h-0 overflow-y-auto pr-1">
               {/* Pack Selector Tabs */}
-              <div className="space-y-2 md:col-span-1 border-r-0 md:border-r border-border md:pr-3">
+              <div className="space-y-2 md:col-span-1 border-r-0 md:border-r border-border md:pr-3 overflow-y-auto max-h-[64vh]">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1 block mb-2">
-                  Select Pack
+                  Select Fleet Pack ({packs.length})
                 </span>
                 {packs.map((pack) => {
                   const isSelected = pack.id === activePack?.id;
@@ -194,7 +199,7 @@ export function AgentPacksModal({
                       <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">
                         Included Fleet Specialists ({activePack.agents.length})
                       </span>
-                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      <div className="space-y-2 max-h-64 sm:max-h-72 overflow-y-auto pr-1">
                         {activePack.agents.map((ag) => (
                           <div
                             key={ag.name}
@@ -204,7 +209,7 @@ export function AgentPacksModal({
                               {ag.avatar}
                             </span>
                             <div className="min-w-0 flex-1 space-y-0.5">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-bold text-foreground">{ag.displayName}</span>
                                 <span className="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded bg-secondary text-muted-foreground border border-border">
                                   {ag.role}

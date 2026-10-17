@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 const execAsync = promisify(exec);
 
@@ -62,8 +63,8 @@ export async function POST(
       );
     }
 
-    const agent = await prisma.agent.findUnique({
-      where: { id },
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id }),
     });
 
     if (!agent) {

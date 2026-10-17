@@ -6,6 +6,27 @@ describe('RAG Facade - Exports', () => {
     // Test that the main functions are exported
     expect(typeof rag.queryVaultRAG).toBe('function');
     expect(typeof rag.formatRAGPromptContext).toBe('function');
+    expect(typeof rag.cosineSimilarity).toBe('function');
+    expect(typeof rag.computeDeterministicVector).toBe('function');
+  });
+
+  it('should compute cosine similarity accurately', () => {
+    const vecA = [1, 0, 0];
+    const vecB = [1, 0, 0];
+    const vecC = [0, 1, 0];
+    expect(rag.cosineSimilarity(vecA, vecB)).toBeCloseTo(1.0);
+    expect(rag.cosineSimilarity(vecA, vecC)).toBeCloseTo(0.0);
+  });
+
+  it('should generate unit-normalized deterministic vectors', () => {
+    const v1 = rag.computeDeterministicVector('autonomous ai agent workspace');
+    const v2 = rag.computeDeterministicVector('autonomous ai agent workspace');
+    const v3 = rag.computeDeterministicVector('baking chocolate cake recipes');
+    expect(v1.length).toBe(64);
+    // Identical text produces identical vectors (sim ~ 1.0)
+    expect(rag.cosineSimilarity(v1, v2)).toBeCloseTo(1.0);
+    // Unrelated text produces significantly lower similarity
+    expect(rag.cosineSimilarity(v1, v3)).toBeLessThan(0.7);
   });
 });
 

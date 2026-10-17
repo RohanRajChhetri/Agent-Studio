@@ -41,7 +41,6 @@ import {
   Send,
   Key,
   ChevronRight,
-  Crown,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -51,7 +50,6 @@ import { slugify } from "@/lib/utils";
 import { HermesTerminalModal } from "@/components/agents/hermes-terminal-modal";
 import { AgentHierarchyView } from "@/components/agents/agent-hierarchy-view";
 import { AgentPipelineBuilder } from "@/components/agents/agent-pipeline-builder";
-import { A2AMissionModal } from "@/components/agents/a2a-mission-modal";
 import { AgentPacksModal } from "@/components/agents/agent-packs-modal";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -1321,7 +1319,6 @@ export default function AgentsPage() {
   const [selectedMemoryAgent, setSelectedMemoryAgent] = useState<AgentProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"directory" | "hierarchy" | "pipeline">("directory");
-  const [showA2AModal, setShowA2AModal] = useState(false);
   const [showPacksModal, setShowPacksModal] = useState(false);
 
   const fetchAgents = useCallback(async () => {
@@ -1349,9 +1346,6 @@ export default function AgentsPage() {
       }
       if (params.get("new") === "true") {
         setShowCreate(true);
-      }
-      if (params.get("a2a") === "true") {
-        setShowA2AModal(true);
       }
       if (params.get("packs") === "true") {
         setShowPacksModal(true);
@@ -1457,15 +1451,6 @@ export default function AgentsPage() {
               Pipeline
             </button>
           </div>
-
-          <button
-            onClick={() => setShowA2AModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/80 text-foreground border border-border text-xs font-medium transition cursor-pointer"
-            title="Launch an autonomous A2A chain of command mission"
-          >
-            <Crown className="w-3.5 h-3.5 text-[#0075de]" />
-            <span>A2A Mission</span>
-          </button>
 
           <button
             onClick={() => setShowPacksModal(true)}
@@ -1655,12 +1640,6 @@ export default function AgentsPage() {
         agent={selectedMemoryAgent}
         isOpen={!!selectedMemoryAgent}
         onClose={() => setSelectedMemoryAgent(null)}
-      />
-
-      <A2AMissionModal
-        isOpen={showA2AModal}
-        onClose={() => setShowA2AModal(false)}
-        agents={agents}
       />
 
       <AgentPacksModal

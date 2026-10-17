@@ -248,6 +248,12 @@ export async function chatCompletion(
           if (parsed.choices?.[0]?.message?.content) {
             textContent += parsed.choices[0].message.content;
           }
+          if (Array.isArray(parsed.choices?.[0]?.message?.tool_calls)) {
+            for (const tc of parsed.choices[0].message.tool_calls) {
+              const fn = tc.function || tc;
+              textContent += `\n<tool_call>{"name": "${fn.name}", "arguments": ${typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {})}}</tool_call>\n`;
+            }
+          }
           if (parsed.usage) {
             usage = parsed.usage;
           }
@@ -263,11 +269,25 @@ export async function chatCompletion(
     }
 
     const data = JSON.parse(rawText);
+    const firstChoice = data.choices?.[0];
+    const msg = firstChoice?.message;
+    let content = msg?.content || firstChoice?.text || "";
+
+    // Extract tool calls from OpenAI-compatible response format if present
+    if (Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0) {
+      for (const tc of msg.tool_calls) {
+        const fn = tc.function || tc;
+        content += `\n<tool_call>{"name": "${fn.name}", "arguments": ${typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {})}}</tool_call>\n`;
+      }
+    }
+
+    // Fallback to reasoning_content if content is empty
+    if (!content.trim() && msg?.reasoning_content) {
+      content = msg.reasoning_content;
+    }
+
     return {
-      content:
-        data.choices?.[0]?.message?.content ||
-        data.choices?.[0]?.text ||
-        "",
+      content,
       usage: data.usage,
       latency: Date.now() - start,
     };

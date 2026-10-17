@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateNextRun, checkAndRunDueRoutines } from "@/lib/scheduler";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 export async function GET() {
   try {
@@ -12,6 +13,7 @@ export async function GET() {
     }
 
     const routines = await prisma.routine.findMany({
+      where: await getUserScopedWhere(),
       include: {
         agent: true,
       },
@@ -55,6 +57,7 @@ export async function POST(request: Request) {
     }
 
     const nextRunAt = calculateNextRun(type, time, scheduledAt);
+    const userId = await getAuthUserId();
 
     const routine = await prisma.routine.create({
       data: {
@@ -69,6 +72,7 @@ export async function POST(request: Request) {
         priority: priority || "medium",
         enabled: true,
         nextRunAt,
+        userId,
       },
       include: {
         agent: true,
@@ -80,6 +84,7 @@ export async function POST(request: Request) {
         type: "routine_created",
         message: `Created ${type === "daily" ? "daily routine" : "scheduled task"} "${title}"`,
         agentId: agentId || null,
+        userId,
       },
     });
 

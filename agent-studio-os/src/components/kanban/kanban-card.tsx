@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -17,6 +17,8 @@ import {
   Bot,
   Play,
   Layers,
+  Zap,
+  Split,
 } from "lucide-react";
 import type { TaskItem, SubtaskItem } from "@/types";
 import { PRIORITY_COLORS, PRIORITY_BADGE_CLASSES } from "@/types";
@@ -28,7 +30,9 @@ interface KanbanCardProps {
   onEdit: (task: TaskItem) => void;
   onDelete: (id: string) => void;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
+  onDeconstruct?: (task: TaskItem) => void;
   isRunning?: boolean;
+  isDeconstructing?: boolean;
 }
 
 function formatRelativeTime(dateStr?: string | Date | null): string {
@@ -72,7 +76,9 @@ export function KanbanCard({
   onEdit,
   onDelete,
   onToggleSubtask,
+  onDeconstruct,
   isRunning = false,
+  isDeconstructing = false,
 }: KanbanCardProps) {
   const {
     attributes,
@@ -110,6 +116,26 @@ export function KanbanCard({
   const completedSubtasks = subtasks.filter((s: SubtaskItem) => s.completed).length;
   const dueInfo = formatDueDate(task.dueDate);
   const relTime = formatRelativeTime(task.createdAt);
+
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  useEffect(() => {
+    if (!isRunning) {
+      setElapsedSec(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setElapsedSec((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isRunning]);
+
+  const liveStage = useMemo(() => {
+    if (elapsedSec < 3) return { label: "Grounding vault memory & intent...", pct: 25 };
+    if (elapsedSec < 7) return { label: "Synthesizing specialist execution plan...", pct: 50 };
+    if (elapsedSec < 12) return { label: "Running agentic tool loop & code verification...", pct: 75 };
+    return { label: "Compiling deliverable & saving to vault...", pct: 92 };
+  }, [elapsedSec]);
 
   const isInProgress = task.status === "in_progress" || isRunning;
   const isReview = task.status === "review";
@@ -183,6 +209,26 @@ export function KanbanCard({
               </span>
             )}
 
+            {onDeconstruct && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeconstruct(task);
+                }}
+                disabled={isDeconstructing || isRunning}
+                className="p-1 rounded-md text-foreground/70 hover:text-primary hover:bg-primary/10 transition-all opacity-0 group-hover:opacity-100 cursor-pointer disabled:opacity-50"
+                title="AI Deconstruct into Specialist Subtasks"
+                aria-label="AI Deconstruct"
+              >
+                {isDeconstructing ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                ) : (
+                  <Split className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -246,16 +292,46 @@ export function KanbanCard({
         )}
 
         {/* UNIFIED STATUS INDICATORS (Predictable & Consistent Across All Columns) */}
-        {isInProgress ? (
-          /* Active Processing Bar */
-          <div className="p-2 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 dark:bg-amber-950/40 dark:border-amber-700/50 dark:text-amber-200 flex items-center justify-between text-xs animate-pulse">
-            <div className="flex items-center gap-1.5">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700 dark:text-amber-400 shrink-0" />
-              <span className="text-[11px] font-semibold text-amber-950 dark:text-amber-200">Autonomous Execution Running...</span>
+        {isRunning ? (
+          /* Active Multi-Phase Autonomous Reasoning Bar */
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-foreground space-y-1.5 shadow-xs">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="text-[11px] font-bold text-foreground truncate">
+                  {liveStage.label}
+                </span>
+              </div>
+              <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-300 shrink-0">
+                {elapsedSec}s
+              </span>
             </div>
-            <span className="text-[9.5px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-200/90 text-amber-950 dark:bg-amber-500/30 dark:text-amber-200">
-              Live
-            </span>
+            <div className="w-full h-1.5 rounded-full bg-amber-500/20 overflow-hidden">
+              <div
+                className="h-full bg-amber-500 transition-all duration-500 rounded-full"
+                style={{ width: `${liveStage.pct}%` }}
+              />
+            </div>
+          </div>
+        ) : task.status === "in_progress" ? (
+          /* Queued In Progress State */
+          <div className="flex items-center justify-between p-2 rounded-xl bg-amber-50/70 border border-amber-300/80 text-amber-950 dark:bg-amber-950/30 dark:border-amber-800/50 dark:text-amber-200 text-xs">
+            <div className="flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="text-[11px] font-medium text-amber-950 dark:text-amber-200">In Progress</span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRun(task);
+              }}
+              className="text-[10px] font-bold uppercase tracking-wider bg-amber-500 hover:bg-amber-600 text-white px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+              title="Run Agent"
+            >
+              <Play className="w-2.5 h-2.5 fill-current" />
+              <span>Run</span>
+            </button>
           </div>
         ) : isReview ? (
           /* Deliverable Ready Banner */
@@ -314,7 +390,7 @@ export function KanbanCard({
 
           {/* Primary Action Button */}
           <div onClick={(e) => e.stopPropagation()}>
-            {task.status === "backlog" ? (
+            {task.status === "backlog" || (task.status === "in_progress" && !isRunning) ? (
               <button
                 type="button"
                 onClick={() => onRun(task)}
@@ -329,6 +405,11 @@ export function KanbanCard({
                 )}
                 <span>Run Agent</span>
               </button>
+            ) : isRunning ? (
+              <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400 font-semibold">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Executing...</span>
+              </span>
             ) : isReview ? (
               <button
                 type="button"

@@ -38,6 +38,7 @@ export class GeminiLiveClient {
   private nextPlayTime = 0;
   private activeSources: AudioBufferSourceNode[] = [];
   private isSpeaking = false;
+  private echoCooldownUntil = 0;
   private isMuted = false;
   private isClosed = false;
 
@@ -186,7 +187,16 @@ export class GeminiLiveClient {
       this.micProcessor = this.inputAudioCtx.createScriptProcessor(bufferSize, 1, 1);
 
       this.micProcessor.onaudioprocess = (e) => {
-        if (this.isMuted || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        // Prevent microphone from picking up agent's speaker output in an infinite loop
+        if (
+          this.isMuted ||
+          !this.ws ||
+          this.ws.readyState !== WebSocket.OPEN ||
+          this.isSpeaking ||
+          Date.now() < this.echoCooldownUntil
+        ) {
+          return;
+        }
 
         const inputData = e.inputBuffer.getChannelData(0);
 
@@ -303,6 +313,7 @@ export class GeminiLiveClient {
 
         if (this.activeSources.length === 0) {
           this.isSpeaking = false;
+          this.echoCooldownUntil = Date.now() + 450;
           this.callbacks.onStatusChange?.("listening");
         }
       };
@@ -323,6 +334,7 @@ export class GeminiLiveClient {
     }
     this.activeSources = [];
     this.isSpeaking = false;
+    this.echoCooldownUntil = Date.now() + 200;
     if (this.outputAudioCtx) {
       this.nextPlayTime = this.outputAudioCtx.currentTime;
     }

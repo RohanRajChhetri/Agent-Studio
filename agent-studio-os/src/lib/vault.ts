@@ -27,4 +27,5 @@ export {
   renameVaultPath,
   deleteVaultFolder,
   countVaultNotes,
+  resolveSafeVaultPath,
 } from "./vault-operations";

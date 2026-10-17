@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { executeChatCompletion, getActiveApiKeys } from "@/lib/llm-router";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function POST(request: Request) {
   try {
@@ -15,7 +16,9 @@ export async function POST(request: Request) {
     let agentList = Array.isArray(agents) && agents.length > 0 ? agents : [];
     if (agentList.length === 0) {
       try {
-        agentList = await prisma.agent.findMany();
+        agentList = await prisma.agent.findMany({
+          where: await getUserScopedWhere(),
+        });
       } catch (err) {
         console.error("Failed to query agents for decomposition:", err);
       }
@@ -242,7 +245,9 @@ Return ONLY a valid JSON array of objects with no markdown code fence or wrappin
     // Persist into database envelope if taskId is provided
     if (taskId) {
       try {
-        const existingTask = await prisma.task.findUnique({ where: { id: taskId } });
+        const existingTask = await prisma.task.findFirst({
+          where: await getUserScopedWhere({ id: taskId }),
+        });
         if (existingTask) {
           let existingData: any = {};
           try {

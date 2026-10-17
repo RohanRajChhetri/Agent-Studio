@@ -48,6 +48,69 @@ const STOP_WORDS = new Set([
 /** Conversational greetings and small-talk patterns that should never trigger RAG */
 const CONVERSATIONAL_REGEX = /^(hi|hello|hey|yo|greetings|good\s+(morning|afternoon|evening)|how\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|thanks|thank\s+you|ok|okay|bye|goodbye|test)[\s!.,?]*$/i;
 
+/**
+ * Computes cosine similarity between two numeric vectors.
+ */
+export function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) return 0;
+  const len = Math.min(vecA.length, vecB.length);
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < len; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Computes a deterministic vector embedding from text
+ * using n-grams and hashing (runs instantly offline without external API latency).
+ */
+export function computeDeterministicVector(text: string, dimensions = 64): number[] {
+  const vector = new Array(dimensions).fill(0);
+  if (!text || text.length === 0) return vector;
+
+  const clean = text.toLowerCase().replace(/[^\w\s]/g, "");
+  const words = clean.split(/\s+/).filter(Boolean);
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    let hash = 0;
+    for (let j = 0; j < word.length; j++) {
+      hash = (hash << 5) - hash + word.charCodeAt(j);
+      hash |= 0;
+    }
+    const idx = Math.abs(hash) % dimensions;
+    vector[idx] += 1;
+
+    // Bi-gram hash for word order sensitivity
+    if (i < words.length - 1) {
+      const biWord = `${word}_${words[i + 1]}`;
+      let biHash = 0;
+      for (let k = 0; k < biWord.length; k++) {
+        biHash = (biHash << 5) - biHash + biWord.charCodeAt(k);
+        biHash |= 0;
+      }
+      const biIdx = Math.abs(biHash) % dimensions;
+      vector[biIdx] += 1.5;
+    }
+  }
+
+  // Unit normalization
+  const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
+  if (norm > 0) {
+    for (let i = 0; i < dimensions; i++) {
+      vector[i] /= norm;
+    }
+  }
+
+  return vector;
+}
+
 /** Tokenize string into lowercase terms */
 function tokenize(text: string): string[] {
   return text
@@ -104,6 +167,7 @@ export async function queryVaultRAG(
   const vaultPath = getVaultPath();
   const files = await getAllMarkdownFiles(vaultPath, vaultPath);
 
+  const queryVector = computeDeterministicVector(query, 64);
   const chunks: RAGChunk[] = [];
 
   for (const file of files) {
@@ -138,7 +202,7 @@ export async function queryVaultRAG(
         continue;
       }
 
-      // Score calculation
+      // Hybrid Score calculation: Token matches + Semantic Vector Cosine Similarity
       let score = 0;
       const titleTokens = tokenize(title);
       const bodyTokens = tokenize(body);
@@ -157,6 +221,13 @@ export async function queryVaultRAG(
         if (occurrences > 0) {
           score += Math.min(occurrences * 0.8, 6);
         }
+      }
+
+      // Semantic vector similarity contribution
+      const docVector = computeDeterministicVector(`${title} ${tags.join(" ")} ${body.slice(0, 1000)}`, 64);
+      const vectorSim = cosineSimilarity(queryVector, docVector);
+      if (vectorSim > 0.4) {
+        score += vectorSim * 6;
       }
 
       if (score >= minScore) {

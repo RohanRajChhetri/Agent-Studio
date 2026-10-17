@@ -16,6 +16,7 @@ import {
   autoBootWhatsAppIfConfigured,
   getBridgePaths,
 } from "@/lib/whatsapp-service";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 // Cache active pairing process across requests by agentId
 const activePairProcesses = new Map<string, ReturnType<typeof spawn>>();
@@ -37,9 +38,27 @@ export async function GET(request: Request) {
     console.error("[WhatsApp Auto-Boot Error]:", err);
   });
 
-  const configs = await getWhatsAppConfigs();
+  const userAgents = await prisma.agent.findMany({
+    where: await getUserScopedWhere(),
+    select: { id: true },
+  });
+  const userAgentIds = new Set(userAgents.map((a) => a.id));
+
+  const allConfigs = await getWhatsAppConfigs();
+  const configs = allConfigs.filter((c) => userAgentIds.has(c.agentId));
 
   if (agentId) {
+    if (!userAgentIds.has(agentId)) {
+      return NextResponse.json({
+        hasSession: false,
+        sessionDir: "",
+        state: { status: "idle" },
+        service: null,
+        health: { running: false },
+        config: null,
+      });
+    }
+
     const config = configs.find(c => c.agentId === agentId);
     const { sessionDir, credsFile } = getBridgePaths(agentId);
     const hasSession = existsSync(credsFile);
@@ -70,6 +89,13 @@ export async function POST(request: Request) {
     
     if (!agentId) {
       return NextResponse.json({ error: "agentId is required" }, { status: 400 });
+    }
+
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id: agentId }),
+    });
+    if (!agent) {
+      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
     const { sessionDir, bridgeDir, bridgeScript, credsFile, home } = getBridgePaths(agentId);

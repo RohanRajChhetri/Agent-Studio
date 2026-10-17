@@ -213,6 +213,7 @@ async function handleWebhookExecution(token: string, body: Record<string, any>) 
         status: "in_progress",
         priority: priority,
         agentId: assignedAgent?.id || null,
+        userId: assignedAgent?.userId || null,
       },
       include: { agent: true },
     });
@@ -287,6 +288,7 @@ ${execution.content}
         type: "webhook_received",
         message: `Webhook trigger executed "${task.title}" via ${assignedAgent?.displayName || "Agent"} (${timeFormatted})`,
         agentId: assignedAgent?.id || null,
+        userId: assignedAgent?.userId || null,
       },
     });
 

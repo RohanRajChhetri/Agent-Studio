@@ -1,0 +1,209 @@
+Match_Number,Stage,Team_A,Team_B,Team_Evaluated,Fouls_Committed,Yellow_Cards,Red_Cards,Fouls_Drawn,Possession_Pct
+1,Group Stage,Argentina,Germany,Argentina,15,3,0,18,45%
+1,Group Stage,Argentina,Germany,Germany,18,3,0,15,55%
+2,Group Stage,England,Colombia,England,19,3,1,10,50%
+2,Group Stage,England,Colombia,Colombia,10,2,0,19,50%
+3,Group Stage,Portugal,Denmark,Portugal,10,2,0,16,55%
+3,Group Stage,Portugal,Denmark,Denmark,16,3,0,10,45%
+4,Group Stage,Belgium,Brazil,Belgium,14,2,0,8,60%
+4,Group Stage,Belgium,Brazil,Brazil,8,1,0,14,40%
+5,Group Stage,Colombia,Belgium,Colombia,18,3,0,14,44%
+5,Group Stage,Colombia,Belgium,Belgium,14,2,0,18,56%
+6,Group Stage,Senegal,South Korea,Senegal,9,1,0,20,49%
+6,Group Stage,Senegal,South Korea,South Korea,20,4,1,9,51%
+7,Group Stage,Switzerland,Canada,Switzerland,13,2,0,12,54%
+7,Group Stage,Switzerland,Canada,Canada,12,2,0,13,46%
+8,Group Stage,USA,Portugal,USA,17,3,0,18,59%
+8,Group Stage,USA,Portugal,Portugal,18,3,0,17,41%
+9,Group Stage,Argentina,Japan,Argentina,8,1,0,10,43%
+9,Group Stage,Argentina,Japan,Japan,10,2,0,8,57%
+10,Group Stage,England,Nigeria,England,12,2,0,16,48%
+10,Group Stage,England,Nigeria,Nigeria,16,3,0,12,52%
+11,Group Stage,Portugal,England,Portugal,16,3,0,8,53%
+11,Group Stage,Portugal,England,England,8,1,0,16,47%
+12,Group Stage,Belgium,Croatia,Belgium,20,4,1,14,58%
+12,Group Stage,Belgium,Croatia,Croatia,14,2,0,20,42%
+13,Group Stage,Colombia,Australia,Colombia,11,2,0,20,42%
+13,Group Stage,Colombia,Australia,Australia,20,4,1,11,58%
+14,Group Stage,Senegal,Argentina,Senegal,15,3,0,12,47%
+14,Group Stage,Senegal,Argentina,Argentina,12,2,0,15,53%
+15,Group Stage,Switzerland,Netherlands,Switzerland,19,3,1,18,52%
+15,Group Stage,Switzerland,Netherlands,Netherlands,18,3,0,19,48%
+16,Group Stage,USA,Morocco,USA,10,2,0,10,57%
+16,Group Stage,USA,Morocco,Morocco,10,2,0,10,43%
+17,Group Stage,Argentina,USA,Argentina,14,2,0,16,41%
+17,Group Stage,Argentina,USA,USA,16,3,0,14,59%
+18,Group Stage,England,Spain,England,18,3,0,8,46%
+18,Group Stage,England,Spain,Spain,8,1,0,18,54%
+19,Group Stage,Portugal,Uruguay,Portugal,9,1,0,14,51%
+19,Group Stage,Portugal,Uruguay,Uruguay,14,2,0,9,49%
+20,Group Stage,Belgium,Switzerland,Belgium,13,2,0,20,56%
+20,Group Stage,Belgium,Switzerland,Switzerland,20,4,1,13,44%
+21,Group Stage,Colombia,France,Colombia,17,3,0,12,40%
+21,Group Stage,Colombia,France,France,12,2,0,17,60%
+22,Group Stage,Senegal,Italy,Senegal,8,1,0,18,45%
+22,Group Stage,Senegal,Italy,Italy,18,3,0,8,55%
+23,Group Stage,Switzerland,Senegal,Switzerland,12,2,0,10,50%
+23,Group Stage,Switzerland,Senegal,Senegal,10,2,0,12,50%
+24,Group Stage,USA,Mexico,USA,16,3,0,16,55%
+24,Group Stage,USA,Mexico,Mexico,16,3,0,16,45%
+25,Group Stage,Argentina,Germany,Argentina,20,4,1,8,60%
+25,Group Stage,Argentina,Germany,Germany,8,1,0,20,40%
+26,Group Stage,England,Colombia,England,11,2,0,14,44%
+26,Group Stage,England,Colombia,Colombia,14,2,0,11,56%
+27,Group Stage,Portugal,Denmark,Portugal,15,3,0,20,49%
+27,Group Stage,Portugal,Denmark,Denmark,20,4,1,15,51%
+28,Group Stage,Belgium,Brazil,Belgium,19,3,1,12,54%
+28,Group Stage,Belgium,Brazil,Brazil,12,2,0,19,46%
+29,Group Stage,Colombia,Belgium,Colombia,10,2,0,18,59%
+29,Group Stage,Colombia,Belgium,Belgium,18,3,0,10,41%
+30,Group Stage,Senegal,South Korea,Senegal,14,2,0,10,43%
+30,Group Stage,Senegal,South Korea,South Korea,10,2,0,14,57%
+31,Group Stage,Switzerland,Canada,Switzerland,18,3,0,16,48%
+31,Group Stage,Switzerland,Canada,Canada,16,3,0,18,52%
+32,Group Stage,USA,Portugal,USA,9,1,0,8,53%
+32,Group Stage,USA,Portugal,Portugal,8,1,0,9,47%
+33,Group Stage,Argentina,Japan,Argentina,13,2,0,14,58%
+33,Group Stage,Argentina,Japan,Japan,14,2,0,13,42%
+34,Group Stage,England,Nigeria,England,17,3,0,20,42%
+34,Group Stage,England,Nigeria,Nigeria,20,4,1,17,58%
+35,Group Stage,Portugal,England,Portugal,8,1,0,12,47%
+35,Group Stage,Portugal,England,England,12,2,0,8,53%
+36,Group Stage,Belgium,Croatia,Belgium,12,2,0,18,52%
+36,Group Stage,Belgium,Croatia,Croatia,18,3,0,12,48%
+37,Group Stage,Colombia,Australia,Colombia,16,3,0,10,57%
+37,Group Stage,Colombia,Australia,Australia,10,2,0,16,43%
+38,Group Stage,Senegal,Argentina,Senegal,20,4,1,16,41%
+38,Group Stage,Senegal,Argentina,Argentina,16,3,0,20,59%
+39,Group Stage,Switzerland,Netherlands,Switzerland,11,2,0,8,46%
+39,Group Stage,Switzerland,Netherlands,Netherlands,8,1,0,11,54%
+40,Group Stage,USA,Morocco,USA,15,3,0,14,51%
+40,Group Stage,USA,Morocco,Morocco,14,2,0,15,49%
+41,Group Stage,Argentina,USA,Argentina,19,3,1,20,56%
+41,Group Stage,Argentina,USA,USA,20,4,1,19,44%
+42,Group Stage,England,Spain,England,10,2,0,12,40%
+42,Group Stage,England,Spain,Spain,12,2,0,10,60%
+43,Group Stage,Portugal,Uruguay,Portugal,14,2,0,18,45%
+43,Group Stage,Portugal,Uruguay,Uruguay,18,3,0,14,55%
+44,Group Stage,Belgium,Switzerland,Belgium,18,3,0,10,50%
+44,Group Stage,Belgium,Switzerland,Switzerland,10,2,0,18,50%
+45,Group Stage,Colombia,France,Colombia,9,1,0,16,55%
+45,Group Stage,Colombia,France,France,16,3,0,9,45%
+46,Group Stage,Senegal,Italy,Senegal,13,2,0,8,60%
+46,Group Stage,Senegal,Italy,Italy,8,1,0,13,40%
+47,Group Stage,Switzerland,Senegal,Switzerland,17,3,0,14,44%
+47,Group Stage,Switzerland,Senegal,Senegal,14,2,0,17,56%
+48,Group Stage,USA,Mexico,USA,8,1,0,20,49%
+48,Group Stage,USA,Mexico,Mexico,20,4,1,8,51%
+49,Group Stage,Argentina,Germany,Argentina,12,2,0,12,54%
+49,Group Stage,Argentina,Germany,Germany,12,2,0,12,46%
+50,Group Stage,England,Colombia,England,16,3,0,18,59%
+50,Group Stage,England,Colombia,Colombia,18,3,0,16,41%
+51,Group Stage,Portugal,Denmark,Portugal,20,4,1,10,43%
+51,Group Stage,Portugal,Denmark,Denmark,10,2,0,20,57%
+52,Group Stage,Belgium,Brazil,Belgium,11,2,0,16,48%
+52,Group Stage,Belgium,Brazil,Brazil,16,3,0,11,52%
+53,Group Stage,Colombia,Belgium,Colombia,15,3,0,8,53%
+53,Group Stage,Colombia,Belgium,Belgium,8,1,0,15,47%
+54,Group Stage,Senegal,South Korea,Senegal,19,3,1,14,58%
+54,Group Stage,Senegal,South Korea,South Korea,14,2,0,19,42%
+55,Group Stage,Switzerland,Canada,Switzerland,10,2,0,20,42%
+55,Group Stage,Switzerland,Canada,Canada,20,4,1,10,58%
+56,Group Stage,USA,Portugal,USA,14,2,0,12,47%
+56,Group Stage,USA,Portugal,Portugal,12,2,0,14,53%
+57,Group Stage,Argentina,Japan,Argentina,18,3,0,18,52%
+57,Group Stage,Argentina,Japan,Japan,18,3,0,18,48%
+58,Group Stage,England,Nigeria,England,9,1,0,10,57%
+58,Group Stage,England,Nigeria,Nigeria,10,2,0,9,43%
+59,Group Stage,Portugal,England,Portugal,13,2,0,16,41%
+59,Group Stage,Portugal,England,England,16,3,0,13,59%
+60,Group Stage,Belgium,Croatia,Belgium,17,3,0,8,46%
+60,Group Stage,Belgium,Croatia,Croatia,8,1,0,17,54%
+61,Group Stage,Colombia,Australia,Colombia,8,1,0,14,51%
+61,Group Stage,Colombia,Australia,Australia,14,2,0,8,49%
+62,Group Stage,Senegal,Argentina,Senegal,12,2,0,20,56%
+62,Group Stage,Senegal,Argentina,Argentina,20,4,1,12,44%
+63,Group Stage,Switzerland,Netherlands,Switzerland,16,3,0,12,40%
+63,Group Stage,Switzerland,Netherlands,Netherlands,12,2,0,16,60%
+64,Group Stage,USA,Morocco,USA,20,4,1,18,45%
+64,Group Stage,USA,Morocco,Morocco,18,3,0,20,55%
+65,Group Stage,Argentina,USA,Argentina,11,2,0,10,50%
+65,Group Stage,Argentina,USA,USA,10,2,0,11,50%
+66,Group Stage,England,Spain,England,15,3,0,16,55%
+66,Group Stage,England,Spain,Spain,16,3,0,15,45%
+67,Group Stage,Portugal,Uruguay,Portugal,19,3,1,8,60%
+67,Group Stage,Portugal,Uruguay,Uruguay,8,1,0,19,40%
+68,Group Stage,Belgium,Switzerland,Belgium,10,2,0,14,44%
+68,Group Stage,Belgium,Switzerland,Switzerland,14,2,0,10,56%
+69,Group Stage,Colombia,France,Colombia,14,2,0,20,49%
+69,Group Stage,Colombia,France,France,20,4,1,14,51%
+70,Group Stage,Senegal,Italy,Senegal,18,3,0,12,54%
+70,Group Stage,Senegal,Italy,Italy,12,2,0,18,46%
+71,Group Stage,Switzerland,Senegal,Switzerland,9,1,0,18,59%
+71,Group Stage,Switzerland,Senegal,Senegal,18,3,0,9,41%
+72,Group Stage,USA,Mexico,USA,13,2,0,10,43%
+72,Group Stage,USA,Mexico,Mexico,10,2,0,13,57%
+73,Round of 32,Argentina,Germany,Argentina,17,3,0,16,48%
+73,Round of 32,Argentina,Germany,Germany,16,3,0,17,52%
+74,Round of 32,England,Colombia,England,8,1,0,8,53%
+74,Round of 32,England,Colombia,Colombia,8,1,0,8,47%
+75,Round of 32,Portugal,Denmark,Portugal,12,2,0,14,58%
+75,Round of 32,Portugal,Denmark,Denmark,14,2,0,12,42%
+76,Round of 32,Belgium,Brazil,Belgium,16,3,0,20,42%
+76,Round of 32,Belgium,Brazil,Brazil,20,4,1,16,58%
+77,Round of 32,Colombia,Belgium,Colombia,20,4,1,12,47%
+77,Round of 32,Colombia,Belgium,Belgium,12,2,0,20,53%
+78,Round of 32,Senegal,South Korea,Senegal,11,2,0,18,52%
+78,Round of 32,Senegal,South Korea,South Korea,18,3,0,11,48%
+79,Round of 32,Switzerland,Canada,Switzerland,15,3,0,10,57%
+79,Round of 32,Switzerland,Canada,Canada,10,2,0,15,43%
+80,Round of 32,USA,Portugal,USA,19,3,1,16,41%
+80,Round of 32,USA,Portugal,Portugal,16,3,0,19,59%
+81,Round of 32,Argentina,Japan,Argentina,10,2,0,8,46%
+81,Round of 32,Argentina,Japan,Japan,8,1,0,10,54%
+82,Round of 32,England,Nigeria,England,14,2,0,14,51%
+82,Round of 32,England,Nigeria,Nigeria,14,2,0,14,49%
+83,Round of 32,Portugal,England,Portugal,18,3,0,20,56%
+83,Round of 32,Portugal,England,England,20,4,1,18,44%
+84,Round of 32,Belgium,Croatia,Belgium,9,1,0,12,40%
+84,Round of 32,Belgium,Croatia,Croatia,12,2,0,9,60%
+85,Round of 32,Colombia,Australia,Colombia,13,2,0,18,45%
+85,Round of 32,Colombia,Australia,Australia,18,3,0,13,55%
+86,Round of 32,Senegal,Argentina,Senegal,17,3,0,10,50%
+86,Round of 32,Senegal,Argentina,Argentina,10,2,0,17,50%
+87,Round of 32,Switzerland,Netherlands,Switzerland,8,1,0,16,55%
+87,Round of 32,Switzerland,Netherlands,Netherlands,16,3,0,8,45%
+88,Round of 32,USA,Morocco,USA,12,2,0,8,60%
+88,Round of 32,USA,Morocco,Morocco,8,1,0,12,40%
+89,Round of 16,Argentina,USA,Argentina,16,3,0,14,44%
+89,Round of 16,Argentina,USA,USA,14,2,0,16,56%
+90,Round of 16,England,Spain,England,20,4,1,20,49%
+90,Round of 16,England,Spain,Spain,20,4,1,20,51%
+91,Round of 16,Portugal,Uruguay,Portugal,11,2,0,12,54%
+91,Round of 16,Portugal,Uruguay,Uruguay,12,2,0,11,46%
+92,Round of 16,Belgium,Switzerland,Belgium,15,3,0,18,59%
+92,Round of 16,Belgium,Switzerland,Switzerland,18,3,0,15,41%
+93,Round of 16,Colombia,France,Colombia,19,3,1,10,43%
+93,Round of 16,Colombia,France,France,10,2,0,19,57%
+94,Round of 16,Senegal,Italy,Senegal,10,2,0,16,48%
+94,Round of 16,Senegal,Italy,Italy,16,3,0,10,52%
+95,Round of 16,Switzerland,Senegal,Switzerland,14,2,0,8,53%
+95,Round of 16,Switzerland,Senegal,Senegal,8,1,0,14,47%
+96,Round of 16,USA,Mexico,USA,18,3,0,14,58%
+96,Round of 16,USA,Mexico,Mexico,14,2,0,18,42%
+97,Quarter-Final,Argentina,Germany,Argentina,9,1,0,20,42%
+97,Quarter-Final,Argentina,Germany,Germany,20,4,1,9,58%
+98,Quarter-Final,England,Colombia,England,13,2,0,12,47%
+98,Quarter-Final,England,Colombia,Colombia,12,2,0,13,53%
+99,Quarter-Final,Portugal,Denmark,Portugal,17,3,0,18,52%
+99,Quarter-Final,Portugal,Denmark,Denmark,18,3,0,17,48%
+100,Quarter-Final,Belgium,Brazil,Belgium,8,1,0,10,57%
+100,Quarter-Final,Belgium,Brazil,Brazil,10,2,0,8,43%
+101,Semi-Final,Colombia,Belgium,Colombia,12,2,0,16,41%
+101,Semi-Final,Colombia,Belgium,Belgium,16,3,0,12,59%
+102,Semi-Final,Senegal,South Korea,Senegal,16,3,0,8,46%
+102,Semi-Final,Senegal,South Korea,South Korea,8,1,0,16,54%
+103,Third Place,Switzerland,Canada,Switzerland,20,4,1,14,51%
+103,Third Place,Switzerland,Canada,Canada,14,2,0,20,49%
+104,Final,USA,Portugal,USA,11,2,0,20,56%
+104,Final,USA,Portugal,Portugal,20,4,1,11,44%

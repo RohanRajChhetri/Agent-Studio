@@ -38,8 +38,14 @@ export async function dispatchAutonomousAction(
   context?: {
     agentId?: string;
     targetAgent?: any;
+    skipActionDispatch?: boolean;
+    isCodeWorkspace?: boolean;
   }
 ): Promise<AutonomousActionOutput> {
+  if (context?.skipActionDispatch || context?.isCodeWorkspace) {
+    return { handled: false, content: "" };
+  }
+
   const text = prompt.trim();
   const lower = text.toLowerCase();
 

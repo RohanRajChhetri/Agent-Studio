@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere, getAuthUserId, PRIMARY_LEGACY_USER_ID } from "@/lib/user-auth";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
+    const userId = await getAuthUserId();
+    const scopedWhere = await getUserScopedWhere();
 
-    // 1. Fetch agents to provide agent-specific webhook endpoints
+    // 1. Fetch agents scoped to current user
     const agents = await prisma.agent.findMany({
+      where: scopedWhere,
       select: {
         id: true,
         name: true,
@@ -18,9 +22,14 @@ export async function GET(request: Request) {
       orderBy: { createdAt: "asc" },
     });
 
-    // 2. Fetch custom webhook settings if stored
+    // 2. Fetch custom webhook settings scoped to user
+    const settingKey =
+      userId && userId !== PRIMARY_LEGACY_USER_ID
+        ? `integration:webhooks_config:${userId}`
+        : "integration:webhooks_config";
+
     const webhookSetting = await prisma.setting.findUnique({
-      where: { key: "integration:webhooks_config" },
+      where: { key: settingKey },
     });
 
     let customEndpoints: Array<{ id: string; name: string; token: string; agentId?: string }> = [];
@@ -32,7 +41,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Standard endpoints always available
+    // Standard endpoints (only bind agent if user has agents)
     const standardEndpoints = [
       {
         id: "default",
@@ -40,7 +49,7 @@ export async function GET(request: Request) {
         token: "default-secret",
         description: "General trigger that auto-routes to best available agent",
         agentId: agents[0]?.id || null,
-        agentName: agents[0]?.displayName || "Default Agent",
+        agentName: agents[0]?.displayName || (agents.length > 0 ? "Default Agent" : "Unassigned"),
       },
       {
         id: "github",
@@ -48,7 +57,7 @@ export async function GET(request: Request) {
         token: "github-deploy",
         description: "Optimized for GitHub push, release, and CI/CD events",
         agentId: agents.find((a) => a.name.includes("devops") || a.name.includes("vulcan"))?.id || agents[0]?.id || null,
-        agentName: agents.find((a) => a.name.includes("devops") || a.name.includes("vulcan"))?.displayName || agents[0]?.displayName || "DevOps Agent",
+        agentName: agents.find((a) => a.name.includes("devops") || a.name.includes("vulcan"))?.displayName || agents[0]?.displayName || (agents.length > 0 ? "DevOps Agent" : "Unassigned"),
       },
       {
         id: "monitoring",
@@ -56,7 +65,7 @@ export async function GET(request: Request) {
         token: "monitoring-alert",
         description: "Direct alerts from server telemetry, Datadog, or Sentry",
         agentId: agents.find((a) => a.name.includes("cipher") || a.name.includes("security"))?.id || agents[0]?.id || null,
-        agentName: agents.find((a) => a.name.includes("cipher") || a.name.includes("security"))?.displayName || agents[0]?.displayName || "Security Agent",
+        agentName: agents.find((a) => a.name.includes("cipher") || a.name.includes("security"))?.displayName || agents[0]?.displayName || (agents.length > 0 ? "Security Agent" : "Unassigned"),
       },
     ];
 
@@ -70,13 +79,15 @@ export async function GET(request: Request) {
       agentName: a.displayName,
     }));
 
-    // 3. Fetch recent webhook execution activity logs
-    const logs = await prisma.activityLog.findMany({
-      where: {
-        type: {
-          in: ["webhook_received", "webhook_triggered", "routine_triggered"],
-        },
+    // 3. Fetch recent webhook execution activity logs scoped to user
+    const logsWhere = await getUserScopedWhere({
+      type: {
+        in: ["webhook_received", "webhook_triggered", "routine_triggered"],
       },
+    });
+
+    const logs = await prisma.activityLog.findMany({
+      where: logsWhere,
       orderBy: { createdAt: "desc" },
       take: limit,
     });
@@ -106,6 +117,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { name, token, agentId } = body;
 
@@ -113,8 +129,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Token must be at least 3 characters" }, { status: 400 });
     }
 
+    if (agentId) {
+      const agent = await prisma.agent.findFirst({
+        where: await getUserScopedWhere({ id: agentId }),
+      });
+      if (!agent) {
+        return NextResponse.json({ error: "Agent not found or unauthorized" }, { status: 404 });
+      }
+    }
+
+    const settingKey =
+      userId !== PRIMARY_LEGACY_USER_ID
+        ? `integration:webhooks_config:${userId}`
+        : "integration:webhooks_config";
+
     const webhookSetting = await prisma.setting.findUnique({
-      where: { key: "integration:webhooks_config" },
+      where: { key: settingKey },
     });
 
     let customEndpoints: Array<{ id: string; name: string; token: string; agentId?: string }> = [];
@@ -136,13 +166,22 @@ export async function POST(request: Request) {
     customEndpoints.push(newEndpoint);
 
     await prisma.setting.upsert({
-      where: { key: "integration:webhooks_config" },
+      where: { key: settingKey },
       create: {
-        key: "integration:webhooks_config",
+        key: settingKey,
         value: JSON.stringify(customEndpoints),
       },
       update: {
         value: JSON.stringify(customEndpoints),
+      },
+    });
+
+    await prisma.activityLog.create({
+      data: {
+        type: "webhook_created",
+        message: `Created webhook endpoint "${newEndpoint.name}"`,
+        agentId: agentId || null,
+        userId,
       },
     });
 

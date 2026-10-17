@@ -9,9 +9,11 @@ import { DevicesTab } from "./devices-tab";
 import { ModelsTab, type ModelEntry } from "./components/models-tab";
 import { MCPTab } from "./components/mcp-tab";
 import { VaultTab, type VaultStats } from "./components/vault-tab";
+import { SkillsTab } from "./components/skills-tab";
 import { DiagnosticsTab } from "./components/diagnostics-tab";
 import { WebhookSimulator } from "@/components/routines/webhook-simulator";
 import type { MCPServerConfig } from "@/types/mcp";
+import type { ExternalSkill } from "@/types/skills";
 
 interface AgentSimple {
   id: string;
@@ -34,7 +36,7 @@ export default function SettingsPage() {
       const tabParam = params.get("tab");
       if (
         tabParam &&
-        ["providers", "devices", "models", "mcp", "webhooks", "vault", "danger"].includes(tabParam)
+        ["providers", "skills", "devices", "models", "mcp", "webhooks", "vault", "danger"].includes(tabParam)
       ) {
         setActiveTab(tabParam);
       }
@@ -74,6 +76,119 @@ export default function SettingsPage() {
   const [loadingMcp, setLoadingMcp] = useState(false);
   const [testingMcpId, setTestingMcpId] = useState<string | null>(null);
   const [togglingMcpId, setTogglingMcpId] = useState<string | null>(null);
+
+  // External Skills state
+  const [skills, setSkills] = useState<ExternalSkill[]>([]);
+  const [loadingSkills, setLoadingSkills] = useState(false);
+  const [togglingSkillId, setTogglingSkillId] = useState<string | null>(null);
+
+  const fetchSkills = useCallback(async () => {
+    try {
+      setLoadingSkills(true);
+      const res = await fetch("/api/skills");
+      if (res.ok) {
+        const data = await res.json();
+        setSkills(data.skills || []);
+      }
+    } catch {
+      toast.error("Failed to load external skills");
+    } finally {
+      setLoadingSkills(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSkills();
+  }, [fetchSkills]);
+
+  const handleToggleSkill = async (id: string, enabled?: boolean) => {
+    setTogglingSkillId(id);
+    try {
+      const res = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle", skillId: id, enabled }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSkills((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, enabled: data.skill.enabled } : s))
+        );
+        toast.success(
+          `Skill "${data.skill.displayName}" ${data.skill.enabled ? "enabled" : "disabled"}`
+        );
+      } else {
+        toast.error(data.error || "Failed to toggle skill");
+      }
+    } catch {
+      toast.error("Network error toggling skill");
+    } finally {
+      setTogglingSkillId(null);
+    }
+  };
+
+  const handleAddSkill = async (skillData: any) => {
+    try {
+      const res = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add", skill: skillData }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSkills((prev) => [...prev, data.skill]);
+        return true;
+      } else {
+        toast.error(data.error || "Failed to add skill");
+        return false;
+      }
+    } catch {
+      toast.error("Network error adding skill");
+      return false;
+    }
+  };
+
+  const handleUpdateSkill = async (id: string, updates: any) => {
+    try {
+      const res = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", skillId: id, updates }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSkills((prev) => prev.map((s) => (s.id === id ? data.skill : s)));
+        return true;
+      } else {
+        toast.error(data.error || "Failed to update skill");
+        return false;
+      }
+    } catch {
+      toast.error("Network error updating skill");
+      return false;
+    }
+  };
+
+  const handleDeleteSkill = async (id: string) => {
+    try {
+      const res = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", skillId: id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSkills((prev) => prev.filter((s) => s.id !== id));
+        return true;
+      } else {
+        toast.error(data.error || "Failed to delete skill");
+        return false;
+      }
+    } catch {
+      toast.error("Network error deleting skill");
+      return false;
+    }
+  };
 
   const fetchMcpServers = useCallback(async () => {
     try {
@@ -451,6 +566,8 @@ export default function SettingsPage() {
           activeMcpServers: activeMcpCount,
           vaultNotes: vaultStats?.noteCount ?? 0,
           omnirouteOnline,
+          activeSkillsCount: skills.filter((s) => s.enabled).length,
+          totalSkillsCount: skills.length,
         }}
       />
 
@@ -465,6 +582,20 @@ export default function SettingsPage() {
           savingKey={savingKey}
           deletingKey={deletingKey}
           testingKey={testingKey}
+        />
+      )}
+
+      {/* External Skills Tab */}
+      {activeTab === "skills" && (
+        <SkillsTab
+          skills={skills}
+          loading={loadingSkills}
+          onRefresh={fetchSkills}
+          onToggleSkill={handleToggleSkill}
+          onAddSkill={handleAddSkill}
+          onUpdateSkill={handleUpdateSkill}
+          onDeleteSkill={handleDeleteSkill}
+          togglingId={togglingSkillId}
         />
       )}
 

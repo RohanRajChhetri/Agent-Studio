@@ -254,22 +254,27 @@ export async function executeChatCompletion(params: {
 
   // Waterfall priority fallback if auto or explicit candidate wasn't resolved / might fail
   if (isAuto || callers.length === 0) {
+    const isLocalOmnirouteOnline = await checkOmnirouteStatusCached();
+    if (isLocalOmnirouteOnline) {
+      callers.push(() => new OmnirouteLocalProvider().call(rawModel, messages, keys, augmentedSystem));
+    }
+
     if (intent === "coding") {
       if (keys.OPENAI_API_KEY) {
         callers.push(() => new OpenAIProvider().call("gpt-4o", messages, keys, augmentedSystem));
       }
       if (keys.GEMINI_API_KEY) {
-        callers.push(() => new GeminiProvider().call("gemini-2.0-flash", messages, keys, augmentedSystem));
+        callers.push(() => new GeminiProvider().call("gemini-3.6-flash", messages, keys, augmentedSystem));
       }
       if (keys.GROQ_API_KEY) {
         callers.push(() => new GroqProvider().call("llama-3.3-70b-versatile", messages, keys, augmentedSystem));
       }
-      if (keys.OMNIROUTE_API_KEY) {
+      if (keys.OMNIROUTE_API_KEY || keys.OPENROUTER_API_KEY) {
         callers.push(() => new OmniRouteGatewayProvider().call(rawModel, messages, keys, augmentedSystem));
       }
     } else if (intent === "reasoning") {
       if (keys.GEMINI_API_KEY) {
-        callers.push(() => new GeminiProvider().call("gemini-2.0-flash", messages, keys, augmentedSystem));
+        callers.push(() => new GeminiProvider().call("gemini-3.6-flash", messages, keys, augmentedSystem));
       }
       if (keys.OPENAI_API_KEY) {
         callers.push(() => new OpenAIProvider().call("gpt-4o-mini", messages, keys, augmentedSystem));
@@ -280,7 +285,7 @@ export async function executeChatCompletion(params: {
     } else {
       // General Fast Chat
       if (keys.GEMINI_API_KEY) {
-        callers.push(() => new GeminiProvider().call("gemini-2.0-flash", messages, keys, augmentedSystem));
+        callers.push(() => new GeminiProvider().call("gemini-3.6-flash", messages, keys, augmentedSystem));
       }
       if (keys.GROQ_API_KEY) {
         callers.push(() => new GroqProvider().call("llama-3.3-70b-versatile", messages, keys, augmentedSystem));
@@ -288,21 +293,23 @@ export async function executeChatCompletion(params: {
       if (keys.OPENAI_API_KEY) {
         callers.push(() => new OpenAIProvider().call("gpt-4o-mini", messages, keys, augmentedSystem));
       }
-      if (keys.OMNIROUTE_API_KEY) {
+      if (keys.OMNIROUTE_API_KEY || keys.OPENROUTER_API_KEY) {
         callers.push(() => new OmniRouteGatewayProvider().call(rawModel, messages, keys, augmentedSystem));
       }
     }
 
-    // Add Omniroute local daemon if online
-    callers.push(async () => {
-      const online = await checkOmnirouteStatusCached();
-      if (online) return new OmnirouteLocalProvider().call(rawModel, messages, keys, augmentedSystem);
-      return null;
-    });
+    // Secondary fallback: Omniroute local daemon if not already tried
+    if (!isLocalOmnirouteOnline) {
+      callers.push(async () => {
+        const online = await checkOmnirouteStatusCached();
+        if (online) return new OmnirouteLocalProvider().call(rawModel, messages, keys, augmentedSystem);
+        return null;
+      });
+    }
 
     // Add remaining available providers as safety fallbacks
     if (keys.GEMINI_API_KEY && !callers.some((c) => c.name.includes("Gemini"))) {
-      callers.push(() => new GeminiProvider().call("gemini-2.0-flash", messages, keys, augmentedSystem));
+      callers.push(() => new GeminiProvider().call("gemini-3.6-flash", messages, keys, augmentedSystem));
     }
     if (keys.OMNIROUTE_API_KEY && !callers.some((c) => c.name.includes("OmniRoute"))) {
       callers.push(() => new OmniRouteGatewayProvider().call(rawModel, messages, keys, augmentedSystem));

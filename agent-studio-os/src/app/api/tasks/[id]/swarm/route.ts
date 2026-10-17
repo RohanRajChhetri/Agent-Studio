@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { executeChatCompletion } from "@/lib/llm-router";
 import { writeVaultFile, ensureVaultExists } from "@/lib/vault";
 import { slugify, formatResponseTime } from "@/lib/utils";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 
 export interface SwarmStep {
@@ -24,8 +25,8 @@ export async function POST(
     const body = await request.json().catch(() => ({}));
     const customAgents = body.agentIds as string[] | undefined;
 
-    const task = await prisma.task.findUnique({
-      where: { id },
+    const task = await prisma.task.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: { agent: true },
     });
 
@@ -39,17 +40,18 @@ export async function POST(
       data: { status: "in_progress" },
     });
 
-    // 1. Resolve swarm agents
+    // 1. Resolve swarm agents scoped to current user
     let swarmAgents: any[] = [];
     if (customAgents && customAgents.length > 0) {
       swarmAgents = await prisma.agent.findMany({
-        where: { id: { in: customAgents } },
+        where: await getUserScopedWhere({ id: { in: customAgents } }),
       });
     }
 
     if (swarmAgents.length === 0) {
-      // Pick active specialists (Athena, Mercury, Vulcan, etc.)
+      // Pick active specialists belonging to this user
       swarmAgents = await prisma.agent.findMany({
+        where: await getUserScopedWhere(),
         take: 3,
         orderBy: { createdAt: "asc" },
       });
@@ -57,7 +59,7 @@ export async function POST(
 
     // Identify orchestrator
     const orchestrator =
-      (await prisma.agent.findFirst({ where: { role: "orchestrator" } })) ||
+      (await prisma.agent.findFirst({ where: await getUserScopedWhere({ role: "orchestrator" }) })) ||
       task.agent ||
       swarmAgents[0];
 
@@ -192,11 +194,13 @@ ${fullSwarmReport}
       console.warn("Failed to write swarm output to vault:", vaultErr);
     }
 
+    const authUserId = await getAuthUserId();
     await prisma.activityLog.create({
       data: {
         type: "task_moved",
         message: `Swarm pipeline completed "${task.title}" with ${swarmAgents.length} agents (moved to Review)`,
         agentId: orchestrator?.id || null,
+        userId: authUserId,
       },
     });
 
@@ -209,6 +213,14 @@ ${fullSwarmReport}
     });
   } catch (error) {
     console.error("[API Task Swarm] Error:", error);
+    try {
+      const { id } = await params;
+      await prisma.task.update({
+        where: { id },
+        data: { status: "backlog" },
+      });
+    } catch {}
+
     return NextResponse.json(
       {
         error: "Swarm execution failed",

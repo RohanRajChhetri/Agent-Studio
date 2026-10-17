@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { ensureVaultExists, writeVaultFile } from "@/lib/vault";
 import { slugify } from "@/lib/utils";
+import { getAuthUserId, PRIMARY_LEGACY_USER_ID } from "@/lib/user-auth";
 
 export async function POST(request: Request) {
   try {
+    const userId = await getAuthUserId();
+    const effectiveUserId = userId || PRIMARY_LEGACY_USER_ID;
+    if (!effectiveUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { title, content, category = "research", tags = [], author = "user" } = await request.json();
 
     if (!title || !content) {

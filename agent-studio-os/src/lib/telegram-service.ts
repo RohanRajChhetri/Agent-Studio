@@ -19,6 +19,7 @@ export interface TelegramAgentTarget {
   displayName?: string | null;
   model?: string | null;
   systemPrompt?: string | null;
+  userId?: string | null;
 }
 
 export interface TelegramUpdate {
@@ -421,6 +422,7 @@ export async function processTelegramUpdate(
         type: "device_message",
         message: `Telegram (@${message.from?.username || sender}): "${userText.slice(0, 35)}${userText.length > 35 ? "..." : ""}" → Replied by ${aName} (${timeFormatted})`,
         agentId: agent?.id || null,
+        userId: agent?.userId || null,
       },
     });
 

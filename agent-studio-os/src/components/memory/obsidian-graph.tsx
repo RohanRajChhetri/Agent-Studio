@@ -77,7 +77,11 @@ export function ObsidianGraph({
 
   // Initialize and update simulation graph data
   useEffect(() => {
-    if (!data || !data.nodes || data.nodes.length === 0) return;
+    if (!data || !data.nodes || !Array.isArray(data.nodes) || data.nodes.length === 0) {
+      nodesRef.current = [];
+      linksRef.current = [];
+      return;
+    }
 
     const width = containerRef.current?.clientWidth || 800;
     const height = containerRef.current?.clientHeight || 600;
@@ -91,7 +95,7 @@ export function ObsidianGraph({
 
     // Calculate node degree (link count)
     const degreeMap = new Map<string, number>();
-    data.links.forEach((l) => {
+    (data.links || []).forEach((l) => {
       degreeMap.set(l.source, (degreeMap.get(l.source) || 0) + 1);
       degreeMap.set(l.target, (degreeMap.get(l.target) || 0) + 1);
     });
@@ -121,7 +125,7 @@ export function ObsidianGraph({
 
     // Map links to node references
     const simLinks: SimLink[] = [];
-    data.links.forEach((l) => {
+    (data.links || []).forEach((l) => {
       const source = nodeMap.get(l.source);
       const target = nodeMap.get(l.target);
       if (source && target && source !== target) {
@@ -699,11 +703,11 @@ export function ObsidianGraph({
           </div>
           <span className="text-muted-foreground">&bull;</span>
           <span className="text-muted-foreground font-mono text-[11px]">
-            {data?.stats.totalNotes || 0} notes
+            {data?.stats?.totalNotes ?? 0} notes
           </span>
           <span className="text-muted-foreground">&bull;</span>
           <span className="text-muted-foreground font-mono text-[11px]">
-            {data?.stats.totalLinks || 0} links
+            {data?.stats?.totalLinks ?? 0} links
           </span>
         </div>
 

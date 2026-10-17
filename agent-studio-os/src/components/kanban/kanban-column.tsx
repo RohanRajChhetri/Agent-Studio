@@ -76,7 +76,9 @@ interface KanbanColumnProps {
   onDeleteTask: (id: string) => void;
   onQuickAdd: (status: string, title: string) => void;
   onToggleSubtask?: (taskId: string, subtaskId: string) => void;
+  onDeconstructTask?: (task: TaskItem) => void;
   runningTaskId?: string | null;
+  deconstructingTaskId?: string | null;
 }
 
 export function KanbanColumn({
@@ -88,7 +90,9 @@ export function KanbanColumn({
   onDeleteTask,
   onQuickAdd,
   onToggleSubtask,
+  onDeconstructTask,
   runningTaskId,
+  deconstructingTaskId,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
   const [isQuickAdding, setIsQuickAdding] = useState(false);
@@ -197,7 +201,9 @@ export function KanbanColumn({
               onEdit={onEditTask}
               onDelete={onDeleteTask}
               onToggleSubtask={onToggleSubtask}
+              onDeconstruct={onDeconstructTask}
               isRunning={runningTaskId === task.id}
+              isDeconstructing={deconstructingTaskId === task.id}
             />
           ))}
 

@@ -64,6 +64,7 @@ export async function executeRoutine(routineId: string) {
       priority: routine.priority || "medium",
       status: routine.autoExecute ? "in_progress" : "backlog",
       agentId: agent?.id || null,
+      userId: routine.userId || null,
     },
     include: { agent: true },
   });
@@ -73,6 +74,7 @@ export async function executeRoutine(routineId: string) {
       type: "routine_triggered",
       message: `Routine "${routine.title}" triggered task for ${agent ? agent.displayName : "Agent"}`,
       agentId: agent?.id || null,
+      userId: routine.userId || null,
     },
   });
 

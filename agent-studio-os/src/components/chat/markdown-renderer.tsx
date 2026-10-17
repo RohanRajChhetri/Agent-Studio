@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { BookOpen, Check, Copy, ExternalLink, Info, AlertTriangle, Lightbulb } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Info, AlertTriangle, Lightbulb, Download, FileText, FileSpreadsheet, FileCode } from "lucide-react";
 
 interface MarkdownRendererProps {
   content: string;
@@ -52,8 +52,8 @@ function CodeBlockView({ code, language }: { code: string; language?: string }) 
           )}
         </button>
       </div>
-      <div className="p-3.5 overflow-x-auto text-[11.5px] font-mono leading-relaxed text-zinc-200">
-        <pre className="m-0 font-mono">
+      <div className="p-3.5 overflow-x-auto max-w-full text-[11.5px] font-mono leading-relaxed text-zinc-200">
+        <pre className="m-0 font-mono whitespace-pre overflow-x-auto max-w-full">
           <code>{code}</code>
         </pre>
       </div>
@@ -93,6 +93,47 @@ function CalloutBlock({ type, content, isUser }: { type: string; content: string
   );
 }
 
+function sanitizeToolCallContent(text: string): string {
+  if (!text) return "";
+
+  // Check if content contains file.create or write_file calls
+  const fileMatch = text.match(/(?:file\.create|file\.write|write_file|create_file|save_file)\s*\(([\s\S]*?)\)/);
+  if (fileMatch) {
+    const argsStr = fileMatch[1];
+    const pathMatch = argsStr.match(/(?:path|filename|file)\s*=\s*['"]([^'"]+)['"]/i);
+    const fileName = pathMatch ? pathMatch[1] : "document.doc";
+
+    const contentStartMatch = argsStr.match(/content\s*=\s*(['"])/);
+    if (contentStartMatch && contentStartMatch.index !== undefined) {
+      const quoteChar = contentStartMatch[1];
+      const startIndex = contentStartMatch.index + contentStartMatch[0].length;
+      const pathIdx = argsStr.search(/,\s*(?:path|filename|file)\s*=/i);
+      let body = pathIdx !== -1 && pathIdx > startIndex
+        ? argsStr.slice(startIndex, pathIdx).trim()
+        : argsStr.slice(startIndex).trim();
+      if (body.endsWith(quoteChar)) body = body.slice(0, -1);
+      const unescaped = body
+        .replace(/\\r\\n/g, "\n")
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/\\'/g, "'")
+        .replace(/\\"/g, '"');
+
+      return `${unescaped}\n\n### 📄 Deliverable Ready for Download\n\n- **File**: \`${fileName}\`\n- **Direct Download**: [Download ${fileName}](/downloads/${encodeURIComponent(fileName)})\n\n> You can open this file directly in Microsoft Word, Google Docs, or any text editor.`;
+    }
+  }
+
+  // Strip or transform general tool call tokens
+  if (text.includes("<|tool_call") || text.includes("<tool_call>")) {
+    return text
+      .replace(/<\|tool_call[_:](?:start|begin)\|?>[\s\S]*?<\|tool_call[_:](?:end|finish)\|?>/gi, "")
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+      .trim();
+  }
+
+  return text;
+}
+
 /**
  * High-performance, zero-dependency Markdown Renderer for Chat Studio.
  * Formats raw markdown headers, bold, italics, lists, tables, blockquotes,
@@ -106,6 +147,16 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
   let cleanContent = content;
   if (cleanContent.startsWith("---")) {
     cleanContent = cleanContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  }
+
+  // 2. Pre-process tool calls (e.g., file.create, <|tool_call...|>) into structured markdown & deliverables
+  if (
+    cleanContent.includes("<|tool_call") ||
+    cleanContent.includes("<tool_call>") ||
+    cleanContent.includes("file.create(") ||
+    cleanContent.includes("write_file(")
+  ) {
+    cleanContent = sanitizeToolCallContent(cleanContent);
   }
 
   // Split content into blocks (paragraphs, headers, tables, lists, quotes, code)
@@ -338,14 +389,14 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
 
     // 9. Standard Paragraph
     elements.push(
-      <p key={`p-${i}`} className={`my-1 text-xs leading-relaxed ${isUser ? "text-white" : "text-foreground"}`}>
+      <p key={`p-${i}`} className={`my-1 text-xs leading-relaxed break-words [overflow-wrap:anywhere] ${isUser ? "text-white" : "text-foreground"}`}>
         {renderInlineFormatting(trimmed, isUser)}
       </p>
     );
     i++;
   }
 
-  return <div className={className || `space-y-0.5 text-xs ${isUser ? "text-white" : "text-foreground"}`}>{elements}</div>;
+  return <div className={className || `space-y-0.5 text-xs break-words [overflow-wrap:anywhere] max-w-full overflow-hidden ${isUser ? "text-white" : "text-foreground"}`}>{elements}</div>;
 }
 
 /**
@@ -397,7 +448,53 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
       if (linkMatch) {
         const [, label, url] = linkMatch;
         const isInternal = url.startsWith("/") || url.startsWith("#");
-        if (isInternal) {
+        if (url.startsWith("/downloads/")) {
+          const rawFileName = decodeURIComponent(url.replace(/^\/downloads\//, ""));
+          const ext = rawFileName.split(".").pop()?.toLowerCase();
+          const isPdf = ext === "pdf";
+          const isDoc = ext === "doc" || ext === "docx";
+          const isCsv = ext === "csv" || ext === "xlsx";
+          
+          parts.push(
+            <a
+              key={key}
+              href={url}
+              download={rawFileName}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`my-2 inline-flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all duration-200 shadow-sm cursor-pointer group ${
+                isPdf
+                  ? "bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/20 text-rose-950 dark:text-rose-200"
+                  : isDoc
+                  ? "bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20 text-blue-950 dark:text-blue-200"
+                  : isCsv
+                  ? "bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-950 dark:text-emerald-200"
+                  : "bg-primary/10 border-primary/30 hover:bg-primary/20 text-foreground"
+              }`}
+              title={`Download ${rawFileName}`}
+            >
+              <div className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 ${
+                isPdf
+                  ? "bg-rose-500/20 text-rose-500"
+                  : isDoc
+                  ? "bg-blue-500/20 text-blue-500"
+                  : isCsv
+                  ? "bg-emerald-500/20 text-emerald-500"
+                  : "bg-primary/20 text-primary"
+              }`}>
+                <Download className="w-3.5 h-3.5 group-hover:translate-y-0.5 transition-transform" />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="font-semibold text-xs tracking-tight">
+                  {label}
+                </span>
+                <span className="text-[9.5px] opacity-75 font-mono uppercase tracking-wider">
+                  {ext ? `.${ext.toUpperCase()} Deliverable` : "File"} • Click to Download
+                </span>
+              </div>
+            </a>
+          );
+        } else if (isInternal) {
           parts.push(
             <Link
               key={key}
@@ -439,8 +536,8 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
           key={key}
           className={
             isUser
-              ? "px-1.5 py-0.5 mx-0.5 rounded bg-white/20 border border-white/25 text-white font-mono text-[11px] font-semibold"
-              : "px-1.5 py-0.5 mx-0.5 rounded bg-secondary border border-border text-foreground font-mono text-[11px] font-semibold"
+              ? "px-1.5 py-0.5 mx-0.5 rounded bg-white/20 border border-white/25 text-white font-mono text-[11px] font-semibold break-all"
+              : "px-1.5 py-0.5 mx-0.5 rounded bg-secondary border border-border text-foreground font-mono text-[11px] font-semibold break-all"
           }
         >
           {codeText}

@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { getVaultPath, ensureVaultExists } from "@/lib/vault";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function POST(
   request: Request,
@@ -11,8 +12,8 @@ export async function POST(
   try {
     const { id } = await props.params;
 
-    const session = await prisma.chatSession.findUnique({
-      where: { id },
+    const session = await prisma.chatSession.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: {
         agent: true,
         messages: {

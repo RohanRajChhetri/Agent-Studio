@@ -1,14 +1,39 @@
 import { NextResponse } from "next/server";
 import { a2aBroker } from "@/lib/a2a/protocol";
 import { invokePeerAgent, requestPeerReview } from "@/lib/a2a/peer-mesh";
+import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const agentId = searchParams.get("agentId") || undefined;
 
-    const history = a2aBroker.getHistory(agentId);
-    const stats = a2aBroker.getStats();
+    const userAgents = await prisma.agent.findMany({
+      where: await getUserScopedWhere(),
+      select: { id: true },
+    });
+    const userAgentIds = new Set(userAgents.map((a) => a.id));
+
+    let history = a2aBroker.getHistory(agentId);
+    history = history.filter(
+      (m) => userAgentIds.has(m.fromAgentId) || userAgentIds.has(m.toAgentId)
+    );
+
+    const stats = {
+      totalMessages: history.length,
+      completedCount: history.filter((m) => m.status === "completed").length,
+      inProgressCount: history.filter((m) => m.status === "in_progress").length,
+      failedCount: history.filter((m) => m.status === "failed" || m.status === "rejected").length,
+      successRate:
+        history.length > 0
+          ? Math.round(
+              (history.filter((m) => m.status === "completed").length /
+                (history.length || 1)) *
+                100
+            )
+          : 100,
+    };
 
     return NextResponse.json({
       success: true,
@@ -34,6 +59,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "reviewerAgentId and artifactContent are required" }, { status: 400 });
       }
 
+      const reviewerAgent = await prisma.agent.findFirst({
+        where: await getUserScopedWhere({ id: reviewerAgentId }),
+      });
+      if (!reviewerAgent) {
+        return NextResponse.json({ error: "Reviewer agent not found" }, { status: 404 });
+      }
+
       const review = await requestPeerReview({
         authorAgentId: authorAgentId || "system",
         reviewerAgentId,
@@ -49,6 +81,13 @@ export async function POST(request: Request) {
     const { fromAgentId, toAgentId, title, prompt, contextData } = body;
     if (!toAgentId || !prompt) {
       return NextResponse.json({ error: "toAgentId and prompt are required" }, { status: 400 });
+    }
+
+    const targetAgent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id: toAgentId }),
+    });
+    if (!targetAgent) {
+      return NextResponse.json({ error: "Target agent not found" }, { status: 404 });
     }
 
     const result = await invokePeerAgent({

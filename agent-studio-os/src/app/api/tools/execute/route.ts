@@ -1,13 +1,33 @@
 import { NextResponse } from "next/server";
 import { executeCodeSandbox, performWebSearch } from "@/lib/tools-engine";
+import { getAuthUserId } from "@/lib/user-auth";
+import { validateToolActionSafety } from "@/lib/safety-guardrails";
 
 export async function POST(request: Request) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { tool } = body;
 
     if (!tool) {
       return NextResponse.json({ error: "Tool name is required" }, { status: 400 });
+    }
+
+    // Safety guardrail check
+    const safety = validateToolActionSafety(tool, body);
+    if (!safety.allowed) {
+      return NextResponse.json(
+        {
+          error: "Action blocked by safety guardrails",
+          reason: safety.reason,
+          riskLevel: safety.riskLevel,
+        },
+        { status: 403 }
+      );
     }
 
     if (tool === "code") {

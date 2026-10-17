@@ -33,6 +33,11 @@ import {
 import { KanbanCard } from "@/components/kanban/kanban-card";
 import { TaskDrawer } from "@/components/kanban/task-drawer";
 import { CreateTaskModal } from "@/components/kanban/create-task-modal";
+import {
+  playTaskStartedSound,
+  playTaskCompletedSound,
+  playWarningSound,
+} from "@/lib/sound-effects";
 
 export default function KanbanPage() {
   const [mounted, setMounted] = useState(false);
@@ -175,6 +180,7 @@ export default function KanbanPage() {
   const handleRunTask = async (task: TaskItem) => {
     const originalStatus = task.status;
     setRunningTaskId(task.id);
+    playTaskStartedSound();
 
     // Optimistically move task to in_progress immediately with progress pulse
     setTasks((prev) =>
@@ -197,6 +203,7 @@ export default function KanbanPage() {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        playTaskCompletedSound();
         toast.success("Agent finished execution! Deliverable ready in Review.");
         setTasks((prev) =>
           prev.map((t) => (t.id === task.id ? data.task : t))
@@ -205,6 +212,7 @@ export default function KanbanPage() {
           setSelectedTask(data.task);
         }
       } else {
+        playWarningSound();
         // Rollback on failure
         setTasks((prev) =>
           prev.map((t) =>
@@ -219,6 +227,7 @@ export default function KanbanPage() {
         toast.error(data.error || "Execution failed");
       }
     } catch {
+      playWarningSound();
       setTasks((prev) =>
         prev.map((t) =>
           t.id === task.id ? { ...t, status: originalStatus, result: task.result } : t
@@ -411,6 +420,7 @@ export default function KanbanPage() {
   // Deconstruct task with AI
   const handleDeconstructTask = async (task: TaskItem) => {
     setDeconstructingTaskId(task.id);
+    playTaskStartedSound();
     try {
       const res = await fetch("/api/tasks/decompose", {
         method: "POST",
@@ -433,8 +443,10 @@ export default function KanbanPage() {
           prev ? { ...prev, subtasks: data.subtasks } : null
         );
       }
+      playTaskCompletedSound();
       toast.success(`Generated ${data.subtasks.length} specialist subtasks!`);
     } catch (err: any) {
+      playWarningSound();
       toast.error(err.message || "Failed to deconstruct task");
     } finally {
       setDeconstructingTaskId(null);
@@ -797,7 +809,9 @@ export default function KanbanPage() {
                   onDeleteTask={handleDeleteTask}
                   onQuickAdd={handleQuickAdd}
                   onToggleSubtask={handleToggleSubtask}
+                  onDeconstructTask={handleDeconstructTask}
                   runningTaskId={runningTaskId}
+                  deconstructingTaskId={deconstructingTaskId}
                 />
               );
             })}

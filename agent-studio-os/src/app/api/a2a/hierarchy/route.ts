@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { executeHierarchicalMission } from "@/lib/a2a/hierarchy-executor";
 import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function POST(request: Request) {
   try {
@@ -11,22 +12,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "missionTopic is required" }, { status: 400 });
     }
 
-    let targetOrchestratorId = orchestratorId;
-    if (!targetOrchestratorId) {
-      // Find top orchestrator or first agent
-      const orchestrator = await prisma.agent.findFirst({
-        where: { role: "orchestrator" },
+    let targetOrchestratorId: string | null = null;
+    if (orchestratorId) {
+      const found = await prisma.agent.findFirst({
+        where: await getUserScopedWhere({ id: orchestratorId }),
       });
-      targetOrchestratorId = orchestrator?.id;
+      targetOrchestratorId = found?.id || null;
+    }
+
+    if (!targetOrchestratorId) {
+      // Find top orchestrator or first agent for this user
+      const orchestrator = await prisma.agent.findFirst({
+        where: await getUserScopedWhere({ role: "orchestrator" }),
+      });
+      targetOrchestratorId = orchestrator?.id || null;
 
       if (!targetOrchestratorId) {
-        const anyAgent = await prisma.agent.findFirst();
-        targetOrchestratorId = anyAgent?.id;
+        const anyAgent = await prisma.agent.findFirst({
+          where: await getUserScopedWhere(),
+        });
+        targetOrchestratorId = anyAgent?.id || null;
       }
     }
 
     if (!targetOrchestratorId) {
-      return NextResponse.json({ error: "No agents found in database" }, { status: 404 });
+      return NextResponse.json({ error: "No agents found for this user" }, { status: 404 });
     }
 
     const result = await executeHierarchicalMission({

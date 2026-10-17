@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { executeRoutine } from "@/lib/scheduler";
+import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function POST(
   _request: Request,
@@ -7,6 +9,13 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const routine = await prisma.routine.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
+    if (!routine) {
+      return NextResponse.json({ error: "Routine not found" }, { status: 404 });
+    }
+
     const result = await executeRoutine(id);
     return NextResponse.json({
       success: true,

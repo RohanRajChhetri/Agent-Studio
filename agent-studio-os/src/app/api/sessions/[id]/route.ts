@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function GET(
   request: Request,
@@ -8,8 +9,8 @@ export async function GET(
   try {
     const { id } = await props.params;
 
-    const session = await prisma.chatSession.findUnique({
-      where: { id },
+    const session = await prisma.chatSession.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: {
         agent: {
           select: {
@@ -74,6 +75,17 @@ export async function PATCH(
       dataToUpdate.model = model;
     }
 
+    const existing = await prisma.chatSession.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Chat session not found" },
+        { status: 404 }
+      );
+    }
+
     const updated = await prisma.chatSession.update({
       where: { id },
       data: dataToUpdate,
@@ -100,8 +112,8 @@ export async function DELETE(
   try {
     const { id } = await props.params;
 
-    const existing = await prisma.chatSession.findUnique({
-      where: { id },
+    const existing = await prisma.chatSession.findFirst({
+      where: await getUserScopedWhere({ id }),
       select: { id: true, title: true, agentId: true },
     });
 

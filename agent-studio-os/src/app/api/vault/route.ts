@@ -15,9 +15,16 @@ import {
   openVaultInObsidian,
   seedSampleNotes,
 } from "@/lib/vault";
+import { getAuthUserId, PRIMARY_LEGACY_USER_ID } from "@/lib/user-auth";
 
 export async function GET(request: Request) {
   try {
+    const userId = await getAuthUserId();
+    const effectiveUserId = userId || PRIMARY_LEGACY_USER_ID;
+    if (!effectiveUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action");
     const filePath = searchParams.get("path");
@@ -55,6 +62,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getAuthUserId();
+    const effectiveUserId = userId || PRIMARY_LEGACY_USER_ID;
+    if (!effectiveUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { action, path: filePath, content, oldPath, newPath } = body;
 

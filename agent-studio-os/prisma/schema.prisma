@@ -9,7 +9,8 @@ datasource db {
 
 model Agent {
   id           String      @id @default(cuid())
-  name         String      @unique
+  userId       String?
+  name         String
   displayName  String
   avatar       String      @default("🤖")
   systemPrompt String      @default("")
@@ -31,6 +32,8 @@ model Agent {
   chatMessages ChatMessage[]
   sessions     ChatSession[]
   routines     Routine[]
+
+  @@index([userId])
 }
 
 model AgentTool {
@@ -56,6 +59,7 @@ model AgentIntegration {
 
 model Task {
   id          String    @id @default(cuid())
+  userId      String?
   title       String
   description String    @default("")
   status      String    @default("backlog")
@@ -67,6 +71,8 @@ model Task {
   result      String    @default("")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Setting {
@@ -76,15 +82,19 @@ model Setting {
 
 model ActivityLog {
   id        String   @id @default(cuid())
+  userId    String?
   type      String
   message   String
   agentId   String?
   metadata  String?
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model ChatSession {
   id        String        @id @default(cuid())
+  userId    String?
   title     String        @default("New Session")
   agentId   String
   agent     Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
@@ -96,10 +106,12 @@ model ChatSession {
   messages  ChatMessage[]
 
   @@index([agentId])
+  @@index([userId])
 }
 
 model ChatMessage {
   id        String       @id @default(cuid())
+  userId    String?
   role      String
   content   String
   model     String?
@@ -113,10 +125,12 @@ model ChatMessage {
 
   @@index([sessionId])
   @@index([agentId])
+  @@index([userId])
 }
 
 model Routine {
   id          String    @id @default(cuid())
+  userId      String?
   title       String
   description String    @default("")
   prompt      String
@@ -132,4 +146,6 @@ model Routine {
   nextRunAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
 }

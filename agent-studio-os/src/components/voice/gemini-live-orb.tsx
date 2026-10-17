@@ -19,6 +19,8 @@ import {
   Minimize2,
   Send,
   Zap,
+  ShieldCheck,
+  Square,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
@@ -33,6 +35,48 @@ interface GeminiLiveOrbProps {
   isOpen: boolean;
   onClose: () => void;
   initialAgentId?: string;
+}
+
+/**
+ * Filter out self-echo loops where the microphone picks up the computer's
+ * own speakers playing back the agent's voice.
+ */
+function isSelfEcho(recognizedText: string, recentSpokenTexts: string[]): boolean {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const cleanInput = norm(recognizedText);
+  if (!cleanInput || cleanInput.length < 3) return false;
+
+  const inputWords = cleanInput.split(" ").filter(Boolean);
+  if (inputWords.length === 0) return false;
+
+  for (const spoken of recentSpokenTexts) {
+    const cleanSpoken = norm(spoken);
+    if (!cleanSpoken) continue;
+
+    // Direct containment: recognized phrase is part of agent output or vice versa
+    if (cleanSpoken.includes(cleanInput) || cleanInput.includes(cleanSpoken)) {
+      return true;
+    }
+
+    // High word overlap (over 50% of words verbatim match recent agent speech)
+    const spokenWordSet = new Set(cleanSpoken.split(" ").filter(Boolean));
+    let matchCount = 0;
+    for (const w of inputWords) {
+      if (spokenWordSet.has(w)) matchCount++;
+    }
+    const overlapRatio = matchCount / inputWords.length;
+    if (overlapRatio >= 0.5 && inputWords.length >= 2) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrbProps) {
@@ -59,6 +103,17 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
+
+  // Echo cancellation & loop prevention refs
+  const isListeningRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const isProcessingRef = useRef(false);
+  const echoCooldownUntilRef = useRef<number>(0);
+  const recentAgentUtterancesRef = useRef<string[]>([]);
+  const lastProcessedTranscriptRef = useRef<string>("");
+  const restartTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const handleSendUtteranceRef = useRef<(text: string) => Promise<void>>(() => Promise.resolve());
+  const startSpeechRecognitionRef = useRef<() => void>(() => {});
 
   // Auto-scroll transcript ticker
   useEffect(() => {
@@ -163,7 +218,12 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
           sum += dataArray[i];
         }
         const avg = sum / bufferLength;
-        setVolumeLevel(Math.min(1, avg / 80));
+        // Suppress visualizer while agent is speaking to avoid mic picking up speaker output
+        if (isSpeakingRef.current) {
+          setVolumeLevel(0);
+        } else {
+          setVolumeLevel(Math.min(1, avg / 80));
+        }
         animationFrameRef.current = requestAnimationFrame(updateVolume);
       };
       updateVolume();
@@ -172,7 +232,32 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
     }
   }, []);
 
+  const stopSpeechRecognition = useCallback((immediateAbort = true) => {
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        if (immediateAbort && typeof recognitionRef.current.abort === "function") {
+          recognitionRef.current.abort();
+        } else if (typeof recognitionRef.current.stop === "function") {
+          recognitionRef.current.stop();
+        }
+      } catch {}
+    }
+  }, []);
+
   const stopAudioCapture = useCallback(() => {
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+    isListeningRef.current = false;
+    isSpeakingRef.current = false;
+    isProcessingRef.current = false;
+    echoCooldownUntilRef.current = 0;
+
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach((t) => t.stop());
       micStreamRef.current = null;
@@ -185,10 +270,9 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
+    stopSpeechRecognition(true);
+    recognitionRef.current = null;
+
     if (synthRef.current) {
       synthRef.current.cancel();
     }
@@ -199,15 +283,47 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
     setIsListening(false);
     setIsSpeaking(false);
     setVolumeLevel(0);
+    setCurrentSpeech("");
+  }, [stopSpeechRecognition]);
+
+  // Clean interrupt for barge-in
+  const interruptAgent = useCallback(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    isSpeakingRef.current = false;
+    isProcessingRef.current = false;
+    setIsSpeaking(false);
+    echoCooldownUntilRef.current = Date.now() + 250;
+    setCurrentSpeech("");
+
+    if (isListeningRef.current) {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = setTimeout(() => {
+        startSpeechRecognitionRef.current();
+      }, 300);
+    }
+    toast.info("Agent speech halted — listening for your voice");
   }, []);
 
-  // Text-to-speech speaker
+  // Text-to-speech speaker with echo cancellation pause
   const speakAgentResponse = useCallback(
     (text: string) => {
       if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+      // Immediately abort speech recognition so it cannot hear the start of speech
+      stopSpeechRecognition(true);
+      setCurrentSpeech("");
+
       window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(text);
+      // Clean markdown, raw code symbols, and URLs before synthesis
+      const cleanText = text
+        .replace(/[*#`_\[\]]/g, "")
+        .replace(/https?:\/\/\S+/g, "link")
+        .trim();
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.rate = 1.05;
       utterance.pitch = selectedVoice === "Charon" ? 0.8 : selectedVoice === "Aoede" ? 1.15 : 1.0;
 
@@ -224,32 +340,72 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
         if (found) utterance.voice = found;
       }
 
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
+      utterance.onstart = () => {
+        isSpeakingRef.current = true;
+        setIsSpeaking(true);
+        // Ensure recognition is stopped while agent is vocalizing
+        stopSpeechRecognition(true);
+      };
+
+      const handleSpeechEnd = () => {
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+        isProcessingRef.current = false;
+        // 600ms acoustic grace period to allow room reverberation and speaker tail to dissipate
+        echoCooldownUntilRef.current = Date.now() + 600;
+
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = setTimeout(() => {
+          if (isListeningRef.current && !isSpeakingRef.current && !isProcessingRef.current) {
+            startSpeechRecognitionRef.current();
+          }
+        }, 650);
+      };
+
+      utterance.onend = handleSpeechEnd;
+      utterance.onerror = handleSpeechEnd;
 
       synthRef.current = window.speechSynthesis;
       window.speechSynthesis.speak(utterance);
     },
-    [selectedVoice]
+    [selectedVoice, stopSpeechRecognition]
   );
 
-  // Send turn to Voice Backend
+  // Send turn to Voice Backend with anti-echo guards
   const handleSendUtterance = useCallback(
     async (text: string) => {
-      if (!text.trim()) return;
+      const clean = text.trim();
+      if (!clean) return;
+
+      // 1. Guard: Agent already speaking, processing, or in post-speech echo grace period
+      if (
+        isSpeakingRef.current ||
+        isProcessingRef.current ||
+        Date.now() < echoCooldownUntilRef.current
+      ) {
+        return;
+      }
+
+      // 2. Guard: Suppress self-echo against agent's recent spoken responses
+      if (isSelfEcho(clean, recentAgentUtterancesRef.current)) {
+        console.log("[LiveVoice] Suppressed self-echo:", clean);
+        return;
+      }
+
+      isProcessingRef.current = true;
+      // Abort recognition immediately while awaiting server response
+      stopSpeechRecognition(true);
 
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      setTranscripts((prev) => [...prev, { sender: "user", text, time }]);
+      setTranscripts((prev) => [...prev, { sender: "user", text: clean, time }]);
       setCurrentSpeech("");
 
       try {
-        setIsSpeaking(true);
         const res = await fetch("/api/voice/gemini-live", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message: text,
+            message: clean,
             agentId: selectedAgentId,
             voice: selectedVoice,
           }),
@@ -262,88 +418,184 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
             ...prev,
             { sender: "agent", text: data.text, time: respTime },
           ]);
+
+          // Cache in recent agent utterances for echo filtering
+          recentAgentUtterancesRef.current = [
+            data.text,
+            ...recentAgentUtterancesRef.current.slice(0, 5),
+          ];
+
           speakAgentResponse(data.text);
         } else {
           toast.error(data.error || "Voice response failed");
+          isProcessingRef.current = false;
           setIsSpeaking(false);
+          isSpeakingRef.current = false;
+          if (isListeningRef.current) {
+            startSpeechRecognitionRef.current();
+          }
         }
       } catch (err: any) {
         toast.error("Audio communication error: " + err.message);
+        isProcessingRef.current = false;
         setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        if (isListeningRef.current) {
+          startSpeechRecognitionRef.current();
+        }
       }
     },
-    [selectedAgentId, selectedVoice, speakAgentResponse]
+    [selectedAgentId, selectedVoice, speakAgentResponse, stopSpeechRecognition]
   );
 
-  // Microphone toggle & speech recognition
-  const toggleListening = useCallback(async () => {
-    if (isListening) {
+  // Keep ref up to date
+  handleSendUtteranceRef.current = handleSendUtterance;
+
+  // Start speech recognition instance with loop protection
+  const startSpeechRecognition = useCallback(() => {
+    if (!isListeningRef.current || isSpeakingRef.current || isProcessingRef.current) return;
+
+    if (Date.now() < echoCooldownUntilRef.current) {
+      const waitMs = Math.max(50, echoCooldownUntilRef.current - Date.now());
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = setTimeout(() => {
+        startSpeechRecognitionRef.current();
+      }, waitMs);
+      return;
+    }
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) return;
+
+    try {
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.abort();
+        } catch {}
       }
+
+      const reco = new SpeechRecognition();
+      reco.continuous = true;
+      reco.interimResults = true;
+      reco.lang = "en-US";
+
+      reco.onresult = (event: any) => {
+        // Critical loop shield: completely ignore mic input if agent is speaking, waiting, or in echo cooldown
+        if (
+          isSpeakingRef.current ||
+          isProcessingRef.current ||
+          Date.now() < echoCooldownUntilRef.current
+        ) {
+          return;
+        }
+
+        let interim = "";
+        let final = "";
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+
+        if (interim) {
+          if (!isSelfEcho(interim, recentAgentUtterancesRef.current)) {
+            setCurrentSpeech(interim);
+          }
+        }
+
+        const trimmedFinal = final.trim();
+        if (trimmedFinal) {
+          // Acoustic self-echo loop filter
+          if (isSelfEcho(trimmedFinal, recentAgentUtterancesRef.current)) {
+            setCurrentSpeech("");
+            return;
+          }
+
+          // Deduplicate accidental consecutive echo
+          if (trimmedFinal.toLowerCase() === lastProcessedTranscriptRef.current.toLowerCase()) {
+            return;
+          }
+
+          lastProcessedTranscriptRef.current = trimmedFinal;
+          handleSendUtteranceRef.current(trimmedFinal);
+        }
+      };
+
+      reco.onerror = (e: any) => {
+        if (e.error !== "no-speech" && e.error !== "aborted") {
+          console.warn("[LiveVoice] Speech recognition error:", e);
+        }
+      };
+
+      reco.onend = () => {
+        // Only restart if user actively wants listening and agent is not speaking/processing
+        if (
+          isListeningRef.current &&
+          !isSpeakingRef.current &&
+          !isProcessingRef.current &&
+          Date.now() >= echoCooldownUntilRef.current
+        ) {
+          try {
+            reco.start();
+          } catch {}
+        }
+      };
+
+      reco.start();
+      recognitionRef.current = reco;
+    } catch (err) {
+      console.warn("[LiveVoice] Start recognition failed:", err);
+    }
+  }, []);
+
+  startSpeechRecognitionRef.current = startSpeechRecognition;
+
+  // Microphone toggle & speech recognition with hardware AEC
+  const toggleListening = useCallback(async () => {
+    // If agent is currently speaking, clicking acts as interrupt
+    if (isSpeakingRef.current) {
+      interruptAgent();
+      return;
+    }
+
+    if (isListeningRef.current) {
+      isListeningRef.current = false;
       setIsListening(false);
+      stopSpeechRecognition(true);
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
+        micStreamRef.current = null;
+      }
+      setVolumeLevel(0);
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Request audio with full browser hardware/OS acoustic echo cancellation
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       micStreamRef.current = stream;
       startVolumeTracking(stream);
 
-      // Initialize Web Speech Recognition
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-      if (SpeechRecognition) {
-        const reco = new SpeechRecognition();
-        reco.continuous = true;
-        reco.interimResults = true;
-        reco.lang = "en-US";
-
-        reco.onresult = (event: any) => {
-          let interim = "";
-          let final = "";
-
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              final += event.results[i][0].transcript;
-            } else {
-              interim += event.results[i][0].transcript;
-            }
-          }
-
-          if (interim) {
-            setCurrentSpeech(interim);
-          }
-
-          if (final.trim()) {
-            handleSendUtterance(final.trim());
-          }
-        };
-
-        reco.onerror = (e: any) => {
-          console.warn("Speech recognition error:", e);
-        };
-
-        reco.onend = () => {
-          if (isListening) {
-            try {
-              reco.start();
-            } catch {}
-          }
-        };
-
-        reco.start();
-        recognitionRef.current = reco;
-        setIsListening(true);
-      } else {
-        toast.info("Microphone visualizer active. Type or speak using your browser audio input.");
-        setIsListening(true);
-      }
+      isListeningRef.current = true;
+      setIsListening(true);
+      startSpeechRecognition();
     } catch (err: any) {
       toast.error("Could not access microphone: " + err.message);
+      isListeningRef.current = false;
+      setIsListening(false);
     }
-  }, [isListening, startVolumeTracking, handleSendUtterance]);
+  }, [interruptAgent, startSpeechRecognition, stopSpeechRecognition, startVolumeTracking]);
 
   if (!isOpen) return null;
 
@@ -386,20 +638,23 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
               </div>
 
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-semibold text-foreground">
                     {currentAgent?.displayName || "Gemini Live Voice Cockpit"}
                   </h3>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-mono font-medium">
                     {engineMode === "websocket" ? "Gemini 2.0 Bidi" : "Active Neural Voice"}
                   </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono font-medium flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" /> Echo Shield
+                  </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {isSpeaking
-                    ? "Agent is speaking..."
+                    ? "Agent is speaking... (Click orb to interrupt)"
                     : isListening
-                    ? "Listening for speech..."
-                    : "Tap microphone to speak"}
+                    ? "Listening for your voice... (Auto Echo-Canceled)"
+                    : "Tap microphone or orb to talk"}
                 </p>
               </div>
             </div>
@@ -467,19 +722,25 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
                   {currentAgent?.avatar || "🤖"}
                 </div>
                 <div className="flex items-center gap-1 text-[11px] font-semibold text-foreground/90">
-                  {isListening ? (
+                  {isSpeaking ? (
+                    <span className="text-emerald-400 font-bold flex items-center gap-1">
+                      <Square className="w-2.5 h-2.5 fill-current" /> Stop Speech
+                    </span>
+                  ) : isListening ? (
                     <span className="text-primary font-bold">Listening</span>
-                  ) : isSpeaking ? (
-                    <span className="text-emerald-500 font-bold">Speaking</span>
                   ) : (
                     <span>Tap to Talk</span>
                   )}
                 </div>
-                {isListening && (
+                {isSpeaking ? (
+                  <span className="text-[9px] text-emerald-400/80 font-mono mt-0.5">
+                    Click to interrupt
+                  </span>
+                ) : isListening ? (
                   <span className="text-[9px] text-muted-foreground font-mono mt-0.5">
                     Audio Active
                   </span>
-                )}
+                ) : null}
               </motion.div>
             </div>
 
@@ -574,6 +835,18 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
                 placeholder="Or type a message to speak..."
                 className="w-full px-3 py-1.5 rounded-lg border border-border bg-secondary/50 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               />
+
+              {isSpeaking && (
+                <button
+                  type="button"
+                  onClick={interruptAgent}
+                  className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                  title="Interrupt current agent speech"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  <span className="hidden sm:inline">Interrupt</span>
+                </button>
+              )}
 
               <button
                 type="submit"

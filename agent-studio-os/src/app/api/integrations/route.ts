@@ -6,6 +6,7 @@ import { startTelegramPoller } from "@/lib/telegram-service";
 
 import { existsSync } from "fs";
 import { getBridgePaths } from "@/lib/whatsapp-service";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 export interface IntegrationConfigItem {
   id: string;
@@ -31,6 +32,7 @@ export async function GET(request: Request) {
     const agentId = url.searchParams.get("agentId");
 
     const agents = await prisma.agent.findMany({
+      where: await getUserScopedWhere(),
       select: {
         id: true,
         displayName: true,
@@ -38,12 +40,17 @@ export async function GET(request: Request) {
       },
     });
 
+    const userAgentIds = agents.map((a) => a.id);
     const agentMap = new Map<string, { id: string; displayName: string; avatar: string }>();
     for (const a of agents) {
       agentMap.set(a.id, a);
     }
 
-    const agentIntegrations = await prisma.agentIntegration.findMany();
+    const agentIntegrations = await prisma.agentIntegration.findMany({
+      where: {
+        agentId: { in: userAgentIds },
+      },
+    });
 
     const results = INTEGRATION_DEFINITIONS.map((def) => {
       const matchingIntegrations = agentIntegrations.filter((ai) => ai.platform === def.id);
@@ -160,6 +167,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Platform and agentId are required" }, { status: 400 });
     }
 
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id: agentId }),
+    });
+    if (!agent) {
+      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    }
+
     // Load existing settings if any to preserve tokens if client sent empty mask
     const existingIntegration = await prisma.agentIntegration.findUnique({
       where: { agentId_platform: { agentId, platform } },
@@ -205,11 +219,13 @@ export async function POST(request: Request) {
     }
     
     // Activity log
+    const authUserId = await getAuthUserId();
     await prisma.activityLog.create({
       data: {
         type: "device_connected",
         message: `${platform.toUpperCase()} integration updated for agent`,
         agentId: agentId,
+        userId: authUserId,
       },
     });
 

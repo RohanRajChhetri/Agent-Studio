@@ -14,6 +14,7 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  BookOpen,
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, type ElementType } from "react";
 
@@ -36,6 +37,8 @@ interface SettingsHeaderProps {
     activeMcpServers: number;
     vaultNotes: number;
     omnirouteOnline: boolean;
+    activeSkillsCount?: number;
+    totalSkillsCount?: number;
   };
 }
 
@@ -52,6 +55,17 @@ export function SettingsHeader({ activeTab, onTabChange, stats }: SettingsHeader
       icon: Key,
       badge: `${stats.activeProviders}/${stats.totalProviders}`,
       badgeVariant: stats.activeProviders > 0 ? "success" : "default",
+    },
+    {
+      id: "skills",
+      label: "External Skills",
+      shortLabel: "Skills",
+      icon: BookOpen,
+      badge:
+        stats.activeSkillsCount !== undefined && stats.activeSkillsCount > 0
+          ? `${stats.activeSkillsCount} active`
+          : undefined,
+      badgeVariant: stats.activeSkillsCount && stats.activeSkillsCount > 0 ? "success" : "default",
     },
     {
       id: "devices",

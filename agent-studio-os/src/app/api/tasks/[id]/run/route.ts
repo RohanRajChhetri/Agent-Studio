@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { executeTaskById } from "@/lib/task-executor";
 import { notifyWhatsAppUser } from "@/lib/whatsapp-service";
+import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function POST(
   request: Request,
@@ -10,6 +12,15 @@ export async function POST(
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
     const overrideAgentId = body.agentId;
+
+    // Verify task exists and belongs to current user
+    const existingTask = await prisma.task.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
+
+    if (!existingTask) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
 
     const result = await executeTaskById(id, overrideAgentId);
 

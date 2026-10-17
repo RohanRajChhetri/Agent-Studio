@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { getActiveApiKeys, executeChatCompletion } from "@/lib/llm-router";
 import { prisma } from "@/lib/prisma";
+import { getAuthUserId, getUserScopedWhere } from "@/lib/user-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const agentId = searchParams.get("agentId");
 
@@ -24,8 +30,8 @@ export async function GET(req: Request) {
 
     if (agentId) {
       try {
-        const agent = await prisma.agent.findUnique({
-          where: { id: agentId },
+        const agent = await prisma.agent.findFirst({
+          where: await getUserScopedWhere({ id: agentId }),
         });
         if (agent) {
           agentName = agent.displayName || agent.name;
@@ -84,6 +90,11 @@ Voice Rules:
  */
 export async function POST(req: Request) {
   try {
+    const userId = await getAuthUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { message, agentId, voice } = body;
 
@@ -96,7 +107,9 @@ export async function POST(req: Request) {
     let agentName = "AI Voice Assistant";
 
     if (agentId) {
-      const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+      const agent = await prisma.agent.findFirst({
+        where: await getUserScopedWhere({ id: agentId }),
+      });
       if (agent) {
         agentName = agent.displayName || agent.name;
         agentPrompt = `You are ${agentName}, an autonomous real-time voice agent in Agent Studio OS.

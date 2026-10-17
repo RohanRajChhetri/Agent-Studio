@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { executeChatCompletion } from "@/lib/llm-router";
 import { writeVaultFile, ensureVaultExists } from "@/lib/vault";
 import { slugify, formatResponseTime } from "@/lib/utils";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 export async function POST(
   request: Request,
@@ -13,14 +14,16 @@ export async function POST(
     const body = await request.json();
     const { action, feedback, reason, autoExecute = true } = body;
 
-    const task = await prisma.task.findUnique({
-      where: { id },
+    const task = await prisma.task.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: { agent: true },
     });
 
     if (!task) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
+
+    const userId = await getAuthUserId();
 
     // 1. APPROVE
     if (action === "approve") {
@@ -74,6 +77,7 @@ ${task.result || "Deliverable verified."}
           type: "task_moved",
           message: `Human Reviewer approved deliverable for "${task.title}" (moved to Done)`,
           agentId: task.agentId,
+          userId,
         },
       });
 
@@ -130,6 +134,7 @@ INSTRUCTIONS:
             type: "task_moved",
             message: `${task.agent.displayName} revised "${task.title}" addressing critique: "${critique.slice(0, 80)}" in ${formatResponseTime(executionResult.latency)}`,
             agentId: task.agentId,
+            userId,
           },
         });
 
@@ -156,6 +161,7 @@ INSTRUCTIONS:
             type: "task_moved",
             message: `Revision requested on "${task.title}": "${critique.slice(0, 80)}" (moved to In Progress)`,
             agentId: task.agentId,
+            userId,
           },
         });
 
@@ -184,6 +190,7 @@ INSTRUCTIONS:
           type: "task_moved",
           message: `Deliverable rejected for "${task.title}": "${rejectReason.slice(0, 80)}" (moved to Backlog)`,
           agentId: task.agentId,
+          userId,
         },
       });
 

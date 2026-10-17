@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 export async function POST(
   request: Request,
@@ -16,8 +17,8 @@ export async function POST(
       // Body is optional
     }
 
-    const sourceSession = await prisma.chatSession.findUnique({
-      where: { id },
+    const sourceSession = await prisma.chatSession.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: {
         agent: true,
         messages: {
@@ -33,6 +34,7 @@ export async function POST(
       );
     }
 
+    const userId = await getAuthUserId();
     const forkTitle = customTitle?.trim() || `Branch: ${sourceSession.title}`;
 
     // Create cloned session
@@ -42,6 +44,7 @@ export async function POST(
         title: forkTitle,
         model: sourceSession.model,
         summary: sourceSession.summary,
+        userId,
       },
       include: {
         agent: {
@@ -67,6 +70,7 @@ export async function POST(
           model: m.model,
           latency: m.latency,
           tokens: m.tokens,
+          userId,
           createdAt: m.createdAt,
         })),
       });
@@ -79,6 +83,7 @@ export async function POST(
           type: "agent_chat",
           message: `Forked conversation "${sourceSession.title}" into "${forkedSession.title}"`,
           agentId: sourceSession.agentId,
+          userId,
         },
       });
     } catch {

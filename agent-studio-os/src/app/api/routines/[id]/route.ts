@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateNextRun } from "@/lib/scheduler";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function GET(
   _request: Request,
@@ -8,8 +9,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const routine = await prisma.routine.findUnique({
-      where: { id },
+    const routine = await prisma.routine.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: { agent: true },
     });
 
@@ -34,7 +35,9 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await prisma.routine.findUnique({ where: { id } });
+    const existing = await prisma.routine.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
     if (!existing) {
       return NextResponse.json({ error: "Routine not found" }, { status: 404 });
     }
@@ -83,7 +86,12 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    await prisma.routine.delete({ where: { id } });
+    const deleted = await prisma.routine.deleteMany({
+      where: await getUserScopedWhere({ id }),
+    });
+    if (deleted.count === 0) {
+      return NextResponse.json({ error: "Routine not found" }, { status: 404 });
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(

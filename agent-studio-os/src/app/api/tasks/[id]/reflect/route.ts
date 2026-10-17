@@ -4,6 +4,7 @@ import { executeChatCompletion } from "@/lib/llm-router";
 import { appendAgentLearning } from "@/lib/episodic-memory";
 import { writeVaultFile, ensureVaultExists } from "@/lib/vault";
 import { slugify } from "@/lib/utils";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function POST(
   request: Request,
@@ -21,8 +22,8 @@ export async function POST(
       );
     }
 
-    const task = await prisma.task.findUnique({
-      where: { id },
+    const task = await prisma.task.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: { agent: true },
     });
 
@@ -30,7 +31,7 @@ export async function POST(
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    const agent = task.agent || (await prisma.agent.findFirst());
+    const agent = task.agent || (await prisma.agent.findFirst({ where: await getUserScopedWhere() }));
     const previousResult = task.result || "(No previous deliverable found)";
 
     // 1. Construct Self-Reflection Prompt

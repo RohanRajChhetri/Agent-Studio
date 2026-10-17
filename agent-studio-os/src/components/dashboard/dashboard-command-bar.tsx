@@ -15,8 +15,58 @@ import {
   Layers,
   Mic,
   Coins,
+  Image,
+  Code,
+  HelpCircle,
+  BarChart3,
+  Plus,
+  Paperclip,
+  Upload,
 } from "lucide-react";
 import type { AgentProfile } from "@/types";
+import {
+  SLASH_COMMANDS as ALL_SLASH_COMMANDS,
+  getCommandSuggestions,
+  getCategoryInfo,
+  type SlashCommandDefinition,
+} from "@/lib/slash-commands";
+
+// Icon mapping for slash commands
+const COMMAND_ICONS: Record<string, React.ElementType> = {
+  new_session: Plus,
+  help: HelpCircle,
+  status: BarChart3,
+  stop: Loader2,
+  branch: Layers,
+  queue_task: Columns3,
+  retry: Sparkles,
+  undo: Sparkles,
+  switch_model: Bot,
+  a2a_mission: Crown,
+  plan: Sparkles,
+  compress: Layers,
+  review: Bot,
+  loop: Sun,
+  image_gen: Image,
+  code: Code,
+  usage: Coins,
+  profile: Bot,
+  debug: Code,
+  voice: Mic,
+  memory: Brain,
+  routines: Sun,
+  settings: Sparkles,
+  braindump: Brain,
+  packs: Sparkles,
+  pipeline: Layers,
+};
+
+const COMMAND_COLORS: Record<string, string> = {
+  mvp: "text-blue-500 bg-blue-500/10 border-blue-500/30",
+  core: "text-purple-500 bg-purple-500/10 border-purple-500/30",
+  advanced: "text-amber-500 bg-amber-500/10 border-amber-500/30",
+  admin: "text-slate-500 bg-slate-500/10 border-slate-500/30",
+};
 
 export interface SlashCommandItem {
   cmd: string;
@@ -27,80 +77,15 @@ export interface SlashCommandItem {
   color: string;
 }
 
-export const SLASH_COMMANDS: SlashCommandItem[] = [
-  {
-    cmd: "/agents",
-    label: "A2A Chain of Command",
-    badge: "Pillar 1",
-    desc: "Decompose & execute mission down the agent hierarchy (Orchestrator → Managers → Specialists)",
-    icon: Crown,
-    color: "text-[#0075de] bg-[#e6f3fe] dark:bg-primary/10 border-[#0075de]/30",
-  },
-  {
-    cmd: "/kanban",
-    label: "Dispatch to Kanban",
-    badge: "Pillar 4",
-    desc: "Queue an autonomous task directly to the Kanban board with auto-assigned specialist",
-    icon: Columns3,
-    color: "text-amber-500 bg-amber-500/10 border-amber-500/30",
-  },
-  {
-    cmd: "/briefing",
-    label: "Daily Morning Briefing",
-    badge: "Daily Routine",
-    desc: "Generate or read today's proactive executive morning briefing with voice narration",
-    icon: Sun,
-    color: "text-amber-500 bg-amber-500/10 border-amber-500/30",
-  },
-  {
-    cmd: "/dump",
-    label: "Voice & Text Brain Dump",
-    badge: "Quick Capture",
-    desc: "Dictate raw thoughts & auto-decompose into specialist Kanban tickets",
-    icon: Brain,
-    color: "text-purple-500 bg-purple-500/10 border-purple-500/30",
-  },
-  {
-    cmd: "/packs",
-    label: "Agent Starter Packs",
-    badge: "Marketplace",
-    desc: "1-Click deploy specialized fleets (Solopreneurs, Researchers, Creators)",
-    icon: Sparkles,
-    color: "text-indigo-500 bg-indigo-500/10 border-indigo-500/30",
-  },
-  {
-    cmd: "/pipeline",
-    label: "Feature Pipeline DAG",
-    badge: "Workforce",
-    desc: "Launch multi-stage autonomous pipeline builder to execute sequential specialist stages",
-    icon: Layers,
-    color: "text-purple-500 bg-purple-500/10 border-purple-500/30",
-  },
-  {
-    cmd: "/voice",
-    label: "Gemini Live Voice",
-    badge: "Cockpit",
-    desc: "Open real-time bidirectional speech cockpit with animated orb (Alt+V)",
-    icon: Mic,
-    color: "text-rose-500 bg-rose-500/10 border-rose-500/30",
-  },
-  {
-    cmd: "/cost",
-    label: "Token & Cost Telemetry",
-    badge: "Telemetry",
-    desc: "Inspect token usage, model costs, local router savings, and provider latencies (Alt+C)",
-    icon: Coins,
-    color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/30",
-  },
-  {
-    cmd: "/memory",
-    label: "Obsidian Vault & Galaxy",
-    badge: "Pillar 3",
-    desc: "Explore 3D Knowledge Galaxy graph and sync bidirectional Obsidian markdown notes",
-    icon: Brain,
-    color: "text-sky-500 bg-sky-500/10 border-sky-500/30",
-  },
-];
+// Convert centralized commands to UI items
+const SLASH_COMMANDS_UI: SlashCommandItem[] = ALL_SLASH_COMMANDS.map((def) => ({
+  cmd: def.command,
+  label: def.description,
+  badge: getCategoryInfo(def.category).label,
+  desc: def.usage,
+  icon: COMMAND_ICONS[def.handler] || Sparkles,
+  color: COMMAND_COLORS[def.category] || "text-slate-500 bg-slate-500/10 border-slate-500/30",
+}));
 
 interface DashboardCommandBarProps {
   prompt: string;
@@ -112,6 +97,7 @@ interface DashboardCommandBarProps {
   isSubmitting: boolean;
   isChatSending: boolean;
   isA2AExecuting: boolean;
+  isChatActive?: boolean;
   onCommandSubmit: (e: React.FormEvent) => void;
   onSendToKanban: (title?: string, desc?: string) => void;
   onSelectSlashCommand: (cmd: string) => void;
@@ -128,6 +114,7 @@ export function DashboardCommandBar({
   isSubmitting,
   isChatSending,
   isA2AExecuting,
+  isChatActive = false,
   onCommandSubmit,
   onSendToKanban,
   onSelectSlashCommand,
@@ -197,12 +184,23 @@ export function DashboardCommandBar({
             onFocus={() => {
               if (prompt.startsWith("/") && !prompt.includes(" ")) setShowSlashMenu(true);
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                if (showSlashMenu) {
+                  setShowSlashMenu(false);
+                } else if (prompt) {
+                  setPrompt("");
+                }
+              }
+            }}
             placeholder={
               isAgentsMode
                 ? "Enter high-level mission for the agent hierarchy... (e.g. /agents Build JWT authentication)"
+                : isChatActive
+                ? `Reply to ${activeAgent?.displayName || "agent"}... (or type / for commands)`
                 : selectedAgentId === "auto"
-                ? "Message your autonomous team or queue a task... (Type /agents for A2A)"
-                : `Message ${activeAgent?.displayName || "specialist"}... (Type /agents for A2A)`
+                ? "Message your team, queue a task, or type /agents..."
+                : `Message ${activeAgent?.displayName || "specialist"}...`
             }
             autoFocus
             className="w-full bg-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground outline-none"
@@ -227,7 +225,7 @@ export function DashboardCommandBar({
                 type="submit"
                 disabled={isSubmitting || isChatSending || isA2AExecuting}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition disabled:opacity-50 text-xs font-bold cursor-pointer"
-                title={isAgentsMode ? "Execute A2A Mission" : "Send message"}
+                title={isAgentsMode ? "Execute A2A Mission" : isChatActive ? "Send reply" : "Send message"}
               >
                 {isSubmitting || isChatSending || isA2AExecuting ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -239,7 +237,7 @@ export function DashboardCommandBar({
                 ) : (
                   <>
                     <Send className="w-3.5 h-3.5" />
-                    <span>Chat</span>
+                    <span>{isChatActive ? "Reply" : "Send"}</span>
                   </>
                 )}
               </button>
@@ -249,11 +247,17 @@ export function DashboardCommandBar({
 
         {/* Slash Commands Dropdown Menu */}
         {showSlashMenu && (
-          <div className="absolute left-2 right-2 top-full mt-2 z-50 rounded-xl border border-border bg-card p-1.5 shadow-xl space-y-1 animate-in fade-in zoom-in-95 duration-150">
+          <div className={`absolute left-2 right-2 z-50 rounded-xl border border-border bg-card p-1.5 shadow-xl space-y-1 animate-in fade-in zoom-in-95 duration-150 max-h-80 overflow-y-auto ${
+            isChatActive ? "bottom-full mb-2" : "top-full mt-2"
+          }`}>
             <div className="px-2 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Slash Commands
+              Slash Commands ({SLASH_COMMANDS_UI.length})
             </div>
-            {SLASH_COMMANDS.map((sc) => {
+            {SLASH_COMMANDS_UI.filter((sc) => {
+              const partial = prompt.replace(/^\//, "").toLowerCase();
+              if (!partial) return true;
+              return sc.cmd.slice(1).startsWith(partial) || sc.label.toLowerCase().includes(partial);
+            }).map((sc) => {
               const Icon = sc.icon;
               return (
                 <button
@@ -307,7 +311,9 @@ export function DashboardCommandBar({
             {pickerOpen && (
               <div
                 ref={pickerRef}
-                className="absolute left-0 top-full mt-1.5 z-50 w-72 rounded-xl border border-border bg-card p-2 shadow-xl space-y-2 animate-in fade-in zoom-in-95 duration-150"
+                className={`absolute left-0 z-50 w-72 rounded-xl border border-border bg-card p-2 shadow-xl space-y-2 animate-in fade-in zoom-in-95 duration-150 ${
+                  isChatActive ? "bottom-full mb-2" : "top-full mt-1.5"
+                }`}
               >
                 <div className="relative">
                   <Bot className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />

@@ -45,3 +45,11 @@ scratch/
 .system_generated/
 **/.system_generated/
 .git_backup
+
+# Agents configuration & skills
+.agent/
+.agents/
+**/.agent/
+**/.agents/
+.agent
+.agents

@@ -1,34 +1,43 @@
 "use client";
 
+import { motion } from "framer-motion";
+import { Sparkles, Bot } from "lucide-react";
+
 interface DashboardHeroHeaderProps {
   agentCount: number;
+  isChatActive?: boolean;
 }
 
-export function DashboardHeroHeader({ agentCount }: DashboardHeroHeaderProps) {
+export function DashboardHeroHeader({ agentCount, isChatActive = false }: DashboardHeroHeaderProps) {
+  if (isChatActive) {
+    return null; // When chatting, let the conversation take full focus
+  }
+
   return (
-    <div className="text-center space-y-3">
-      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#e6f3fe] text-[#0075de] text-[11px] font-medium border border-[#0075de]/20">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#0075de]" />
-        <span>Agent Studio OS</span>
+    <motion.div
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="text-center space-y-3.5 pt-2 pb-1"
+    >
+      {/* Subtle status chip */}
+      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/70 text-muted-foreground text-[11px] font-medium border border-border/60">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="text-foreground font-semibold">Agent Studio OS</span>
         <span className="opacity-40">•</span>
-        <span>{agentCount} Autonomous Specialists</span>
+        <span>{agentCount} Specialists Online</span>
       </div>
 
-      <h1 className="text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight text-foreground leading-tight">
-        Where teams and agents{" "}
-        <span className="inline-block px-3 py-0.5 mx-1 rounded-full bg-[#f6d5b8] text-black font-semibold text-2xl sm:text-3xl lg:text-4xl align-baseline">
-          orchestrate
-        </span>{" "}
-        together
+      {/* Clean, minimalist headline */}
+      <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-foreground">
+        What would you like to build today?
       </h1>
-      <p className="text-xs sm:text-sm text-muted-foreground max-w-lg mx-auto leading-relaxed">
-        Type{" "}
-        <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-foreground font-semibold">
-          /agents
-        </code>{" "}
-        to activate the autonomous A2A chain of command across your specialist team, chat with
-        personas, or queue tasks to Kanban.
+
+      {/* Understated subtext */}
+      <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+        Direct missions, orchestrate autonomous multi-agent chains, or chat with specialist personas.
       </p>
-    </div>
+    </motion.div>
   );
 }
+

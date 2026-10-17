@@ -74,4 +74,15 @@ console.log(greeting);
     expect(corePrompt).toContain("Never use literal horizontal line dividers");
     expect(corePrompt).toContain("---");
   });
+
+  it("should transform raw file.create tool call into structured markdown and download link", () => {
+    const rawToolCall = `<|tool_call:start|>file.create(content='# Darwin Job Opportunities\\n\\n## Overview\\nJob openings in Darwin.\\n', path='Darwin_Jobs_October_2026.doc')<|tool_call_end|>`;
+    const html = renderToStaticMarkup(React.createElement(MarkdownRenderer, { content: rawToolCall }));
+
+    expect(html).not.toContain("&lt;|tool_call");
+    expect(html).not.toContain("file.create(");
+    expect(html).toContain("Darwin Job Opportunities");
+    expect(html).toContain("Deliverable Ready for Download");
+    expect(html).toContain("/downloads/Darwin_Jobs_October_2026.doc");
+  });
 });

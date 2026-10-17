@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Agent, AgentTool } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { LLMResponse } from "./router-types";
+import { getUserScopedWhere, getAuthUserId } from "./user-auth";
 
 export type AgentWithTools = Agent & { tools?: AgentTool[] };
 
@@ -21,18 +22,19 @@ export async function resolveAgentAndSession(params: {
   effectiveModel?: string;
 }): Promise<ResolvedAgentSession> {
   const { agentId, agentName, sessionId, prompt, effectiveModel = "auto/fast" } = params;
+  const userId = await getAuthUserId();
 
   let targetAgent: AgentWithTools | null = null;
 
-  // 1. Resolve agent profile
+  // 1. Resolve agent profile scoped to current user
   if (agentId || agentName) {
     targetAgent = await prisma.agent.findFirst({
-      where: {
+      where: await getUserScopedWhere({
         OR: [
           ...(agentId ? [{ id: agentId }] : []),
           ...(agentName ? [{ name: agentName }, { displayName: agentName }] : []),
         ],
-      },
+      }),
       include: { tools: true },
     });
   }
@@ -40,36 +42,29 @@ export async function resolveAgentAndSession(params: {
   // 2. Resolve or create ChatSession
   let activeSessionId = sessionId || null;
   if (targetAgent?.id) {
-    if (!activeSessionId) {
-      const latestSession = await prisma.chatSession.findFirst({
-        where: { agentId: targetAgent.id },
-        orderBy: { updatedAt: "desc" },
-      });
-
-      if (latestSession) {
-        activeSessionId = latestSession.id;
-      } else {
-        const title = prompt
-          ? prompt.slice(0, 45).replace(/[\r\n]+/g, " ").trim() || "New Session"
-          : "New Session";
-        const newSession = await prisma.chatSession.create({
-          data: {
-            agentId: targetAgent.id,
-            title,
-            model: effectiveModel,
-          },
-        });
-        activeSessionId = newSession.id;
-      }
-    } else if (prompt) {
-      // Auto-title session if it's new or empty
+    if (activeSessionId) {
       try {
-        const existingSession = await prisma.chatSession.findUnique({
-          where: { id: activeSessionId },
+        const existingSession = await prisma.chatSession.findFirst({
+          where: await getUserScopedWhere({ id: activeSessionId }),
           include: { _count: { select: { messages: true } } },
         });
 
-        if (existingSession) {
+        if (!existingSession) {
+          // Passed sessionId doesn't exist, create a clean session
+          const title = prompt
+            ? prompt.slice(0, 45).replace(/[\r\n]+/g, " ").trim() || "New Session"
+            : "New Session";
+          const newSession = await prisma.chatSession.create({
+            data: {
+              agentId: targetAgent.id,
+              title,
+              model: effectiveModel,
+              userId,
+            },
+          });
+          activeSessionId = newSession.id;
+        } else if (prompt) {
+          // Re-use session and auto-title if empty
           const shouldAutoTitle =
             existingSession.title === "New Session" ||
             existingSession._count.messages === 0;
@@ -82,12 +77,26 @@ export async function resolveAgentAndSession(params: {
                 title: autoTitle,
                 updatedAt: new Date(),
               },
-            });
+            }).catch(() => {});
           }
         }
       } catch {
-        // Ignore session auto-title errors non-blockingly
+        // Fallback on lookup failure
       }
+    } else {
+      // Always create a new session for brand new conversations
+      const title = prompt
+        ? prompt.slice(0, 45).replace(/[\r\n]+/g, " ").trim() || "New Session"
+        : "New Session";
+      const newSession = await prisma.chatSession.create({
+        data: {
+          agentId: targetAgent.id,
+          title,
+          model: effectiveModel,
+          userId,
+        },
+      });
+      activeSessionId = newSession.id;
     }
   }
 
@@ -109,24 +118,57 @@ export async function persistChatMessages(params: {
   if (!agentId) return;
 
   try {
+    const userId = await getAuthUserId();
+
+    // Validate agent exists before creating messages (prevents FK P2003 error)
+    const agentExists = await prisma.agent.findUnique({ where: { id: agentId }, select: { id: true } });
+    if (!agentExists) {
+      console.warn(`[API Middleware] Agent ${agentId} not found, skipping message persistence`);
+      return;
+    }
+
+    // Validate session exists if provided (prevents FK P2003 error)
+    let validSessionId = sessionId || null;
+    if (validSessionId) {
+      const sessionExists = await prisma.chatSession.findUnique({ where: { id: validSessionId }, select: { id: true } });
+      if (!sessionExists) {
+        console.warn(`[API Middleware] Session ${validSessionId} not found, creating new session`);
+        try {
+          const newSession = await prisma.chatSession.create({
+            data: {
+              agentId,
+              title: prompt.slice(0, 45).replace(/[\r\n]+/g, " ").trim() || "New Session",
+              model,
+              userId,
+            },
+          });
+          validSessionId = newSession.id;
+        } catch {
+          validSessionId = null;
+        }
+      }
+    }
+
     await prisma.chatMessage.create({
       data: {
         agentId,
-        sessionId,
+        sessionId: validSessionId,
         role: "user",
         content: prompt,
         model,
+        userId,
       },
     });
 
     await prisma.chatMessage.create({
       data: {
         agentId,
-        sessionId,
+        sessionId: validSessionId,
         role: "assistant",
         content: response,
         model,
         latency,
+        userId,
       },
     });
   } catch (saveErr) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { deleteProfile as hermesDeleteProfile, setConfig, showProfile } from "@/lib/hermes";
+import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
 export async function GET(
   request: Request,
@@ -8,8 +9,8 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const agent = await prisma.agent.findUnique({
-      where: { id },
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id }),
       include: { tools: true, integrations: true, tasks: true, reportsTo: true, subordinates: true },
     });
 
@@ -46,7 +47,9 @@ export async function PUT(
       integrations,
     } = body;
 
-    const agent = await prisma.agent.findUnique({ where: { id } });
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
     if (!agent) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
@@ -134,7 +137,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const agent = await prisma.agent.findUnique({ where: { id } });
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
     if (!agent) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
@@ -179,6 +184,7 @@ export async function DELETE(
       data: {
         type: "agent_deleted",
         message: `Agent "${agent.displayName}" deleted`,
+        userId: await getAuthUserId(),
       },
     });
 

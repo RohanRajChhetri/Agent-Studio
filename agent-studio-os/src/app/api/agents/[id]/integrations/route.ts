@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getUserScopedWhere } from "@/lib/user-auth";
 
 export async function GET(
   request: Request,
@@ -7,6 +8,13 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
+    if (!agent) {
+      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    }
+
     const integrations = await prisma.agentIntegration.findMany({
       where: { agentId: id },
     });
@@ -33,6 +41,13 @@ export async function POST(
         { error: "Platform is required" },
         { status: 400 }
       );
+    }
+
+    const agent = await prisma.agent.findFirst({
+      where: await getUserScopedWhere({ id }),
+    });
+    if (!agent) {
+      return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
     const integration = await prisma.agentIntegration.upsert({
