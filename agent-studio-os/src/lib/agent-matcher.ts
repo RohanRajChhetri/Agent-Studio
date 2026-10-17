@@ -15,7 +15,13 @@ export function matchBestAgent(
 
   const defaultToOrchestrator = options?.defaultToOrchestrator ?? true;
   const orchestrator = agents.find(
-    (a) => a.role === "orchestrator" || a.name === "rohan" || (a.department && a.department.toLowerCase().includes("exec"))
+    (a) =>
+      a.role === "orchestrator" ||
+      a.role === "manager" ||
+      (a.role as string) === "lead" ||
+      (a.name && a.name.toLowerCase().includes("lead")) ||
+      (a.name && a.name.toLowerCase().includes("orchestrator")) ||
+      (a.department && a.department.toLowerCase().includes("exec"))
   );
 
   const text = (queryOrTask || "").trim().toLowerCase();
@@ -101,7 +107,13 @@ export function matchBestAgent(
     }
 
     // Orchestrator matching
-    if (role === "orchestrator" || name === "rohan") {
+    if (
+      role === "orchestrator" ||
+      role === "manager" ||
+      (role as string) === "lead" ||
+      name.includes("lead") ||
+      name.includes("orchestrator")
+    ) {
       for (const kw of orchKeywords) {
         if (text.includes(kw)) score += 4;
       }

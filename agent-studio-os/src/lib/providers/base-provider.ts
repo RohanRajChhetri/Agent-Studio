@@ -1,4 +1,10 @@
-import type { LLMMessage, LLMResponse, LLMProvider, PromptIntent } from "../router-types";
+import type {
+  LLMMessage,
+  LLMResponse,
+  LLMProvider,
+  PromptIntent,
+  LLMToolDefinition,
+} from "../router-types";
 
 /**
  * Base provider class providing timeout execution and error encapsulation
@@ -15,7 +21,8 @@ export abstract class BaseLLMProvider implements LLMProvider {
     model: string,
     messages: LLMMessage[],
     keys: Record<string, string>,
-    systemPrompt?: string
+    systemPrompt?: string,
+    tools?: LLMToolDefinition[]
   ): Promise<LLMResponse | null>;
 
   protected async executeWithTimeout<T>(

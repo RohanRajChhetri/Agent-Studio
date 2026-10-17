@@ -22,6 +22,16 @@ export interface LLMResponse {
   toolCalls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
 }
 
+export interface LLMToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, { type: string; description?: string; enum?: string[] }>;
+    required?: string[];
+  };
+}
+
 export type PromptIntent = "coding" | "reasoning" | "creative" | "chat";
 
 export interface LLMProvider {
@@ -34,7 +44,8 @@ export interface LLMProvider {
     model: string,
     messages: LLMMessage[],
     keys: Record<string, string>,
-    systemPrompt?: string
+    systemPrompt?: string,
+    tools?: LLMToolDefinition[]
   ): Promise<LLMResponse | null>;
 }
 

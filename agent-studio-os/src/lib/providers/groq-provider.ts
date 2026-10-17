@@ -33,7 +33,8 @@ export class GroqProvider extends BaseLLMProvider {
     model: string,
     messages: LLMMessage[],
     keys: Record<string, string>,
-    _systemPrompt?: string
+    _systemPrompt?: string,
+    tools?: import("../router-types").LLMToolDefinition[]
   ): Promise<LLMResponse | null> {
     const key = keys.GROQ_API_KEY;
     if (!key) return null;
@@ -46,29 +47,62 @@ export class GroqProvider extends BaseLLMProvider {
 
     try {
       return await this.executeWithTimeout(async (signal) => {
+        const bodyPayload: Record<string, any> = {
+          model: cleanModel,
+          messages,
+        };
+
+        if (tools && tools.length > 0) {
+          bodyPayload.tools = tools.map((t) => ({
+            type: "function",
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters,
+            },
+          }));
+          bodyPayload.tool_choice = "auto";
+        }
+
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${key}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            model: cleanModel,
-            messages,
-          }),
+          body: JSON.stringify(bodyPayload),
           signal,
         });
 
         if (res.ok) {
           const data = await res.json();
-          const content = data.choices?.[0]?.message?.content || "";
-          if (content) {
+          const choice = data.choices?.[0];
+          const content = choice?.message?.content || "";
+          const rawToolCalls = choice?.message?.tool_calls;
+          const parsedToolCalls = Array.isArray(rawToolCalls)
+            ? rawToolCalls.map((tc: any) => {
+                let parsedArgs = {};
+                try {
+                  parsedArgs = JSON.parse(tc.function?.arguments || "{}");
+                } catch {
+                  parsedArgs = { raw: tc.function?.arguments };
+                }
+                return {
+                  id: tc.id || `tc-${Date.now()}`,
+                  name: tc.function?.name || "",
+                  arguments: parsedArgs,
+                };
+              })
+            : undefined;
+
+          if (content || (parsedToolCalls && parsedToolCalls.length > 0)) {
             return {
               content,
               latency: Date.now() - start,
               source: "groq",
               modelUsed: cleanModel,
               usage: data.usage,
+              toolCalls: parsedToolCalls,
             };
           }
         }

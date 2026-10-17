@@ -240,13 +240,17 @@ export async function listDownloadedFiles(): Promise<
     for (const ent of entries) {
       if (ent.isFile() && !ent.name.startsWith(".")) {
         const filePath = path.join(downloadDir, ent.name);
-        const stats = await fs.stat(filePath);
-        files.push({
-          fileName: ent.name,
-          fileUrl: `/downloads/${encodeURIComponent(ent.name)}`,
-          size: stats.size,
-          mtime: stats.mtime,
-        });
+        try {
+          const stats = await fs.stat(filePath);
+          files.push({
+            fileName: ent.name,
+            fileUrl: `/downloads/${encodeURIComponent(ent.name)}`,
+            size: stats.size,
+            mtime: stats.mtime,
+          });
+        } catch {
+          // Skip if file was unlinked concurrently
+        }
       }
     }
 

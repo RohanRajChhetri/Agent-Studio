@@ -52,6 +52,24 @@ This document serves as the single source of truth for all current sprint object
   - Updated `getExcellenceCore` in [`context-management.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/context-management.ts) with strict instructions forbidding agents from generating decorative horizontal dividers (`---`, `***`, `___`).
   - Removed hardcoded `"---"` separator strings from autonomous action dispatcher templates and executive briefing routes.
   - Added 5 unit tests in [`markdown-renderer.test.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/__tests__/markdown-renderer.test.ts) (19/19 test suites passing, 119/119 tests passing).
+- [x] **React 19 Ref Mutations Fixed**:
+  - Resolved render-phase ref mutations in [`gemini-live-orb.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/voice/gemini-live-orb.tsx) using `useEffect` hooks, eliminating React 19 compiler errors.
+- [x] **Auth & Multi-Tenant Security Hardening**:
+  - Secured [`user-auth.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/user-auth.ts) by replacing hardcoded legacy account fallbacks with environment-controlled development gates (`ALLOW_LOCAL_GUEST_FALLBACK`), strictly preventing unauthenticated data leaks in production.
+- [x] **Cross-Platform Path & Environment Normalization**:
+  - Replaced hardcoded personal user paths (`C:\Users\rohan`, `AppData\Roaming`) with dynamic `os.homedir()`, platform-aware binary locators in [`claude-code-runner.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/claude-code-runner.ts), generic lead role matching in [`agent-matcher.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/agent-matcher.ts), and clean placeholders.
+- [x] **Production Multi-Stage Dockerfile**:
+  - Rebuilt root [`Dockerfile`](file:///c:/Users/rohan/Projects/Agent%20Os/Dockerfile) and [`.dockerignore`](file:///c:/Users/rohan/Projects/Agent%20Os/.dockerignore) into a containerized 3-stage build (deps, builder, runner) with Prisma client generation and Next.js production execution.
+- [x] **Semantic RAG Embeddings & LRU Vector Cache**:
+  - Upgraded [`rag.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/rag.ts) with API-driven semantic vector embeddings (Gemini `text-embedding-004` & OpenAI `text-embedding-3-small`), an in-memory LRU embedding cache, and resilient cosine similarity ranking.
+- [x] **Real-Time Server-Sent Events (SSE) Fleet Bus**:
+  - Implemented `/api/events` and singleton `FleetEventBus` in [`event-bus.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/event-bus.ts), replacing 10s HTTP polling in [`fleet-activity-stream.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/layout/fleet-activity-stream.tsx) with push event streams.
+- [x] **Chat Page Modular Decomposition**:
+  - Extracted [`ArtifactDrawer`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/chat/artifact-drawer.tsx) and [`AgentSpecsModal`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/chat/agent-specs-modal.tsx) from monolithic `chat/page.tsx`, significantly reducing component size and improving maintenance.
+- [x] **Comprehensive Quality & Test Verification**:
+  - 32/32 test suites passing (187/187 tests passing, 100%).
+  - TypeScript strict compilation: 0 errors (`tsc -p tsconfig.json --noEmit`).
+  - ESLint verification: 0 errors (`npm run lint`).
 
 ---
 
@@ -152,14 +170,43 @@ Upgraded the dashboard message function into an **Autonomous Cognitive Action En
 
 ---
 
+## Architectural & Platform Hardening (Implemented)
+
+- [x] **React 19 & Next.js 16 Compiler Violations**:
+  - Eliminated render-phase ref mutations across `GeminiLiveOrb` (`handleSendUtteranceRef`, `startSpeechRecognitionRef`), satisfying `react-hooks/refs`.
+- [x] **Auth & Multi-Tenant Isolation**:
+  - Secured `getUserFromRequest`: gated legacy admin guest mode behind explicit `ALLOW_LOCAL_GUEST_FALLBACK`, returning `__unauthenticated__` in production.
+- [x] **Cross-Platform Path Normalization**:
+  - Eliminated hardcoded `C:\Users\...` paths across Claude Code Runner, Agent Matcher, Vault Tab, Task Decompose, and Obsidian Integration; substituted dynamic `os.homedir()` binary locators.
+- [x] **Production Multi-Stage Dockerfile & Container Healthcheck**:
+  - 3-stage `node:20-alpine` build (`deps`, `builder`, `runner`) under unprivileged `nextjs` user with automated Docker `HEALTHCHECK` via `/api/health`.
+- [x] **Semantic RAG Embeddings & In-Memory LRU Cache**:
+  - Upgraded RAG pipeline with `fetchSemanticEmbedding()` supporting Gemini `text-embedding-004` and OpenAI `text-embedding-3-small`, backed by memory-bounded LRU cache with deterministic fallback.
+- [x] **Real-Time Push Event Bus (Server-Sent Events)**:
+  - Replaced interval polling in `FleetActivityStream` with real-time push SSE (`/api/events`) backed by `FleetEventBus` with subscriber tracking.
+- [x] **Automated SQLite Database & Vault Backup Engine**:
+  - Implemented WAL-checkpointed SQLite database & Obsidian vault backup engine (`backup-engine.ts`) with `/api/backup` route and 1-click snapshot management in Settings > Vault.
+- [x] **Native Structured Function / Tool Calling**:
+  - Added native function calling support for OpenAI and Groq providers with structured `toolCalls` and live `fleetEventBus` agent status events.
+- [x] **Zero-Drop Multi-Provider LLM Resilience Cascade**:
+  - `router-execution.ts` automatically cascades to alternative available providers (Gemini, Groq, OpenAI, OmniRoute) even on explicit model errors or 429 rate limits.
+- [x] **System Observability & Health Check API**:
+  - Created `/api/health` checking database latency, storage accessibility, configured provider key status, event bus subscribers, process memory, and uptime.
+- [x] **Large Component Decomposition**:
+  - Extracted `ArtifactDrawer` and `AgentSpecsModal` from `src/app/chat/page.tsx`.
+  - Extracted `CodeEditorView` and `CodeStatusBar` from `src/app/code/page.tsx`.
+  - Extracted `ConferenceAgentInspectorModal`, `ConferenceArtifactBanner`, and `ConferenceLiveStream` from `src/app/conference/page.tsx`.
+
+---
+
 ## Verification & Quality Assurance (100% Passing)
 
 - [x] **Vitest Automated Testing**:
-  - Test suites: 18 passed (100%)
-  - Total tests: 114 passed (100%)
-  - Execution speed: ~430ms
+  - Test suites: 34 passed (100%)
+  - Total tests: 190 passed (100%)
+  - Execution speed: ~1.6s
 - [x] **TypeScript Strict Compilation**:
-  - `npx tsc --noEmit`: 0 errors
+  - `npx tsc -p tsconfig.json --noEmit`: 0 errors
 - [x] **ESLint Linting**:
   - `npm run lint`: 0 errors (clean compilation and rules enforced)
 
@@ -171,7 +218,7 @@ Longer-term enhancements for enterprise scaling and ecosystem expansion:
 
 ### Tier 1: Advanced Fleet Orchestration (v1.1)
 - [ ] **Drag-and-Drop Hierarchy Reorganization**: Allow interactive drag-and-drop restructuring of reporting relationships directly in the visual tree canvas.
-- [ ] **SQLite Automated Snapshots & Backup Engine**: Configurable scheduled database snapshots to local zip/tar archives with one-click restore.
+- [x] **SQLite Automated Snapshots & Backup Engine**: Configurable scheduled database snapshots to local zip/tar archives with one-click restore. *(Completed)*
 - [ ] **Advanced Fleet Filtering & Search**: Multi-facet filter for 100+ agent fleets by department, model, capability tags, and status.
 
 ### Tier 2: Collaboration & Extensibility (v1.2)

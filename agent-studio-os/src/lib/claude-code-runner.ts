@@ -32,26 +32,43 @@ export interface ClaudeCodeBuildResult {
   error?: string;
 }
 
+import os from "os";
+
 /** Check if the native Claude Code binary exists on the host machine */
 export function getClaudeBinaryPath(): string | null {
+  const homeDir = os.homedir() || process.env.USERPROFILE || process.env.HOME || "";
+  const isWin = process.platform === "win32";
+
+  // Check custom override from env
+  if (process.env.CLAUDE_BINARY_PATH && fsSync.existsSync(process.env.CLAUDE_BINARY_PATH)) {
+    return process.env.CLAUDE_BINARY_PATH;
+  }
+
+  // 1. Check ~/.local/bin/claude (.exe on Windows)
   const localBin = path.join(
-    process.env.USERPROFILE || "C:\\Users\\rohan",
+    homeDir,
     ".local",
     "bin",
-    "claude.exe"
+    isWin ? "claude.exe" : "claude"
   );
-  if (fsSync.existsSync(localBin)) {
+  if (homeDir && fsSync.existsSync(localBin)) {
     return localBin;
   }
 
-  // Fallback to npm global or PATH
-  const npmCmd = path.join(
-    process.env.APPDATA || "C:\\Users\\rohan\\AppData\\Roaming",
-    "npm",
-    "claude.cmd"
-  );
-  if (fsSync.existsSync(npmCmd)) {
-    return npmCmd;
+  // 2. Check Windows APPDATA npm global
+  if (isWin && process.env.APPDATA) {
+    const npmCmd = path.join(process.env.APPDATA, "npm", "claude.cmd");
+    if (fsSync.existsSync(npmCmd)) {
+      return npmCmd;
+    }
+  }
+
+  // 3. Check Unix global npm path
+  if (!isWin && homeDir) {
+    const unixNpmBin = path.join(homeDir, ".npm-global", "bin", "claude");
+    if (fsSync.existsSync(unixNpmBin)) {
+      return unixNpmBin;
+    }
   }
 
   return "claude";

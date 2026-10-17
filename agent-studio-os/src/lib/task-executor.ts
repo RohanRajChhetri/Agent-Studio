@@ -157,6 +157,17 @@ ${finalContent}
       },
     });
 
+    // Publish live event for connected SSE clients
+    try {
+      const { fleetEventBus } = await import("@/lib/event-bus");
+      fleetEventBus.publish("task_updated", {
+        taskId: task.id,
+        taskTitle: task.title,
+        status: "review",
+        agentName: agent ? agent.displayName : "Agent",
+      });
+    } catch {}
+
     return {
       success: true,
       task: updatedTask,

@@ -62,6 +62,8 @@ import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { DebateArena, type DebateMessage, type DebateVerdict } from "@/components/chat/debate-arena";
+import { ArtifactDrawer } from "@/components/chat/artifact-drawer";
+import { AgentSpecsModal } from "@/components/chat/agent-specs-modal";
 import { timeAgo, formatResponseTime } from "@/lib/utils";
 
 export interface ChatAttachment {
@@ -2407,167 +2409,12 @@ function ChatContent() {
           )}
 
           {/* Interactive Slide-Out Artifact Drawer */}
-          <AnimatePresence>
-            {selectedArtifact && (
-              <motion.div
-                initial={{ x: "100%", opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: "100%", opacity: 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="absolute inset-y-0 right-0 w-full sm:w-[460px] lg:w-[540px] bg-card/95 backdrop-blur-xl backdrop-blur-2xl border-l border-border shadow-2xl z-30 flex flex-col overflow-hidden"
-              >
-                {/* Drawer Header */}
-                <div className="p-4 border-b border-border flex items-center justify-between bg-secondary/60">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary border border-border flex items-center justify-center text-primary shrink-0">
-                      <Code2 className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-foreground truncate">
-                        {selectedArtifact.title}
-                      </h4>
-                      <span className="text-[10px] text-muted-foreground font-mono uppercase">
-                        {selectedArtifact.language}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {/* Copy Button */}
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(selectedArtifact.code);
-                        setCopiedArtifact(true);
-                        setTimeout(() => setCopiedArtifact(false), 2000);
-                        toast.success("Artifact copied to clipboard");
-                      }}
-                      className="p-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-colors"
-                      title="Copy Code"
-                    >
-                      {copiedArtifact ? (
-                        <Check className="w-3.5 h-3.5 text-foreground" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-
-                    {/* Download Button */}
-                    <button
-                      onClick={() => {
-                        const blob = new Blob([selectedArtifact.code], { type: "text/plain" });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `${selectedArtifact.title}.${
-                          selectedArtifact.language === "python"
-                            ? "py"
-                            : selectedArtifact.language === "typescript"
-                            ? "ts"
-                            : "txt"
-                        }`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                        toast.success("Artifact downloaded");
-                      }}
-                      className="p-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-colors"
-                      title="Download Artifact"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-
-                    {/* Run Sandbox Button */}
-                    <button
-                      onClick={() =>
-                        handleRunCode(
-                          selectedArtifact.msgId,
-                          selectedArtifact.code,
-                          selectedArtifact.language
-                        )
-                      }
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-xs font-semibold transition-all shadow-sm"
-                    >
-                      <Play className="w-3 h-3" />
-                      <span>Run</span>
-                    </button>
-
-                    {/* Close Button */}
-                    <button
-                      onClick={() => setSelectedArtifact(null)}
-                      className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors ml-1"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Code / Diagram Viewer */}
-                {selectedArtifact.language === "mermaid" ? (
-                  <div className="flex-1 flex flex-col overflow-hidden bg-card">
-                    <div className="px-4 py-2 bg-primary/10 border-b border-border flex items-center justify-between text-xs text-primary">
-                      <span className="font-semibold flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-foreground" />
-                        Mermaid Diagram Visualizer
-                      </span>
-                      <span className="text-[10px] text-muted-foreground font-mono">Flowchart / Graph</span>
-                    </div>
-                    <div className="flex-1 overflow-auto p-4 space-y-4">
-                      {/* Visual Flow Representation */}
-                      <div className="p-4 rounded-xl border border-border bg-primary/5 text-xs">
-                        <div className="text-[10px] font-semibold text-foreground uppercase tracking-wider mb-2">
-                          Diagram Nodes & Flow
-                        </div>
-                        <div className="space-y-2 font-mono text-[11px] text-muted-foreground">
-                          {selectedArtifact.code.split("\n").filter(l => l.trim() && !l.trim().startsWith("%%")).map((line, idx) => (
-                            <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-secondary/40 border border-border">
-                              <span className="w-5 h-5 rounded-md bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">
-                                {idx + 1}
-                              </span>
-                              <span className="text-foreground break-all">{line}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Source Code */}
-                      <div>
-                        <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                          Mermaid Definition Source
-                        </div>
-                        <pre className="p-3 rounded-xl bg-secondary/50 border border-border text-xs font-mono text-muted-foreground overflow-x-auto whitespace-pre">
-                          {selectedArtifact.code}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex-1 overflow-auto p-4 bg-card font-mono text-xs text-foreground leading-relaxed whitespace-pre selection:bg-primary/30">
-                    <code>{selectedArtifact.code}</code>
-                  </div>
-                )}
-
-                {/* Terminal Output Footer */}
-                {codeOutputs[selectedArtifact.msgId] && (
-                  <div className="border-t border-border p-3 bg-secondary/60 text-xs font-mono max-h-48 overflow-y-auto">
-                    <div className="text-[10px] text-muted-foreground mb-1 flex justify-between">
-                      <span>TERMINAL OUTPUT</span>
-                      <span>{formatResponseTime(codeOutputs[selectedArtifact.msgId].time)}</span>
-                    </div>
-
-                    {codeOutputs[selectedArtifact.msgId].stdout && (
-                      <pre className="text-foreground whitespace-pre-wrap">
-                        {codeOutputs[selectedArtifact.msgId].stdout}
-                      </pre>
-                    )}
-                    {codeOutputs[selectedArtifact.msgId].stderr && (
-                      <pre className="text-red-400 whitespace-pre-wrap">
-                        {codeOutputs[selectedArtifact.msgId].stderr}
-                      </pre>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <ArtifactDrawer
+            artifact={selectedArtifact}
+            onClose={() => setSelectedArtifact(null)}
+            onRunCode={handleRunCode}
+            codeOutputs={codeOutputs}
+          />
         </div>
 
       <HermesTerminalModal
@@ -2579,129 +2426,13 @@ function ChatContent() {
       />
 
       {/* Agent Specifications & Directives Modal */}
-      <AnimatePresence>
-        {showAgentSpecsModal && selectedAgent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-xl bg-card border border-border rounded-lg p-6 shadow-2xl overflow-hidden space-y-4 max-h-[85vh] flex flex-col"
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center text-2xl border shrink-0"
-                    style={{
-                      borderColor: `${selectedAgent.themeColor || "#6366f1"}40`,
-                      backgroundColor: `${selectedAgent.themeColor || "#6366f1"}15`,
-                    }}
-                  >
-                    {selectedAgent.avatar}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-bold text-foreground truncate">{selectedAgent.displayName}</h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-foreground border border-emerald-500/20 font-medium shrink-0">
-                        {selectedAgent.status || "online"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                      <span className="capitalize text-primary font-medium">{selectedAgent.role || "specialist"}</span>
-                      {selectedAgent.department && <span>• {selectedAgent.department}</span>}
-                      <span className="font-mono text-[11px] text-muted-foreground">• {selectedAgent.model || model}</span>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowAgentSpecsModal(false)}
-                  className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-all shrink-0 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                {selectedAgent.description && (
-                  <p className="text-xs text-muted-foreground leading-relaxed bg-secondary/60 p-3 rounded-xl border border-border">
-                    {selectedAgent.description}
-                  </p>
-                )}
-
-                {/* System Prompt Section */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-foreground">System Directives & Persona</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(selectedAgent.systemPrompt || "");
-                        toast.success("System prompt copied to clipboard");
-                      }}
-                      className="text-[11px] text-foreground hover:text-foreground flex items-center gap-1 font-mono transition-colors cursor-pointer"
-                    >
-                      <Copy className="w-3 h-3" />
-                      <span>Copy Directives</span>
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto p-3.5 rounded-xl bg-secondary/80 border border-border font-mono text-[11px] text-muted-foreground whitespace-pre-wrap leading-relaxed selection:bg-primary/30 text-primary">
-                    {selectedAgent.systemPrompt || "No custom system prompt specified (agent utilizes baseline autonomous reasoning instructions)."}
-                  </div>
-                </div>
-
-                {/* Active Toolsets & Integrations */}
-                <div className="space-y-2">
-                  <span className="text-xs font-semibold text-muted-foreground">Enabled Toolsets & Integrations</span>
-                  <div className="flex flex-wrap gap-2">
-                    {(selectedAgent.tools?.filter((t) => t.enabled) || []).map((t) => (
-                      <span
-                        key={t.id || t.toolId}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-card border border-border text-foreground flex items-center gap-1.5"
-                      >
-                        <Terminal className="w-3 h-3 text-foreground" />
-                        <span>{t.toolId}</span>
-                      </span>
-                    ))}
-                    {(selectedAgent.integrations?.filter((i) => i.enabled) || []).map((i) => (
-                      <span
-                        key={i.id || i.platform}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-emerald-300 flex items-center gap-1.5"
-                      >
-                        <Globe className="w-3 h-3 text-foreground" />
-                        <span>{i.platform}</span>
-                      </span>
-                    ))}
-                    {(!selectedAgent.tools || selectedAgent.tools.filter((t) => t.enabled).length === 0) &&
-                      (!selectedAgent.integrations || selectedAgent.integrations.filter((i) => i.enabled).length === 0) && (
-                        <span className="text-xs text-muted-foreground italic">Standard reasoning tools active</span>
-                      )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer Actions */}
-              <div className="flex items-center justify-between pt-3 border-t border-border shrink-0">
-                <button
-                  onClick={() => {
-                    setShowAgentSpecsModal(false);
-                    setTerminalOpen(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Terminal className="w-3.5 h-3.5 text-foreground" />
-                  <span>Open Hermes CLI</span>
-                </button>
-                <button
-                  onClick={() => setShowAgentSpecsModal(false)}
-                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold text-foreground transition-all cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <AgentSpecsModal
+        isOpen={showAgentSpecsModal}
+        onClose={() => setShowAgentSpecsModal(false)}
+        agent={selectedAgent}
+        model={model}
+        onOpenTerminal={() => setTerminalOpen(true)}
+      />
     </div>
   );
 }

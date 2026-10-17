@@ -48,6 +48,10 @@ const STOP_WORDS = new Set([
 /** Conversational greetings and small-talk patterns that should never trigger RAG */
 const CONVERSATIONAL_REGEX = /^(hi|hello|hey|yo|greetings|good\s+(morning|afternoon|evening)|how\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|thanks|thank\s+you|ok|okay|bye|goodbye|test)[\s!.,?]*$/i;
 
+/** LRU in-memory cache for computed text embeddings to minimize latency and API cost */
+const EMBEDDING_CACHE = new Map<string, number[]>();
+const MAX_CACHE_ENTRIES = 500;
+
 /**
  * Computes cosine similarity between two numeric vectors.
  */
@@ -64,6 +68,87 @@ export function cosineSimilarity(vecA: number[], vecB: number[]): number {
   }
   if (normA === 0 || normB === 0) return 0;
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Attempts to generate real semantic embeddings via Gemini or OpenAI APIs if configured.
+ * Returns null if no API keys are present or on network error.
+ */
+export async function fetchSemanticEmbedding(
+  text: string,
+  options?: { apiKey?: string; provider?: "gemini" | "openai" }
+): Promise<number[] | null> {
+  const cleanText = (text || "").trim().slice(0, 2048);
+  if (!cleanText) return null;
+
+  const cacheKey = `${options?.provider || "auto"}:${cleanText}`;
+  if (EMBEDDING_CACHE.has(cacheKey)) {
+    return EMBEDDING_CACHE.get(cacheKey)!;
+  }
+
+  // 1. Try Gemini Embeddings (text-embedding-004)
+  const geminiKey = options?.apiKey || process.env.GEMINI_API_KEY;
+  if ((!options?.provider || options.provider === "gemini") && geminiKey) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${geminiKey}`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "models/text-embedding-004",
+          content: { parts: [{ text: cleanText }] },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const vector: number[] = data.embedding?.values;
+        if (Array.isArray(vector) && vector.length > 0) {
+          if (EMBEDDING_CACHE.size >= MAX_CACHE_ENTRIES) {
+            const firstKey = EMBEDDING_CACHE.keys().next().value;
+            if (firstKey) EMBEDDING_CACHE.delete(firstKey);
+          }
+          EMBEDDING_CACHE.set(cacheKey, vector);
+          return vector;
+        }
+      }
+    } catch {
+      // Fallback silently
+    }
+  }
+
+  // 2. Try OpenAI Embeddings (text-embedding-3-small)
+  const openaiKey = options?.apiKey || process.env.OPENAI_API_KEY;
+  if ((!options?.provider || options.provider === "openai") && openaiKey) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openaiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "text-embedding-3-small",
+          input: cleanText,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const vector: number[] = data.data?.[0]?.embedding;
+        if (Array.isArray(vector) && vector.length > 0) {
+          if (EMBEDDING_CACHE.size >= MAX_CACHE_ENTRIES) {
+            const firstKey = EMBEDDING_CACHE.keys().next().value;
+            if (firstKey) EMBEDDING_CACHE.delete(firstKey);
+          }
+          EMBEDDING_CACHE.set(cacheKey, vector);
+          return vector;
+        }
+      }
+    } catch {
+      // Fallback silently
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -167,7 +252,9 @@ export async function queryVaultRAG(
   const vaultPath = getVaultPath();
   const files = await getAllMarkdownFiles(vaultPath, vaultPath);
 
-  const queryVector = computeDeterministicVector(query, 64);
+  // Compute query embedding (API semantic if available, fallback to deterministic)
+  const semanticQueryVector = await fetchSemanticEmbedding(query);
+  const queryVector = semanticQueryVector || computeDeterministicVector(query, 64);
   const chunks: RAGChunk[] = [];
 
   for (const file of files) {
@@ -224,8 +311,18 @@ export async function queryVaultRAG(
       }
 
       // Semantic vector similarity contribution
-      const docVector = computeDeterministicVector(`${title} ${tags.join(" ")} ${body.slice(0, 1000)}`, 64);
-      const vectorSim = cosineSimilarity(queryVector, docVector);
+      let vectorSim = 0;
+      if (semanticQueryVector) {
+        const docText = `${title} ${tags.join(" ")} ${body.slice(0, 500)}`;
+        const semanticDocVector = await fetchSemanticEmbedding(docText);
+        if (semanticDocVector) {
+          vectorSim = cosineSimilarity(semanticQueryVector, semanticDocVector);
+        }
+      }
+      if (vectorSim === 0) {
+        const docVector = computeDeterministicVector(`${title} ${tags.join(" ")} ${body.slice(0, 1000)}`, 64);
+        vectorSim = cosineSimilarity(queryVector, docVector);
+      }
       if (vectorSim > 0.4) {
         score += vectorSim * 6;
       }

@@ -309,10 +309,24 @@ export async function executeChatCompletion(params: {
 
     // Add remaining available providers as safety fallbacks
     if (keys.GEMINI_API_KEY && !callers.some((c) => c.name.includes("Gemini"))) {
-      callers.push(() => new GeminiProvider().call("gemini-3.6-flash", messages, keys, augmentedSystem));
+      callers.push(() => new GeminiProvider().call("gemini-2.5-flash", messages, keys, augmentedSystem));
     }
     if (keys.OMNIROUTE_API_KEY && !callers.some((c) => c.name.includes("OmniRoute"))) {
       callers.push(() => new OmniRouteGatewayProvider().call(rawModel, messages, keys, augmentedSystem));
+    }
+  } else {
+    // Explicit model chosen: provide automatic fallback resilience if the chosen provider fails
+    if (keys.GEMINI_API_KEY && !rawModel.toLowerCase().includes("gemini")) {
+      callers.push(() => new GeminiProvider().call("gemini-2.5-flash", messages, keys, augmentedSystem));
+    }
+    if (keys.GROQ_API_KEY && !rawModel.toLowerCase().includes("llama")) {
+      callers.push(() => new GroqProvider().call("llama-3.3-70b-versatile", messages, keys, augmentedSystem));
+    }
+    if (keys.OPENAI_API_KEY && !rawModel.toLowerCase().includes("gpt")) {
+      callers.push(() => new OpenAIProvider().call("gpt-4o-mini", messages, keys, augmentedSystem));
+    }
+    if ((keys.OMNIROUTE_API_KEY || keys.OPENROUTER_API_KEY) && !rawModel.toLowerCase().includes("openrouter")) {
+      callers.push(() => new OmniRouteGatewayProvider().call("auto/fast", messages, keys, augmentedSystem));
     }
   }
 

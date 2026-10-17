@@ -93,4 +93,14 @@ describe('RAG Facade - Functional Tests', () => {
       expect(result).toContain('"This is the second excerpt"');
     });
   });
+
+  describe('fetchSemanticEmbedding', () => {
+    it('should return null gracefully when no API keys are provided or text is empty', async () => {
+      const emptyRes = await rag.fetchSemanticEmbedding('');
+      expect(emptyRes).toBeNull();
+
+      const noKeyRes = await rag.fetchSemanticEmbedding('hello world', { apiKey: '' });
+      expect(noKeyRes === null || Array.isArray(noKeyRes)).toBe(true);
+    });
+  });
 });

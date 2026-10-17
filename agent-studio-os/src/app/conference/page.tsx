@@ -61,6 +61,9 @@ import {
   playTaskCompletedSound,
   playWarningSound,
 } from "@/lib/sound-effects";
+import { ConferenceAgentInspectorModal } from "@/components/conference/conference-agent-inspector-modal";
+import { ConferenceArtifactBanner } from "@/components/conference/conference-artifact-banner";
+import { ConferenceLiveStream } from "@/components/conference/conference-live-stream";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -764,30 +767,6 @@ export default function ConferencePage() {
     }
   };
 
-  const evtColor = (t: string) =>
-    ({
-      delegation: "border-l-amber-500 bg-amber-500/5",
-      execution: "border-l-blue-500 bg-blue-500/5",
-      synthesis: "border-l-purple-500 bg-purple-500/5",
-      speaking: "border-l-primary bg-primary/5",
-      complete: "border-l-emerald-500 bg-emerald-500/5",
-      thinking: "border-l-slate-500 bg-slate-500/5",
-      error: "border-l-red-500 bg-red-500/5",
-      phase: "border-l-violet-500 bg-violet-500/5",
-    }[t] || "border-l-border");
-
-  const evtIcon = (t: string) =>
-    ({
-      delegation: "📤",
-      execution: "⚡",
-      synthesis: "🧠",
-      speaking: "💬",
-      complete: "✅",
-      thinking: "🤔",
-      error: "❌",
-      phase: "🔷",
-    }[t] || "•");
-
   const resetSession = () => {
     setResult(null);
     setEvents([]);
@@ -1180,93 +1159,16 @@ export default function ConferencePage() {
       </div>
 
       {/* ═══ AGENT INSPECTOR MODAL ═══ */}
-      <AnimatePresence>
-        {inspectAgent && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-card border border-border rounded-2xl shadow-xl overflow-hidden p-5 space-y-4"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center text-2xl shadow-xs">
-                    {inspectAgent.avatar}
-                  </span>
-                  <div>
-                    <h3 className="text-base font-bold text-foreground">{inspectAgent.displayName}</h3>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                        {inspectAgent.role || "Specialist"}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {inspectAgent.department || "General"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setInspectAgent(null)}
-                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                <div>
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">
-                    Mission Role & Specialty
-                  </span>
-                  <p className="text-foreground leading-relaxed bg-secondary/30 p-2.5 rounded-lg border border-border">
-                    {inspectAgent.description || "Active specialist ready for autonomous delegation."}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <div className="bg-secondary/30 p-2 rounded-lg border border-border">
-                    <span className="text-[10px] text-muted-foreground block">Model Architecture</span>
-                    <span className="font-mono font-semibold text-foreground">
-                      {inspectAgent.model || "claude-3-5-sonnet"}
-                    </span>
-                  </div>
-                  <div className="bg-secondary/30 p-2 rounded-lg border border-border">
-                    <span className="text-[10px] text-muted-foreground block">A2A Compatibility</span>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                      Hierarchical Ready
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-                {inspectAgent.role === "orchestrator" && inspectAgent.id !== orchestrator?.id && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedOrchestratorId(inspectAgent.id);
-                      setInspectAgent(null);
-                      toast.success(`Designated ${inspectAgent.displayName} as Council Chair`);
-                    }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-white cursor-pointer transition"
-                  >
-                    Set as Council Chair
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setInspectAgent(null)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary hover:bg-secondary/80 text-foreground cursor-pointer transition"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <ConferenceAgentInspectorModal
+        inspectAgent={inspectAgent}
+        orchestratorId={orchestrator?.id}
+        onClose={() => setInspectAgent(null)}
+        onSetOrchestrator={(agent) => {
+          setSelectedOrchestratorId(agent.id);
+          setInspectAgent(null);
+          toast.success(`Designated ${agent.displayName} as Council Chair`);
+        }}
+      />
 
       {/* ═══ MISSION COMMAND CENTER ═══ */}
       <div className="notion-card p-5 space-y-3.5 border border-border/80 shadow-sm">
@@ -1417,253 +1319,26 @@ export default function ConferencePage() {
       </div>
 
       {/* ═══ DELIVERABLE ARTIFACT BANNER ═══ */}
-      {result && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="notion-card p-4 border-primary/30 bg-gradient-to-r from-primary/[0.04] via-blue-500/[0.03] to-emerald-500/[0.04] shadow-sm"
-        >
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-            <div className="space-y-1.5 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-                <code className="text-xs font-mono px-2 py-0.5 rounded bg-secondary border border-border text-primary font-bold">
-                  {result.dedicatedFolder || "agent-workspace/conference/"}
-                </code>
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  Consensus Fulfilled
-                </span>
-              </div>
-
-              {result.conferenceFile && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <FileText className="w-3.5 h-3.5 text-blue-500" />
-                  <span className="font-mono text-foreground font-medium truncate">
-                    {result.conferenceFile.fileName}
-                  </span>
-                  {result.conferenceFile.size > 0 && (
-                    <span className="text-[11px] opacity-70">
-                      ({Math.round(result.conferenceFile.size / 1024)} KB)
-                    </span>
-                  )}
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-primary" />
-                  {Math.round(result.totalLatencyMs / 1000)}s duration
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Layers className="w-3 h-3 text-amber-500" />
-                  {result.totalSubtasks} subtasks executed
-                </span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Users className="w-3 h-3 text-blue-500" />
-                  {result.executionTree?.subordinates?.length || 0} specialists reports
-                </span>
-              </div>
-            </div>
-
-            {/* Action Bar */}
-            <div className="flex items-center gap-2 shrink-0 flex-wrap">
-              {result.conferenceFile && (
-                <a
-                  href={result.conferenceFile.fileUrl}
-                  download={result.conferenceFile.fileName}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition shadow-xs cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download</span>
-                </a>
-              )}
-
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>PDF Briefing</span>
-              </button>
-
-              {/* Dispatch to Kanban */}
-              <button
-                type="button"
-                onClick={handleDispatchToKanban}
-                disabled={isDispatchingKanban || dispatchedCount !== null}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer ${
-                  dispatchedCount !== null
-                    ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                    : "bg-indigo-600 hover:bg-indigo-500 text-white"
-                }`}
-              >
-                {isDispatchingKanban ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : dispatchedCount !== null ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-500" />
-                ) : (
-                  <Kanban className="w-3.5 h-3.5" />
-                )}
-                <span>
-                  {dispatchedCount !== null
-                    ? `Dispatched (${dispatchedCount})`
-                    : "Dispatch to Kanban"}
-                </span>
-              </button>
-
-              <Link
-                href="/code"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card hover:bg-secondary transition cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open in Code</span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={handleCopyPath}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card hover:bg-secondary transition cursor-pointer"
-              >
-                {copiedFile ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-500" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-                <span>{copiedFile ? "Copied" : "Copy Path"}</span>
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      )}
+      <ConferenceArtifactBanner
+        result={result}
+        copiedFile={copiedFile}
+        isDispatchingKanban={isDispatchingKanban}
+        dispatchedCount={dispatchedCount}
+        onPrint={handlePrint}
+        onDispatchToKanban={handleDispatchToKanban}
+        onCopyPath={handleCopyPath}
+      />
 
       {/* ═══ TWO COLUMNS: ACTIVITY STREAM + MASTER RESULT ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ── Activity Stream ── */}
-        <div className="notion-card p-5 flex flex-col min-h-0 border border-border/80 shadow-sm">
-          <div className="flex items-center justify-between mb-3 border-b border-border/50 pb-2.5">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <MessageSquare className="w-3.5 h-3.5 text-primary" />
-              <span>Live Deliberation Stream</span>
-              {events.length > 0 && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary border border-border font-mono">
-                  {events.length} events
-                </span>
-              )}
-            </h3>
-            {events.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowTranscript(!showTranscript)}
-                className={`text-[11px] font-medium px-2.5 py-1 rounded-md border transition cursor-pointer ${
-                  showTranscript
-                    ? "bg-primary/10 border-primary/30 text-primary font-semibold"
-                    : "border-border text-muted-foreground hover:bg-secondary"
-                }`}
-              >
-                {showTranscript ? "Rich Stream" : "Raw Log"}
-              </button>
-            )}
-          </div>
-
-          <div
-            ref={streamRef}
-            className="flex-1 space-y-2 max-h-[520px] overflow-y-auto scrollbar-thin pr-1"
-          >
-            {events.length === 0 && !isExecuting && (
-              <div className="text-center py-20 text-muted-foreground">
-                <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-secondary/60 border border-border flex items-center justify-center">
-                  <Users className="w-6 h-6 opacity-30 text-primary" />
-                </div>
-                <p className="text-xs font-medium text-foreground">A2A Council Chamber Ready</p>
-                <p className="text-[11px] text-muted-foreground mt-1 max-w-xs mx-auto">
-                  Launch a mission above to watch council members delegate, execute, and deliberate in real time.
-                </p>
-              </div>
-            )}
-
-            {showTranscript ? (
-              <div className="space-y-1 font-mono text-[11px] p-2 bg-secondary/30 rounded-lg border border-border">
-                {events.map((evt, i) => (
-                  <div
-                    key={evt.id}
-                    className="flex gap-2 py-0.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded px-1 transition"
-                  >
-                    <span className="w-5 text-right shrink-0 opacity-40">{i + 1}</span>
-                    <span className="w-16 shrink-0 font-medium">
-                      {new Date(evt.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
-                    </span>
-                    <span
-                      className={`w-18 shrink-0 uppercase font-bold text-[10px] ${
-                        evt.type === "complete"
-                          ? "text-emerald-500"
-                          : evt.type === "delegation"
-                          ? "text-amber-500"
-                          : evt.type === "execution"
-                          ? "text-blue-500"
-                          : evt.type === "synthesis"
-                          ? "text-purple-500"
-                          : ""
-                      }`}
-                    >
-                      {evt.type}
-                    </span>
-                    <span className="text-foreground shrink-0 font-semibold">{evt.fromAgent}</span>
-                    {evt.toAgent && (
-                      <>
-                        <span>→</span>
-                        <span className="text-foreground font-semibold">{evt.toAgent}</span>
-                      </>
-                    )}
-                    <span className="truncate opacity-75">{evt.message}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <AnimatePresence initial={false}>
-                {events.map((evt) => (
-                  <motion.div
-                    key={evt.id}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className={`flex gap-2.5 p-2.5 rounded-xl border-l-2 ${evtColor(evt.type)}`}
-                  >
-                    <span className="text-sm shrink-0 mt-0.5">{evtIcon(evt.type)}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                        <span>{evt.fromAvatar}</span>
-                        <span className="font-bold text-foreground">{evt.fromAgent}</span>
-                        {evt.toAgent && (
-                          <>
-                            <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                            <span>{evt.toAvatar}</span>
-                            <span className="font-bold text-foreground">{evt.toAgent}</span>
-                          </>
-                        )}
-                        <span className="text-[10px] text-muted-foreground font-mono ml-auto shrink-0">
-                          {new Date(evt.timestamp).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                        {evt.message}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            )}
-          </div>
-        </div>
+        <ConferenceLiveStream
+          events={events}
+          isExecuting={isExecuting}
+          showTranscript={showTranscript}
+          streamRef={streamRef}
+          onToggleTranscript={() => setShowTranscript(!showTranscript)}
+        />
 
         {/* ── Master Deliverable & Tree Panel ── */}
         <div className="notion-card p-5 flex flex-col min-h-0 border border-border/80 shadow-sm">

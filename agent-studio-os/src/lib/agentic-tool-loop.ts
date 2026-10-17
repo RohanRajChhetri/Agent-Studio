@@ -537,8 +537,17 @@ or \`<skill_name>(key="value")\`.`;
     finalModel = completion.modelUsed || finalModel;
     const rawContent = completion.content || "";
 
-    // 1. Detect if the model emitted tool calls
-    const toolCalls = parseToolCalls(rawContent);
+    // 1. Detect if the model emitted tool calls (prefer native structured calls if returned)
+    let toolCalls: ParsedToolCall[] = [];
+    if (completion.toolCalls && completion.toolCalls.length > 0) {
+      toolCalls = completion.toolCalls.map((tc) => ({
+        raw: JSON.stringify(tc),
+        name: tc.name,
+        args: (tc.arguments as Record<string, any>) || {},
+      }));
+    } else {
+      toolCalls = parseToolCalls(rawContent);
+    }
 
     if (toolCalls.length === 0) {
       // Model produced a final response without calling tools
@@ -551,6 +560,17 @@ or \`<skill_name>(key="value")\`.`;
 
     for (const toolCall of toolCalls) {
       toolsExecuted.push(toolCall.name);
+
+      // Publish real-time live event for connected UI clients
+      try {
+        const { fleetEventBus } = await import("@/lib/event-bus");
+        fleetEventBus.publish("agent_status", {
+          agentName: params.agentName || "Specialist Agent",
+          step: `Executing ${toolCall.name}`,
+          tool: toolCall.name,
+        });
+      } catch {}
+
       const execution = await executeTool(toolCall);
 
       if (execution.metadata?.fileUrl) {

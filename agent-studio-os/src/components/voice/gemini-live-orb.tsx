@@ -449,7 +449,9 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
   );
 
   // Keep ref up to date
-  handleSendUtteranceRef.current = handleSendUtterance;
+  useEffect(() => {
+    handleSendUtteranceRef.current = handleSendUtterance;
+  }, [handleSendUtterance]);
 
   // Start speech recognition instance with loop protection
   const startSpeechRecognition = useCallback(() => {
@@ -553,7 +555,9 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
     }
   }, []);
 
-  startSpeechRecognitionRef.current = startSpeechRecognition;
+  useEffect(() => {
+    startSpeechRecognitionRef.current = startSpeechRecognition;
+  }, [startSpeechRecognition]);
 
   // Microphone toggle & speech recognition with hardware AEC
   const toggleListening = useCallback(async () => {

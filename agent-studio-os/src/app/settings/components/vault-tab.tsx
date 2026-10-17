@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   FolderOpen,
@@ -17,6 +17,10 @@ import {
   FolderTree,
   Bot,
   ArrowUpRight,
+  Archive,
+  Download,
+  Trash2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,6 +48,62 @@ export function VaultTab({
   syncingVault,
 }: VaultTabProps) {
   const [copiedPath, setCopiedPath] = useState(false);
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
+
+  const fetchSnapshots = async () => {
+    setLoadingSnapshots(true);
+    try {
+      const res = await fetch("/api/backup");
+      if (res.ok) {
+        const data = await res.json();
+        setSnapshots(data.snapshots || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingSnapshots(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSnapshots();
+  }, []);
+
+  const handleCreateSnapshot = async () => {
+    setCreatingSnapshot(true);
+    try {
+      const res = await fetch("/api/backup", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(`Backup archive "${data.snapshot.fileName}" created!`);
+        fetchSnapshots();
+      } else {
+        toast.error("Failed to create snapshot");
+      }
+    } catch {
+      toast.error("Error creating backup archive");
+    } finally {
+      setCreatingSnapshot(false);
+    }
+  };
+
+  const handleDeleteSnapshot = async (fileName: string) => {
+    try {
+      const res = await fetch("/api/backup", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName }),
+      });
+      if (res.ok) {
+        toast.success("Snapshot removed");
+        setSnapshots((prev) => prev.filter((s) => s.fileName !== fileName));
+      }
+    } catch {
+      toast.error("Failed to delete snapshot");
+    }
+  };
 
   const handleCopyPath = () => {
     if (vaultStats?.vaultPath) {
@@ -146,7 +206,7 @@ export function VaultTab({
           <div className="flex items-center gap-2">
             <div className="flex-1 p-2.5 rounded-xl bg-secondary/60 border border-border font-mono text-xs text-foreground select-all break-all flex items-center gap-2">
               <FolderTree className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span>{vaultStats?.vaultPath || "C:\\Users\\rohan\\agent-studio\\memory"}</span>
+              <span>{vaultStats?.vaultPath || "~/agent-studio/memory"}</span>
             </div>
             <button
               onClick={handleCopyPath}
@@ -218,6 +278,86 @@ export function VaultTab({
               <p className="text-[11px] text-muted-foreground leading-relaxed">{dom.desc}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Database & Vault Snapshots / Backups */}
+      <div className="space-y-3 pt-3 border-t border-border">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Archive className="w-4 h-4 text-primary" />
+              Automated Snapshots & Disaster Recovery
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              One-click complete backups of SQLite state, agent profiles, tasks, and markdown vault notes.
+            </p>
+          </div>
+          <button
+            onClick={handleCreateSnapshot}
+            disabled={creatingSnapshot}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold transition disabled:opacity-50 cursor-pointer shadow-sm shrink-0"
+          >
+            {creatingSnapshot ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Archive className="w-3.5 h-3.5" />
+            )}
+            <span>{creatingSnapshot ? "Archiving..." : "Create Snapshot"}</span>
+          </button>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+          {loadingSnapshots ? (
+            <div className="py-6 flex items-center justify-center text-muted-foreground text-xs gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <span>Checking backup archives...</span>
+            </div>
+          ) : snapshots.length === 0 ? (
+            <div className="py-6 text-center text-muted-foreground space-y-1">
+              <Archive className="w-8 h-8 text-muted-foreground/30 mx-auto" />
+              <p className="text-xs font-medium">No snapshots created yet</p>
+              <p className="text-[11px] text-muted-foreground">
+                Click &quot;Create Snapshot&quot; to export a complete portable archive.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {snapshots.map((snap) => (
+                <div
+                  key={snap.fileName}
+                  className="p-3 rounded-xl bg-secondary/50 border border-border flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Archive className="w-4 h-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-mono font-medium text-foreground truncate">{snap.fileName}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono">
+                        {(snap.sizeBytes / 1024).toFixed(1)} KB • {new Date(snap.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <a
+                      href={snap.downloadUrl}
+                      download={snap.fileName}
+                      className="p-1.5 rounded-lg border border-border hover:bg-secondary text-muted-foreground hover:text-foreground transition"
+                      title="Download archive"
+                    >
+                      <Download className="w-3.5 h-3.5 text-primary" />
+                    </a>
+                    <button
+                      onClick={() => handleDeleteSnapshot(snap.fileName)}
+                      className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition cursor-pointer"
+                      title="Delete archive"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

@@ -70,7 +70,7 @@ export async function seedSampleNotes(): Promise<void> {
       relPath: "concepts/agent-os-architecture.md",
       content: `---
 title: "Agent OS Architecture"
-agent: "rohan"
+agent: "orchestrator"
 category: "system"
 tags: ["#architecture", "#multi-agent", "#hermes"]
 ---
@@ -155,7 +155,7 @@ References: [[agent-os-architecture]], [[emerging-ai-trends]].
       relPath: "concepts/obsidian-shared-vault.md",
       content: `---
 title: "Obsidian Shared Memory Vault"
-agent: "rohan"
+agent: "orchestrator"
 category: "concept"
 tags: ["#obsidian", "#vault", "#storage"]
 ---

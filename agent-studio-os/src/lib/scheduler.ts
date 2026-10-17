@@ -177,6 +177,16 @@ ${executionResult.content}
     },
   });
 
+  // Publish live event for connected SSE clients
+  try {
+    const { fleetEventBus } = await import("@/lib/event-bus");
+    fleetEventBus.publish("routine_executed", {
+      routineId,
+      routineTitle: routine.title,
+      agentName: agent ? agent.displayName : "Agent",
+    });
+  } catch {}
+
   return {
     task,
     executionResult,

@@ -83,7 +83,8 @@ import {
   type ConsoleEntry,
 } from "@/components/code/code-console-drawer";
 import { CodeSearchReplace } from "@/components/code/code-search-replace";
-import { CodeDiffViewer } from "@/components/code/code-diff-viewer";
+import { CodeEditorView } from "@/components/code/code-editor-view";
+import { CodeStatusBar } from "@/components/code/code-status-bar";
 import {
   ProjectTemplatesModal,
   type ProjectTemplateType,
@@ -2009,110 +2010,25 @@ function CodePageContent() {
           />
 
           {/* ─── MAIN ARTIFACT CONTENT VIEW ─── */}
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
-            {isDiffMode ? (
-              /* Local Diff Viewer */
-              <CodeDiffViewer
-                originalCode={activeTab.originalContent}
-                currentCode={code}
-                filename={currentFilePath}
-                onAccept={handleSaveToProject}
-                onRevert={handleRevertActiveFile}
-                onCurrentCodeChange={handleCodeChange}
-              />
-            ) : activeArtifactTab === "code" ? (
-              /* Full Editor View */
-              <div className="flex-1 min-h-0 flex overflow-hidden font-mono text-[13px] bg-[var(--card)]">
-                {/* Line Numbers */}
-                <div className="w-12 py-3 bg-[var(--card)] border-r border-[var(--border)]/50 text-right pr-3 select-none text-[var(--muted-foreground)]/40 shrink-0 overflow-hidden leading-[1.65]">
-                  {Array.from({ length: Math.min(lineCount, 600) }).map((_, i) => (
-                    <div key={i} className="text-[11.5px]">{i + 1}</div>
-                  ))}
-                </div>
-
-                {/* Textarea Code Input */}
-                <textarea
-                  ref={textareaRef}
-                  value={code}
-                  onChange={(e) => handleCodeChange(e.target.value)}
-                  onKeyDown={handleEditorKeyDown}
-                  onKeyUp={handleCursorUpdate}
-                  onClick={handleCursorUpdate}
-                  onSelect={handleCursorUpdate}
-                  spellCheck={false}
-                  style={{ fontSize: `${fontSize}px` }}
-                  className={`flex-1 p-3 bg-transparent text-[var(--foreground)] outline-none resize-none leading-[1.65] font-mono overflow-auto scrollbar-thin selection:bg-[var(--primary)]/20 ${
-                    wordWrap ? "whitespace-pre-wrap" : "whitespace-pre"
-                  }`}
-                />
-              </div>
-            ) : activeArtifactTab === "split" ? (
-              /* Split View: Editor Left + Sandboxed Preview Right */
-              <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden divide-y md:divide-y-0 md:divide-x divide-[var(--border)]">
-                {/* Left: Code Editor */}
-                <div className="flex-1 min-w-0 flex overflow-hidden font-mono text-[12.5px] bg-[var(--card)]">
-                  <div className="w-10 py-3 bg-[var(--card)] border-r border-[var(--border)]/50 text-right pr-2 select-none text-[var(--muted-foreground)]/40 shrink-0 overflow-hidden leading-[1.6]">
-                    {Array.from({ length: Math.min(lineCount, 300) }).map((_, i) => (
-                      <div key={i} className="text-[11px]">{i + 1}</div>
-                    ))}
-                  </div>
-                  <textarea
-                    value={code}
-                    onChange={(e) => handleCodeChange(e.target.value)}
-                    onKeyDown={handleEditorKeyDown}
-                    onKeyUp={handleCursorUpdate}
-                    onClick={handleCursorUpdate}
-                    onSelect={handleCursorUpdate}
-                    spellCheck={false}
-                    style={{ fontSize: `${fontSize}px` }}
-                    className="flex-1 p-3 bg-transparent text-[var(--foreground)] outline-none resize-none leading-[1.6] font-mono overflow-auto scrollbar-thin selection:bg-[var(--primary)]/20 whitespace-pre"
-                  />
-                </div>
-
-                {/* Right: Live Sandboxed Preview */}
-                <div className="flex-1 min-w-0 relative bg-neutral-950 p-2 overflow-auto flex items-center justify-center">
-                  <div
-                    className={`transition-all duration-300 bg-white ${
-                      previewViewport === "mobile"
-                        ? "w-[375px] h-[95%] shadow-2xl rounded-2xl border border-neutral-800 overflow-hidden"
-                        : previewViewport === "tablet"
-                        ? "w-[768px] h-[95%] shadow-2xl rounded-xl border border-neutral-800 overflow-hidden"
-                        : "w-full h-full shadow-sm rounded-lg overflow-hidden"
-                    }`}
-                  >
-                    <iframe
-                      ref={iframeRef}
-                      title="Live Sandbox Preview Split"
-                      srcDoc={previewHtml}
-                      sandbox="allow-scripts allow-modals allow-forms"
-                      className="w-full h-full border-none bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Full Sandboxed Live Preview */
-              <div className="flex-1 min-h-0 relative bg-neutral-950 p-3 overflow-auto flex items-center justify-center">
-                <div
-                  className={`transition-all duration-300 bg-white ${
-                    previewViewport === "mobile"
-                      ? "w-[375px] h-[95%] shadow-2xl rounded-2xl border border-neutral-800 overflow-hidden"
-                      : previewViewport === "tablet"
-                      ? "w-[768px] h-[95%] shadow-2xl rounded-xl border border-neutral-800 overflow-hidden"
-                      : "w-full h-full shadow-sm rounded-lg overflow-hidden"
-                  }`}
-                >
-                  <iframe
-                    ref={iframeRef}
-                    title="Live Sandbox Preview"
-                    srcDoc={previewHtml}
-                    sandbox="allow-scripts allow-modals allow-forms"
-                    className="w-full h-full border-none bg-white"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+          <CodeEditorView
+            activeArtifactTab={activeArtifactTab}
+            isDiffMode={isDiffMode}
+            activeTab={activeTab}
+            currentFilePath={currentFilePath}
+            code={code}
+            lineCount={lineCount}
+            fontSize={fontSize}
+            wordWrap={wordWrap}
+            previewViewport={previewViewport}
+            previewHtml={previewHtml}
+            textareaRef={textareaRef}
+            iframeRef={iframeRef}
+            onCodeChange={handleCodeChange}
+            onSaveToProject={handleSaveToProject}
+            onRevertActiveFile={handleRevertActiveFile}
+            onEditorKeyDown={handleEditorKeyDown}
+            onCursorUpdate={handleCursorUpdate}
+          />
 
           {/* ─── CONSOLE, TERMINAL & REPL BOTTOM DRAWER ─── */}
           <CodeConsoleDrawer
@@ -2126,67 +2042,17 @@ function CodePageContent() {
           />
 
           {/* ─── STATUS BAR (VS Code Style Footer) ─── */}
-          <div className="border-t border-[var(--border)] bg-[var(--card)] px-3 py-1 flex items-center justify-between text-[11px] font-mono text-[var(--muted-foreground)] select-none shrink-0">
-            <div className="flex items-center gap-3">
-              <span>
-                Ln {cursorPos.line}, Col {cursorPos.col}
-              </span>
-              {selectionLen > 0 && <span>({selectionLen} selected)</span>}
-              <span className="hidden sm:inline">Spaces: 2</span>
-              <span className="hidden sm:inline">UTF-8</span>
-              <span className="text-[var(--foreground)] font-medium">
-                {currentLang.icon} {currentLang.label}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Word wrap toggle */}
-              <button
-                type="button"
-                onClick={() => setWordWrap((prev) => !prev)}
-                className={`hover:text-[var(--foreground)] transition cursor-pointer ${wordWrap ? "text-[var(--primary)] font-semibold" : ""}`}
-                title="Toggle Word Wrap"
-              >
-                Wrap: {wordWrap ? "On" : "Off"}
-              </button>
-
-              {/* Font size stepper */}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setFontSize((s) => Math.max(10, s - 1))}
-                  className="hover:text-[var(--foreground)] transition px-1"
-                  title="Decrease font size"
-                >
-                  A-
-                </button>
-                <span>{fontSize}px</span>
-                <button
-                  type="button"
-                  onClick={() => setFontSize((s) => Math.min(20, s + 1))}
-                  className="hover:text-[var(--foreground)] transition px-1"
-                  title="Increase font size"
-                >
-                  A+
-                </button>
-              </div>
-
-              {/* Dirty / Saved State */}
-              <div className="flex items-center gap-1.5">
-                {activeTab?.isDirty ? (
-                  <span className="flex items-center gap-1 text-amber-500 font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                    Unsaved
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-emerald-500 font-medium">
-                    <Check className="w-3 h-3" />
-                    Saved
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
+          <CodeStatusBar
+            cursorPos={cursorPos}
+            selectionLen={selectionLen}
+            currentLang={currentLang}
+            wordWrap={wordWrap}
+            fontSize={fontSize}
+            isDirty={activeTab?.isDirty}
+            onToggleWordWrap={() => setWordWrap((prev) => !prev)}
+            onDecreaseFontSize={() => setFontSize((s) => Math.max(10, s - 1))}
+            onIncreaseFontSize={() => setFontSize((s) => Math.min(20, s + 1))}
+          />
         </div>
 
         {/* Mobile View Toggle */}

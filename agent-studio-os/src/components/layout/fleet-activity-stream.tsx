@@ -183,8 +183,45 @@ export function FleetActivityStream() {
     };
 
     fetchRecentLogs();
-    const interval = setInterval(fetchRecentLogs, 10000);
-    return () => clearInterval(interval);
+
+    // Realtime Server-Sent Events (SSE) listener with fallback polling
+    let eventSource: EventSource | null = null;
+    let fallbackInterval: NodeJS.Timeout | null = null;
+
+    try {
+      eventSource = new EventSource("/api/events");
+      eventSource.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload && payload.type !== "ping") {
+            // Instantly refresh telemetry stream when any fleet event fires
+            fetchRecentLogs();
+          }
+        } catch {}
+      };
+
+      eventSource.onerror = () => {
+        // Close broken SSE connection and fall back to periodic refresh
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(fetchRecentLogs, 25000);
+        }
+      };
+    } catch {
+      fallbackInterval = setInterval(fetchRecentLogs, 20000);
+    }
+
+    // Gentle background sync (every 45s) when SSE is active
+    const backgroundHeartbeat = setInterval(fetchRecentLogs, 45000);
+
+    return () => {
+      if (eventSource) eventSource.close();
+      if (fallbackInterval) clearInterval(fallbackInterval);
+      clearInterval(backgroundHeartbeat);
+    };
   }, []);
 
   return (

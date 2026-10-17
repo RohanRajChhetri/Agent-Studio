@@ -106,7 +106,7 @@ export async function GET(
     webhookUrl: `/api/webhooks/${token}`,
     supportedEvents: ["generic_task", "message", "prompt", "github_push", "cron_routine"],
     usage: {
-      postBodyExample: { message: "Hello agent", agent: "Rohan" },
+      postBodyExample: { message: "Hello agent", agent: "Athena" },
       getExample: `/api/webhooks/${token}?prompt=Hello+Agent`,
     },
     timestamp: new Date().toISOString(),

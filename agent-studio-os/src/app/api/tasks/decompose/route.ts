@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     const athena = matchAgent("research") || matchAgent("athena") || agentList[0];
     const vulcan = matchAgent("devops") || matchAgent("vulcan") || matchAgent("developer") || matchAgent("code") || agentList[1] || agentList[0];
     const mercury = matchAgent("copywriter") || matchAgent("mercury") || matchAgent("writer") || matchAgent("content") || agentList[2] || agentList[0];
-    const rohanOrLead = matchAgent("orchestrator") || matchAgent("lead") || matchAgent("manager") || agentList[0];
+    const leadOrchestrator = matchAgent("orchestrator") || matchAgent("lead") || matchAgent("manager") || agentList[0];
 
     let generatedSubtasks: any[] = [];
 
@@ -87,7 +87,7 @@ Return ONLY a valid JSON array of objects with no markdown code fence or wrappin
           const parsed = JSON.parse(cleanContent);
           if (Array.isArray(parsed) && parsed.length > 0) {
             generatedSubtasks = parsed.map((item: any, idx: number) => {
-              const assigned = matchAgent(item.targetRole || item.title) || rohanOrLead;
+              const assigned = matchAgent(item.targetRole || item.title) || leadOrchestrator;
               return {
                 id: `sub-${Date.now()}-${idx + 1}`,
                 title: String(item.title || `Milestone ${idx + 1}`),
@@ -116,9 +116,9 @@ Return ONLY a valid JSON array of objects with no markdown code fence or wrappin
             id: `sub-${Date.now()}-1`,
             title: "Architecture & Interface Specification",
             description: "Define schemas, API contracts, error boundaries, and state requirements.",
-            agentId: rohanOrLead?.id || null,
-            agentName: rohanOrLead?.displayName || "Lead Orchestrator",
-            agentAvatar: rohanOrLead?.avatar || "👑",
+            agentId: leadOrchestrator?.id || null,
+            agentName: leadOrchestrator?.displayName || "Lead Orchestrator",
+            agentAvatar: leadOrchestrator?.avatar || "👑",
             priority: "high",
             completed: false,
           },
@@ -189,9 +189,9 @@ Return ONLY a valid JSON array of objects with no markdown code fence or wrappin
             id: `sub-${Date.now()}-4`,
             title: "Memory Vault Note Archival",
             description: "Save structured synthesis to Obsidian Vault with backlinks.",
-            agentId: rohanOrLead?.id || null,
-            agentName: rohanOrLead?.displayName || "Lead Orchestrator",
-            agentAvatar: rohanOrLead?.avatar || "👑",
+            agentId: leadOrchestrator?.id || null,
+            agentName: leadOrchestrator?.displayName || "Lead Orchestrator",
+            agentAvatar: leadOrchestrator?.avatar || "👑",
             priority: "low",
             completed: false,
           },
@@ -202,9 +202,9 @@ Return ONLY a valid JSON array of objects with no markdown code fence or wrappin
             id: `sub-${Date.now()}-1`,
             title: `Define Scope & Requirements for "${title.slice(0, 32)}"`,
             description: "Clarify inputs, constraints, deliverables, and acceptance criteria.",
-            agentId: rohanOrLead?.id || null,
-            agentName: rohanOrLead?.displayName || "Lead Orchestrator",
-            agentAvatar: rohanOrLead?.avatar || "👑",
+            agentId: leadOrchestrator?.id || null,
+            agentName: leadOrchestrator?.displayName || "Lead Orchestrator",
+            agentAvatar: leadOrchestrator?.avatar || "👑",
             priority: "high",
             completed: false,
           },
@@ -232,9 +232,9 @@ Return ONLY a valid JSON array of objects with no markdown code fence or wrappin
             id: `sub-${Date.now()}-4`,
             title: "Final Verification & Sign-off",
             description: "Validate acceptance criteria and persist artifact to Vault.",
-            agentId: rohanOrLead?.id || null,
-            agentName: rohanOrLead?.displayName || "Lead Orchestrator",
-            agentAvatar: rohanOrLead?.avatar || "👑",
+            agentId: leadOrchestrator?.id || null,
+            agentName: leadOrchestrator?.displayName || "Lead Orchestrator",
+            agentAvatar: leadOrchestrator?.avatar || "👑",
             priority: "low",
             completed: false,
           },
