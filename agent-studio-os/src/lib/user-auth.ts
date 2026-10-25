@@ -5,15 +5,29 @@ export const PRIMARY_LEGACY_USER_ID =
 
 /**
  * Retrieves the currently authenticated user's ID via Clerk.
- * Returns null if the request is unauthenticated.
+ * If unauthenticated:
+ *   - In local dev (default), allows guest fallback to primary workspace for seamless self-hosting/testing.
+ *   - In production or when ALLOW_LOCAL_GUEST_FALLBACK="false", strictly returns null.
  */
 export async function getAuthUserId(): Promise<string | null> {
   try {
     const authObj = await auth();
-    return authObj?.userId || null;
+    if (authObj?.userId) {
+      return authObj.userId;
+    }
   } catch {
-    return null;
+    // Continue to local dev fallback
   }
+
+  const isLocalDev = process.env.NODE_ENV !== "production";
+  const allowGuestFallback =
+    process.env.ALLOW_LOCAL_GUEST_FALLBACK !== "false" && isLocalDev;
+
+  if (allowGuestFallback) {
+    return PRIMARY_LEGACY_USER_ID;
+  }
+
+  return null;
 }
 
 /**
