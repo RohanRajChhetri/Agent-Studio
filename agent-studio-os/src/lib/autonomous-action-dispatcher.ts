@@ -21,7 +21,9 @@ export interface AutonomousActionOutput {
     | "fleet_status"
     | "direct_task"
     | "search_web"
-    | "execute_code";
+    | "execute_code"
+    | "scrape_web"
+    | "desktop_action";
   content: string;
   task?: any;
   agentName?: string;
@@ -529,6 +531,173 @@ The specialist agent has been assigned and the ticket is now live on the Kanban 
           content: `⚠️ Code execution failed: ${err instanceof Error ? err.message : String(err)}`,
         };
       }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 7b. INTENT: LIVE WEB SCRAPING & CRAWLING (SCRAPLING)
+  // Examples:
+  // - "scrape https://github.com/trycua/cua"
+  // - "scrape page https://news.ycombinator.com"
+  // - "extract data from https://example.com"
+  // - "crawl https://docs.python.org"
+  // -------------------------------------------------------------
+  const isScrapeIntent =
+    /^(scrape|crawl|extract\s+data\s+from|fetch\s+page|harvest)\s+(https?:\/\/[^\s]+)/i.test(text) ||
+    (/\b(scrape|crawl)\b/i.test(lower) && /https?:\/\/[^\s]+/i.test(text));
+
+  if (isScrapeIntent) {
+    const urlMatch = text.match(/https?:\/\/[^\s"'>)]+/);
+    if (urlMatch) {
+      const targetUrl = urlMatch[0];
+      const isCrawl = /\bcrawl\b/i.test(lower);
+
+      try {
+        if (isCrawl) {
+          const { crawlSite } = await import("./scrapling-bridge");
+          const crawlRes = await crawlSite(targetUrl, { maxPages: 5 });
+
+          let content = `🕷️ **Autonomous Web Crawl Complete**\n\n`;
+          content += `• **Target URL:** \`${targetUrl}\`\n`;
+          content += `• **Status:** ${crawlRes.success ? "✅ Success" : "❌ Failed"}\n`;
+          content += `• **Pages Scraped:** ${crawlRes.pagesScraped}\n`;
+          content += `• **Latency:** ${crawlRes.latency}ms\n\n`;
+
+          if (crawlRes.items.length > 0) {
+            content += `### Extracted Sample Records\n\`\`\`json\n`;
+            content += JSON.stringify(crawlRes.items.slice(0, 3), null, 2);
+            content += `\n\`\`\``;
+          }
+
+          return {
+            handled: true,
+            actionType: "scrape_web",
+            content,
+            agentName: "Scrapling Harvester",
+            agentAvatar: "🕷️",
+            metadata: { url: targetUrl, pagesScraped: crawlRes.pagesScraped },
+          };
+        } else {
+          const { scrapePage } = await import("./scrapling-bridge");
+          const scrapeRes = await scrapePage(targetUrl, { toMarkdown: true, stealthMode: lower.includes("stealth") || lower.includes("cloudflare") });
+
+          let content = `🕷️ **Autonomous Scrape Complete: "${scrapeRes.title || targetUrl}"**\n\n`;
+          content += `• **Source:** \`${targetUrl}\`\n`;
+          content += `• **Status:** ${scrapeRes.success ? "✅ Success" : "❌ Scrape Failed"}\n`;
+          content += `• **Engine:** Scrapling Stealth Fetcher • **Latency:** ${scrapeRes.latency}ms\n\n`;
+
+          if (scrapeRes.success) {
+            content += `### Extracted Page Content\n\n`;
+            const preview = (scrapeRes.markdown || scrapeRes.content || "").slice(0, 3500);
+            content += preview;
+            if ((scrapeRes.markdown || scrapeRes.content || "").length > 3500) {
+              content += `\n\n*(Truncated for chat display. Full content available in memory vault.)*`;
+            }
+          } else {
+            content += `⚠️ **Error details:** ${scrapeRes.error || "Unable to scrape page"}`;
+          }
+
+          return {
+            handled: true,
+            actionType: "scrape_web",
+            content,
+            agentName: "Scrapling Harvester",
+            agentAvatar: "🕷️",
+            metadata: { url: targetUrl, title: scrapeRes.title, latency: scrapeRes.latency },
+          };
+        }
+      } catch (err) {
+        return {
+          handled: true,
+          actionType: "scrape_web",
+          content: `⚠️ Scrape execution failed: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 7c. INTENT: AUTONOMOUS DESKTOP AUTOMATION (CUA DRIVER)
+  // Examples:
+  // - "take a screenshot" / "capture screen"
+  // - "inspect chrome" / "inspect screen"
+  // - "open chrome" / "launch notepad" / "launch calculator"
+  // -------------------------------------------------------------
+  const isScreenshot =
+    lower === "screenshot" ||
+    lower === "take screenshot" ||
+    lower === "take a screenshot" ||
+    lower === "capture screen" ||
+    lower === "capture screenshot";
+
+  if (isScreenshot) {
+    try {
+      const { executeCUAAction } = await import("./cua-driver");
+      const res = await executeCUAAction({ type: "screenshot" });
+
+      let content = `🖥️ **Desktop Screenshot Captured**\n\n`;
+      content += `• **Status:** ${res.success ? "✅ Success" : "❌ Failed"}\n`;
+      content += `• **Latency:** ${res.latency}ms\n`;
+      if (res.screenshot) {
+        try {
+          const fs = await import("fs/promises");
+          const path = await import("path");
+          const downloadDir = path.join(process.cwd(), "public", "downloads");
+          await fs.mkdir(downloadDir, { recursive: true });
+          const fileName = `screenshot-${Date.now()}.png`;
+          const filePath = path.join(downloadDir, fileName);
+          await fs.writeFile(filePath, Buffer.from(res.screenshot, "base64"));
+          content += `\n\n![Desktop Screenshot](/downloads/${fileName})\n\n*[Primary display screenshot saved to \`${fileName}\`]*`;
+        } catch {
+          content += `\n\n![Desktop Screenshot](data:image/png;base64,${res.screenshot})`;
+        }
+      } else if (res.error) {
+        content += `\n⚠️ ${res.error}`;
+      }
+
+      return {
+        handled: true,
+        actionType: "desktop_action",
+        content,
+        agentName: "Desktop Operator",
+        agentAvatar: "🖱️",
+        metadata: { hasScreenshot: !!res.screenshot, latency: res.latency },
+      };
+    } catch (err) {
+      return {
+        handled: true,
+        actionType: "desktop_action",
+        content: `⚠️ Screenshot failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
+  const isLaunchIntent =
+    /^(?:open|launch|start|run)\s+(chrome|browser|notepad|calculator|terminal|cmd|powershell|code|vscode|explorer)$/i.test(
+      lower.trim()
+    );
+
+  if (isLaunchIntent) {
+    const appMatch = lower.trim().match(/^(?:open|launch|start|run)\s+(.+)$/i);
+    const appName = appMatch ? appMatch[1].trim() : "app";
+
+    try {
+      const { executeCUAAction } = await import("./cua-driver");
+      const res = await executeCUAAction({ type: "launch", target: appName });
+
+      return {
+        handled: true,
+        actionType: "desktop_action",
+        content: `🖥️ **Desktop Action:** ${res.output || `Launched ${appName}`}\n\n• **Status:** ${res.success ? "✅ Success" : "❌ Failed"}\n• **Latency:** ${res.latency}ms`,
+        agentName: "Desktop Operator",
+        agentAvatar: "🖱️",
+      };
+    } catch (err) {
+      return {
+        handled: true,
+        actionType: "desktop_action",
+        content: `⚠️ Failed to launch ${appName}: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
   }
 

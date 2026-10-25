@@ -176,6 +176,72 @@ console.log(JSON.stringify({
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
+  {
+    id: "skill-web-scraper",
+    name: "web_scraper",
+    displayName: "Scrapling Web Scraper",
+    description: "Production web scraper with stealth anti-bot bypass, JS rendering, selector extraction, and Markdown export",
+    category: "Data & Web",
+    type: "mcp",
+    mcpServer: "mcp-scrapling",
+    enabled: true,
+    parameters: [
+      {
+        name: "url",
+        type: "string",
+        description: "Target web URL to scrape",
+        required: true,
+      },
+      {
+        name: "selectors",
+        type: "string",
+        description: "CSS selectors for data extraction (e.g. 'h1, p.content')",
+        required: false,
+      },
+      {
+        name: "render_js",
+        type: "boolean",
+        description: "Use stealth browser for dynamic JavaScript pages",
+        required: false,
+        default: false,
+      },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "skill-desktop-automation",
+    name: "desktop_automation",
+    displayName: "CUA Desktop Driver",
+    description: "Autonomous desktop control: take screenshots, inspect UI elements, click, type, and launch native applications",
+    category: "Productivity",
+    type: "mcp",
+    mcpServer: "mcp-cua",
+    enabled: true,
+    parameters: [
+      {
+        name: "action_type",
+        type: "string",
+        description: "Action to perform: screenshot, inspect, click, type, launch, key, scroll",
+        required: true,
+        default: "screenshot",
+      },
+      {
+        name: "target",
+        type: "string",
+        description: "Target application name or UI element",
+        required: false,
+      },
+      {
+        name: "text",
+        type: "string",
+        description: "Text to type into focused field",
+        required: false,
+      },
+    ],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 ];
 
 // In-memory cache for ultra-fast agent loop queries
@@ -194,6 +260,10 @@ export async function listExternalSkills(): Promise<ExternalSkill[]> {
   }
 
   try {
+    if (!prisma?.setting?.findUnique) {
+      return PRESET_EXTERNAL_SKILLS;
+    }
+
     const setting = await prisma.setting.findUnique({
       where: { key: SETTINGS_KEY },
     });
@@ -229,11 +299,13 @@ export async function getActiveExternalSkills(): Promise<ExternalSkill[]> {
  */
 export async function saveExternalSkills(skills: ExternalSkill[]): Promise<void> {
   const serialized = JSON.stringify(skills, null, 2);
-  await prisma.setting.upsert({
-    where: { key: SETTINGS_KEY },
-    update: { value: serialized },
-    create: { key: SETTINGS_KEY, value: serialized },
-  });
+  if (prisma?.setting?.upsert) {
+    await prisma.setting.upsert({
+      where: { key: SETTINGS_KEY },
+      update: { value: serialized },
+      create: { key: SETTINGS_KEY, value: serialized },
+    });
+  }
   cachedSkills = skills;
   cacheTime = Date.now();
 }
@@ -505,6 +577,50 @@ export async function executeExternalSkill(
           status: "Instruction guidelines provided to agent context",
         },
         latency,
+      };
+    }
+
+    // 4. MCP Server Skill
+    if (skill.type === "mcp") {
+      if (skill.name === "web_scraper" || skill.name === "scrape_page") {
+        const { scrapePage } = await import("./scrapling-bridge");
+        const url = args.url || String(Object.values(args)[0] || "");
+        const selectors = typeof args.selectors === "string" ? args.selectors.split(",").map((s) => s.trim()) : args.selectors;
+        const res = await scrapePage(url, { selectors, stealthMode: !!args.render_js, toMarkdown: true });
+        return {
+          success: res.success,
+          output: res,
+          error: res.error,
+          latency: Date.now() - startTime,
+        };
+      }
+
+      if (skill.name === "desktop_automation" || skill.name === "desktop_action") {
+        const { executeCUAAction } = await import("./cua-driver");
+        const actionType = args.action_type || args.type || "screenshot";
+        const res = await executeCUAAction({
+          type: actionType,
+          target: args.target,
+          text: args.text,
+          key: args.key,
+          coordinates: args.coordinates,
+        });
+        return {
+          success: res.success,
+          output: res,
+          error: res.error,
+          latency: Date.now() - startTime,
+        };
+      }
+
+      const { mcpManager } = await import("./mcp/client-manager");
+      const mcpRes = await mcpManager.executeTool(skill.name, args);
+      const text = mcpRes.content.map((c) => c.text).join("\n");
+      return {
+        success: !mcpRes.isError,
+        output: text,
+        error: mcpRes.isError ? text : undefined,
+        latency: Date.now() - startTime,
       };
     }
 

@@ -64,6 +64,26 @@ class MCPManager {
         enabled: true,
         status: "connected",
       },
+      {
+        id: "mcp-scrapling",
+        name: "Scrapling Web Scraper",
+        description: "Production-grade web scraping with stealth browsers, anti-bot bypass, JS rendering, and structured data extraction",
+        transport: "stdio",
+        command: "scrapling",
+        args: ["mcp"],
+        enabled: true,
+        status: "connected",
+      },
+      {
+        id: "mcp-cua",
+        name: "CUA Desktop Driver",
+        description: "Desktop automation — inspect and operate native apps, click UI elements, type text, take screenshots, and chain multi-app workflows",
+        transport: "stdio",
+        command: "cua",
+        args: ["mcp"],
+        enabled: true,
+        status: "connected",
+      },
     ];
 
     for (const p of presets) {
@@ -181,7 +201,92 @@ class MCPManager {
       },
     ];
 
-    for (const tool of [...fsTools, ...githubTools, ...postgresTools]) {
+    // 4. Scrapling Web Scraping Tools
+    const scraplingTools: MCPToolDefinition[] = [
+      {
+        name: "scrape_page",
+        description: "Fetch and parse a web page, returning text content or structured data via CSS/XPath selectors. Supports stealth browser mode for JS-rendered and anti-bot-protected pages.",
+        serverId: "mcp-scrapling",
+        inputSchema: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "URL to scrape" },
+            selectors: { type: "string", description: "Comma-separated CSS selectors for targeted data extraction" },
+            render_js: { type: "boolean", description: "Use stealth browser for JavaScript-rendered pages (default: false)" },
+          },
+          required: ["url"],
+        },
+      },
+      {
+        name: "scrape_to_markdown",
+        description: "Fetch a web page and convert its content to clean Markdown suitable for vault storage or AI context",
+        serverId: "mcp-scrapling",
+        inputSchema: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "URL to convert to Markdown" },
+            focused: { type: "boolean", description: "Extract only main article content, stripping navigation and sidebars" },
+          },
+          required: ["url"],
+        },
+      },
+      {
+        name: "crawl_site",
+        description: "Crawl multiple pages from a website starting URL using concurrent spiders. Returns structured data from all crawled pages.",
+        serverId: "mcp-scrapling",
+        inputSchema: {
+          type: "object",
+          properties: {
+            start_url: { type: "string", description: "Starting URL for the crawl" },
+            max_pages: { type: "number", description: "Maximum pages to crawl (default: 10)" },
+            output_format: { type: "string", enum: ["json", "csv", "jsonl"], description: "Output format for crawled data" },
+          },
+          required: ["start_url"],
+        },
+      },
+    ];
+
+    // 5. CUA Desktop Automation Tools
+    const cuaTools: MCPToolDefinition[] = [
+      {
+        name: "desktop_screenshot",
+        description: "Capture a screenshot of the current desktop state. Returns base64-encoded image data.",
+        serverId: "mcp-cua",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "desktop_inspect",
+        description: "Inspect the UI element tree of a desktop application to understand the current screen state",
+        serverId: "mcp-cua",
+        inputSchema: {
+          type: "object",
+          properties: {
+            app: { type: "string", description: "App name to inspect (e.g. 'Chrome', 'Excel', 'Calculator')" },
+          },
+        },
+      },
+      {
+        name: "desktop_action",
+        description: "Execute a desktop automation action: click buttons, type text, launch apps, press keyboard shortcuts, or scroll",
+        serverId: "mcp-cua",
+        inputSchema: {
+          type: "object",
+          properties: {
+            action_type: { type: "string", enum: ["click", "type", "launch", "key", "scroll"], description: "Type of desktop action to perform" },
+            target: { type: "string", description: "Target app name or UI element" },
+            text: { type: "string", description: "Text to type (for 'type' action)" },
+            coordinates: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, description: "Screen coordinates (for 'click' action)" },
+            key: { type: "string", description: "Keyboard shortcut (for 'key' action, e.g. 'ctrl+c', 'enter', 'alt+tab')" },
+          },
+          required: ["action_type"],
+        },
+      },
+    ];
+
+    for (const tool of [...fsTools, ...githubTools, ...postgresTools, ...scraplingTools, ...cuaTools]) {
       this.tools.set(tool.name, tool);
     }
   }

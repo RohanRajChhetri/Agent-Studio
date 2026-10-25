@@ -12,8 +12,10 @@ export interface ExternalSkill {
   displayName: string;
   description: string;
   category: "Finance" | "Data & Web" | "Productivity" | "Developer" | "Communication" | "Utility";
-  type: "api" | "script" | "instruction";
+  type: "api" | "script" | "instruction" | "mcp";
   enabled: boolean;
+  // For MCP type
+  mcpServer?: string;
   // For API type
   endpoint?: string;
   method?: "GET" | "POST" | "PUT" | "DELETE";

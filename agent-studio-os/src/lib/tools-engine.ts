@@ -219,3 +219,19 @@ export async function performWebSearch(
     };
   }
 }
+
+/** Execute a desktop automation action via CUA Driver */
+export async function executeDesktopAction(action: import("./cua-driver").CUAAction): Promise<import("./cua-driver").CUAResult> {
+  const { executeCUAAction } = await import("./cua-driver");
+  return executeCUAAction(action);
+}
+
+/** Scrape a web page with stealth anti-bot protection via Scrapling */
+export async function executeScrapePage(
+  url: string,
+  options?: { selectors?: string[]; toMarkdown?: boolean; stealthMode?: boolean }
+): Promise<import("./scrapling-bridge").ScrapeResult> {
+  const { scrapePage } = await import("./scrapling-bridge");
+  return scrapePage(url, options);
+}
+

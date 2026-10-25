@@ -66,32 +66,40 @@ TASK TO EXECUTE:
 - Details & Requirements: ${task.description || "Thorough, production-grade execution requested."}
 - Priority: ${task.priority.toUpperCase()}
 
+AUTONOMOUS CAPABILITIES AVAILABLE:
+- Web Intelligence (Scrapling): You can call scrape_page(url="https://...") or scrape_to_markdown(url="...") to harvest live data, articles, and research.
+- Desktop Automation (CUA): You can call desktop_screenshot(), desktop_inspect(app="..."), and desktop_action(action_type="launch"|"click"|"type", target="...") to operate desktop apps.
+- Workspace Files: You can call create_file(path="...", content="...") to write files directly.
+
 EXECUTION GUIDELINES:
 1. Executive Summary: Provide a 1-2 sentence overview of what was accomplished.
 2. Complete Deliverables:
+   - If this task requests research, scrape live URLs using Scrapling and provide deep analysis, concrete numbers, comparison tables, and citations.
+   - If this task requests desktop operations, execute the actions with CUA and capture screenshots for visual verification.
    - If this task requests code, provide complete, production-grade, runnable code in fenced code blocks with language identifiers.
-   - If this task requests research, provide deep analysis, concrete numbers, comparison tables, and citations.
    - If this task requests copy or documentation, provide ready-to-publish drafts.
 3. Verification & Instructions: Provide clear testing or usage instructions.
 4. Obsidian Links: Incorporate relevant wikilinks like [[tasks]], [[agents]], or relevant memory topics.`;
 
-    const executionResult = await executeChatCompletion({
+    const { runAgenticLoop } = await import("@/lib/agentic-tool-loop");
+    const loopResult = await runAgenticLoop({
       prompt,
       model: agent?.model || null,
       systemPrompt:
         agent?.systemPrompt ||
         "You are an elite autonomous AI specialist in Agent Studio OS. Deliver complete, structured, production-grade outputs.",
       agentName: agent?.name,
+      maxTurns: 4,
     });
 
-    let finalContent = executionResult.content;
+    let finalContent = loopResult.content;
     try {
       const compiled = await compileAndDeliverFile({
         userPrompt: `${task.title}\n${task.description || ""}`,
-        assistantContent: executionResult.content,
+        assistantContent: loopResult.content,
       });
       if (compiled && compiled.downloadCardMarkdown) {
-        finalContent = compiled.cleanedContent || `${executionResult.content}\n${compiled.downloadCardMarkdown}`;
+        finalContent = compiled.cleanedContent || `${loopResult.content}\n${compiled.downloadCardMarkdown}`;
       }
     } catch (deliverableErr) {
       console.warn("Could not auto-compile file deliverable:", deliverableErr);
@@ -119,8 +127,8 @@ priority: "${task.priority}"
 agent: "${agent ? agent.displayName : "Unassigned"}"
 agent_name: "${agent ? agent.name : "unassigned"}"
 date: "${new Date().toISOString()}"
-model: "${executionResult.modelUsed}"
-latency: "${formatResponseTime(executionResult.latency)}"
+model: "${loopResult.model}"
+latency: "${formatResponseTime(loopResult.latency)}"
 tags:
   - task
   - deliverable
@@ -130,7 +138,7 @@ tags:
 # ${task.title}
 
 > [!NOTE]
-> Autonomous deliverable created by **${agent ? agent.displayName : "Agent"}** (${executionResult.modelUsed}) in ${formatResponseTime(executionResult.latency)}.
+> Autonomous deliverable created by **${agent ? agent.displayName : "Agent"}** (${loopResult.model}) in ${formatResponseTime(loopResult.latency)}.
 
 ## Task Objective
 ${task.description || "N/A"}
@@ -173,8 +181,8 @@ ${finalContent}
       task: updatedTask,
       deliverable: finalContent,
       vaultPath,
-      latency: executionResult.latency,
-      modelUsed: executionResult.modelUsed,
+      latency: loopResult.latency,
+      modelUsed: loopResult.model,
     };
   } catch (error: any) {
     // Revert status in DB so task is never permanently stranded in 'in_progress'
