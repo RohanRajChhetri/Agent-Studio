@@ -85,6 +85,7 @@ import {
 import { CodeSearchReplace } from "@/components/code/code-search-replace";
 import { CodeEditorView } from "@/components/code/code-editor-view";
 import { CodeStatusBar } from "@/components/code/code-status-bar";
+import { CodeDiffModal, type FileDiffItem } from "@/components/code/code-diff-modal";
 import {
   ProjectTemplatesModal,
   type ProjectTemplateType,
@@ -160,6 +161,12 @@ function CodePageContent() {
 
   const [prompt, setPrompt] = useState<string>("");
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Autonomous Diff Review & Auto-Fix State
+  const [showDiffModal, setShowDiffModal] = useState<boolean>(false);
+  const [pendingDiffs, setPendingDiffs] = useState<FileDiffItem[]>([]);
+  const [diffReasoning, setDiffReasoning] = useState<string>("");
+  const [isAutoFixing, setIsAutoFixing] = useState<boolean>(false);
 
   // Read persisted project conversation messages from global context
   const messages = getProjectMessages(selectedProject);
@@ -566,6 +573,100 @@ function CodePageContent() {
       buildProjectPreview();
     } catch {
       toast.error("Error saving all files");
+    }
+  };
+
+  // Autonomous 1-Click Auto-Fix Handler
+  const handleAutoFixError = async (errorText: string) => {
+    if (!errorText.trim() || isAutoFixing) return;
+    setIsAutoFixing(true);
+    playTaskStartedSound();
+    toast.info("Autonomous Agent analyzing error and synthesizing patch...");
+
+    try {
+      const activeFile = activeTab?.content || "";
+      const activePath = activeTab?.path || "index.html";
+
+      const res = await fetch("/api/code/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: `Fix this runtime/console error in project "${selectedProject}", focusing on file "${activePath}":\n\n[ERROR LOGS]:\n${errorText}\n\n[ACTIVE FILE CONTENT]:\n${activeFile}\n\nDiagnose the root cause and provide the complete corrected file content for any affected files.`,
+          projectName: selectedProject,
+          currentFilePath: activePath,
+          currentCode: activeFile,
+          async: false,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.files && Array.isArray(data.files) && data.files.length > 0) {
+        const diffItems: FileDiffItem[] = data.files.map((f: any) => ({
+          path: f.path,
+          originalContent: tabs.find((t) => t.path === f.path)?.content || activeFile,
+          modifiedContent: f.content,
+        }));
+
+        setPendingDiffs(diffItems);
+        setDiffReasoning(data.summary || data.diagnosis || `Auto-resolved runtime discrepancy for ${activePath}`);
+        setShowDiffModal(true);
+        playTaskCompletedSound();
+      } else {
+        toast.warning(data.error || "Could not synthesize a direct patch for this error.");
+      }
+    } catch (err) {
+      console.error("Auto-fix error:", err);
+      toast.error("Auto-fix failed to connect to agent reasoning gateway.");
+    } finally {
+      setIsAutoFixing(false);
+    }
+  };
+
+  const handleApplyDiffs = async (appliedDiffs: FileDiffItem[]) => {
+    try {
+      for (const diff of appliedDiffs) {
+        const targetPath = `${projectBasePath}/${diff.path.replace(/^[/\\]+/, "").trim()}`;
+        await fetch("/api/filesystem", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "write_file",
+            path: targetPath,
+            content: diff.modifiedContent,
+          }),
+        });
+
+        // Update tab if open, or insert new tab
+        setTabs((prev) => {
+          const exists = prev.some((t) => t.path === diff.path);
+          if (exists) {
+            return prev.map((t) =>
+              t.path === diff.path
+                ? { ...t, content: diff.modifiedContent, originalContent: diff.modifiedContent, isDirty: false }
+                : t
+            );
+          }
+          return [
+            ...prev,
+            {
+              path: diff.path,
+              name: diff.path.split("/").pop() || diff.path,
+              content: diff.modifiedContent,
+              originalContent: diff.modifiedContent,
+              isDirty: false,
+              language: getLanguageForFile(diff.path).id,
+            },
+          ];
+        });
+      }
+
+      toast.success(`Successfully applied autonomous patches to ${appliedDiffs.length} file(s)!`);
+      playTaskCompletedSound();
+      loadProjectTree();
+      buildProjectPreview();
+    } catch (err) {
+      console.error("Error applying diffs:", err);
+      toast.error("Error applying changes to project workspace.");
     }
   };
 
@@ -2039,6 +2140,8 @@ function CodePageContent() {
             onRunEval={handleRunEvalInPreview}
             fileList={flatFileList}
             activeProject={selectedProject}
+            onAutoFixError={handleAutoFixError}
+            isFixing={isAutoFixing}
           />
 
           {/* ─── STATUS BAR (VS Code Style Footer) ─── */}
@@ -2083,6 +2186,15 @@ function CodePageContent() {
         isOpen={showNewProjectModal}
         onClose={() => setShowNewProjectModal(false)}
         onCreateProject={handleCreateProjectWithTemplate}
+      />
+
+      {/* Visual Side-by-Side Git Diff Review Modal */}
+      <CodeDiffModal
+        isOpen={showDiffModal}
+        onClose={() => setShowDiffModal(false)}
+        diffs={pendingDiffs}
+        onApplyAll={handleApplyDiffs}
+        agentReasoning={diffReasoning}
       />
 
       {/* Delete Project Confirmation Modal */}

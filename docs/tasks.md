@@ -66,10 +66,17 @@ This document serves as the single source of truth for all current sprint object
   - Implemented `/api/events` and singleton `FleetEventBus` in [`event-bus.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/event-bus.ts), replacing 10s HTTP polling in [`fleet-activity-stream.tsx`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/layout/fleet-activity-stream.tsx) with push event streams.
 - [x] **Chat Page Modular Decomposition**:
   - Extracted [`ArtifactDrawer`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/chat/artifact-drawer.tsx) and [`AgentSpecsModal`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/chat/agent-specs-modal.tsx) from monolithic `chat/page.tsx`, significantly reducing component size and improving maintenance.
+- [x] **CUA Desktop Automation & Scrapling Web Intelligence Integration**:
+  - Implemented [`scrapling-bridge.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/scrapling-bridge.ts): Direct Python→Node bridge for Scrapling with stealth anti-bot protection, JS rendering, CSS selector extraction, multi-page crawling, and auto-markdown conversion.
+  - Implemented [`cua-driver.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/cua-driver.ts): CUA Driver desktop automation service with real screenshot capture, app launching, keystroke and mouse simulation, UI element inspection, and PowerShell fallback.
+  - Registered MCP presets in [`client-manager.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/mcp/client-manager.ts): `mcp-scrapling` and `mcp-cua` with tool definitions (`scrape_page`, `scrape_to_markdown`, `crawl_site`, `desktop_screenshot`, `desktop_inspect`, `desktop_action`).
+  - Integrated into Agentic Tool Loop ([`agentic-tool-loop.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/agentic-tool-loop.ts)) & Autonomous Action Dispatcher ([`autonomous-action-dispatcher.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/autonomous-action-dispatcher.ts)).
+  - Created REST API endpoints: `POST /api/tools/scrape`, `POST /api/tools/crawl`, `POST /api/tools/desktop`, `GET /api/tools/desktop/screenshot`, and `GET /api/tools/desktop/inspect`.
+  - Added preset external skills `web_scraper` and `desktop_automation` in [`external-skills.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/external-skills.ts).
+  - Built interactive UI components: [`ScrapingPanel`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/tools/scraping-panel.tsx) and [`DesktopViewer`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/components/tools/desktop-viewer.tsx) hosted on a dedicated [`/tools`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/app/tools/page.tsx) page with sidebar navigation.
+  - Added combined DAG workflow preset `"Web Intelligence & Desktop Operations Swarm"` in [`workflow-presets.ts`](file:///c:/Users/rohan/Projects/Agent%20Os/agent-studio-os/src/lib/workflow-presets.ts).
 - [x] **Comprehensive Quality & Test Verification**:
-  - 32/32 test suites passing (187/187 tests passing, 100%).
-  - TypeScript strict compilation: 0 errors (`tsc -p tsconfig.json --noEmit`).
-  - ESLint verification: 0 errors (`npm run lint`).
+  - TypeScript strict compilation: 0 errors (`npx tsc --noEmit`).
 
 ---
 
@@ -196,6 +203,13 @@ Upgraded the dashboard message function into an **Autonomous Cognitive Action En
   - Extracted `ArtifactDrawer` and `AgentSpecsModal` from `src/app/chat/page.tsx`.
   - Extracted `CodeEditorView` and `CodeStatusBar` from `src/app/code/page.tsx`.
   - Extracted `ConferenceAgentInspectorModal`, `ConferenceArtifactBanner`, and `ConferenceLiveStream` from `src/app/conference/page.tsx`.
+
+- [x] **Autonomous Agentic Agency Engine & Tooling Upgrades**:
+  - **Self-Healing Loop (`self-healing-engine.ts`)**: Built error-interceptor with heuristic & LLM diagnostic reflection; automatically repairs broken selectors, python/js syntax, indentation, and sandbox paths with max-N retries and full audit trails.
+  - **Scrapling Stealth Harvester (`scrapling-bridge.ts`)**: Integrated direct Python bridge to Scrapling 0.5 with anti-bot bypass, `curl_cffi` backend, and clean Markdown extraction.
+  - **CUA Desktop Automation (`cua-driver.ts`)**: Integrated OS-level desktop automation (click, type, screenshot, window inspect) with automatic download artifact persistence.
+  - **Advanced Workflow DAG Node Suite**: Added `scrapling_scraper`, `cua_automator`, `code` sandbox, and `condition` branch nodes into `dag-engine.ts`, `workflow-dag.ts`, `dag-utils.ts`, and `workflows/page.tsx` with floating quick-add dock controls.
+  - **Autonomous Full-Stack Dev Cockpit**: Added 1-Click Agent Auto-Fix in `code-console-drawer.tsx` and side-by-side visual git diff review modal (`code-diff-modal.tsx`) in `code/page.tsx`.
 
 ---
 

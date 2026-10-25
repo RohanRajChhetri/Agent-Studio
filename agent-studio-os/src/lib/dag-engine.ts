@@ -7,6 +7,11 @@ import type {
 import { executeChatCompletion } from "@/lib/llm-router";
 import { writeVaultFile, ensureVaultExists } from "@/lib/vault";
 import { slugify } from "@/lib/utils";
+import { scrapePage } from "@/lib/scrapling-bridge";
+import { executeCUAAction } from "@/lib/cua-driver";
+import { executeCodeSandbox } from "@/lib/tools-engine";
+import fs from "fs/promises";
+import path from "path";
 
 /**
  * Validates DAG for acyclicity and dangling references.
@@ -188,7 +193,135 @@ async function executeNode(
     };
   }
 
-  // 4. Storage / Obsidian Vault Archive Node
+  // 4. Scrapling Scraper Node (First-class web extraction)
+  if (node.type === "scrapling_scraper") {
+    const finalPrompt = interpolatePrompt(node.promptTemplate, input, nodeOutputs, incomingNodeIds);
+    // Extract target URL from config or interpolated prompt
+    const urlMatch = (node.config?.url || finalPrompt).match(/https?:\/\/[^\s"'>)]+/);
+    const targetUrl = urlMatch ? urlMatch[0] : (node.config?.url || "https://example.com");
+    const selectors = node.config?.selectors
+      ? (typeof node.config.selectors === "string" ? node.config.selectors.split(",").map((s: string) => s.trim()) : node.config.selectors)
+      : undefined;
+
+    try {
+      const scrapeRes = await scrapePage(targetUrl, {
+        toMarkdown: true,
+        stealthMode: node.config?.stealthMode ?? true,
+        selectors,
+      });
+
+      let output = `### 🕷️ Scrapling Web Extraction: ${scrapeRes.title || targetUrl}\n\n`;
+      output += `- **Source URL**: \`${targetUrl}\`\n`;
+      output += `- **Engine**: Scrapling Stealth Anti-Bot • **Latency**: ${scrapeRes.latency}ms\n`;
+      output += `- **Status**: ${scrapeRes.success ? "✅ Successfully Extracted" : "❌ Extraction Failed"}\n\n`;
+      if (scrapeRes.extractedData) {
+        output += `**Structured Data Fields:**\n\`\`\`json\n${JSON.stringify(scrapeRes.extractedData, null, 2)}\n\`\`\`\n\n`;
+      }
+      output += `**Extracted Markdown:**\n\n${(scrapeRes.markdown || scrapeRes.content || "").slice(0, 4500)}`;
+      return { output, latencyMs: Date.now() - start };
+    } catch (err: any) {
+      return {
+        output: `### 🕷️ Scrapling Web Extraction (Fallback)\n\nCould not scrape \`${targetUrl}\`: ${err?.message || String(err)}.\n\nProviding synthesized upstream context:\n${finalPrompt}`,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  // 5. CUA Desktop Automator Node (First-class desktop OS action)
+  if (node.type === "cua_automator") {
+    const finalPrompt = interpolatePrompt(node.promptTemplate, input, nodeOutputs, incomingNodeIds);
+    const actionType = node.config?.action || "screenshot";
+    try {
+      const cuaRes = await executeCUAAction({
+        type: actionType,
+        target: node.config?.target,
+        text: node.config?.text,
+        key: node.config?.key,
+      });
+
+      let output = `### 🖥️ Desktop Automation (CUA Driver): \`${actionType.toUpperCase()}\`\n\n`;
+      output += `- **Status**: ${cuaRes.success ? "✅ Executed" : "❌ Failed"}\n`;
+      output += `- **Latency**: ${cuaRes.latency}ms\n\n`;
+      output += `${cuaRes.output || "Desktop action executed successfully."}\n`;
+
+      if (cuaRes.screenshot) {
+        try {
+          const downloadDir = path.join(process.cwd(), "public", "downloads");
+          await fs.mkdir(downloadDir, { recursive: true });
+          const fileName = `workflow-screenshot-${Date.now()}.png`;
+          const filePath = path.join(downloadDir, fileName);
+          await fs.writeFile(filePath, Buffer.from(cuaRes.screenshot, "base64"));
+          output += `\n\n![Desktop Screenshot](/downloads/${fileName})\n\n*[Captured screenshot saved to \`${fileName}\`]*`;
+        } catch {}
+      }
+      return { output, latencyMs: Date.now() - start };
+    } catch (err: any) {
+      return {
+        output: `### 🖥️ Desktop Automation (CUA Driver)\n\nAction \`${actionType}\` failed: ${err?.message || String(err)}.\n\nUpstream Context:\n${finalPrompt}`,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  // 6. Code Sandbox Runner Node (Python / JS sandbox execution)
+  if (node.type === "code") {
+    const finalPrompt = interpolatePrompt(node.promptTemplate, input, nodeOutputs, incomingNodeIds);
+    const codeMatch = finalPrompt.match(/```(?:python|py|javascript|js)?\n([\s\S]*?)```/);
+    const rawCode = node.config?.code || (codeMatch ? codeMatch[1] : finalPrompt);
+    const lang = node.config?.language || (rawCode.includes("def ") || rawCode.includes("import ") ? "python" : "javascript");
+
+    try {
+      const execRes = await executeCodeSandbox(rawCode, lang);
+      let output = `### 💻 Code Sandbox Execution (${lang.toUpperCase()})\n\n`;
+      output += `- **Status**: ${execRes.success ? "✅ Success" : "❌ Error"}\n`;
+      output += `- **Execution Time**: ${execRes.executionTime}ms\n\n`;
+      output += `\`\`\`${lang}\n${rawCode.slice(0, 1500)}\n\`\`\`\n\n`;
+      output += `**Console Output:**\n\`\`\`\n${execRes.stdout || "(No stdout)"}`;
+      if (execRes.stderr) {
+        output += `\n[STDERR]\n${execRes.stderr}`;
+      }
+      output += `\n\`\`\``;
+      return { output, latencyMs: Date.now() - start };
+    } catch (err: any) {
+      return {
+        output: `### 💻 Code Sandbox Execution Failed\n\nError: ${err?.message || String(err)}\n\nCode snippet:\n\`\`\`\n${rawCode}\n\`\`\``,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  // 7. Conditional Branching Node
+  if (node.type === "condition") {
+    const finalPrompt = interpolatePrompt(node.promptTemplate, input, nodeOutputs, incomingNodeIds);
+    const evalCondition = node.config?.conditionRule || "Determine whether the upstream deliverable passes validation.";
+    try {
+      const evalCompletion = await executeChatCompletion({
+        prompt: `Evaluate this upstream result:
+${finalPrompt.slice(0, 2000)}
+
+Rule to test: "${evalCondition}"
+
+Respond with:
+STATUS: [PASS | FAIL]
+REASON: [Brief 1-sentence reason]`,
+        model: "auto/fast",
+        systemPrompt: "You are an automated conditional branch evaluator.",
+      });
+
+      const isPass = !evalCompletion.content?.includes("STATUS: FAIL");
+      return {
+        output: `### 🔀 Conditional Branch Evaluator\n\n- **Condition**: \`${evalCondition}\`\n- **Branch Activated**: ${isPass ? "🟢 Primary Path (PASS)" : "🔴 Alternative Path (FAIL)"}\n\n${evalCompletion.content}`,
+        latencyMs: Date.now() - start,
+      };
+    } catch {
+      return {
+        output: `### 🔀 Conditional Branch Evaluator\n\n- **Condition**: \`${evalCondition}\`\n- **Result**: 🟢 Auto-Passed (Default Branch)`,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  // 8. Storage / Obsidian Vault Archive Node
   if (node.type === "storage") {
     const upstream = incomingNodeIds.map((id) => nodeOutputs[id]).filter(Boolean).join("\n\n---\n\n");
     const vaultPath = `workflows/${slugify(node.title || "vault-archive")}-${Date.now()}.md`;
@@ -203,13 +336,13 @@ async function executeNode(
     };
   }
 
-  // 5. End Node
+  // 9. End Node
   if (node.type === "end") {
     const upstream = incomingNodeIds.map((id) => nodeOutputs[id]).filter(Boolean).join("\n\n");
     return { output: upstream, latencyMs: Date.now() - start };
   }
 
-  // 6. Agent, Aggregator, Code, or Condition Node
+  // 10. Agent / Aggregator Node
   const finalPrompt = interpolatePrompt(node.promptTemplate, input, nodeOutputs, incomingNodeIds);
 
   let outputText = "";

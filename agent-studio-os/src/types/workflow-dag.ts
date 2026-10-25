@@ -14,12 +14,15 @@ export type DAGNodeType =
   | "condition"
   | "human_gate"
   | "code"
+  | "scrapling_scraper"
+  | "cua_automator"
   | "storage"
   | "end";
 
 export type DAGNodeStatus =
   | "idle"
   | "running"
+  | "self_healing"
   | "completed"
   | "waiting_approval"
   | "failed"

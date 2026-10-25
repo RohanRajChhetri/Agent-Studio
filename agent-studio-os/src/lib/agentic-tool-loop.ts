@@ -19,6 +19,7 @@ import {
   executeExternalSkill,
 } from "./external-skills";
 import { validateToolActionSafety } from "./safety-guardrails";
+import { executeToolWithSelfHealing } from "./self-healing-engine";
 
 export interface ParsedToolCall {
   raw: string;
@@ -356,7 +357,100 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
       };
     }
 
-    // 5. MCP File Writing / Reading
+    // 5a. Scrapling Web Scraping Tools
+    if (name === "scrape_page" || name === "scrape_to_markdown" || name === "scrape" || name === "web_scrape") {
+      const { scrapePage } = await import("./scrapling-bridge");
+      const url = args.url || args.link || String(Object.values(args)[0] || "");
+      const toMarkdown = name === "scrape_to_markdown" || args.to_markdown || args.markdown;
+      const stealthMode = args.stealth || args.render_js || args.stealthMode || false;
+      const selectors = args.selectors ? (typeof args.selectors === "string" ? args.selectors.split(",").map((s: string) => s.trim()) : args.selectors) : undefined;
+
+      const scrapeRes = await scrapePage(url, { selectors, toMarkdown, stealthMode });
+      if (!scrapeRes.success) {
+        return { name, result: `Scrape failed: ${scrapeRes.error}`, success: false };
+      }
+
+      let resultText = `[Scraped: ${scrapeRes.title || url}]\n\n${scrapeRes.markdown || scrapeRes.content}`;
+      if (scrapeRes.extractedData) {
+        resultText += "\n\n[Extracted Data]\n" + JSON.stringify(scrapeRes.extractedData, null, 2);
+      }
+
+      return {
+        name,
+        result: resultText.slice(0, 8000),
+        success: true,
+        metadata: { url, title: scrapeRes.title, latency: scrapeRes.latency },
+      };
+    }
+
+    // 5b. Scrapling Crawl Tool
+    if (name === "crawl_site" || name === "crawl" || name === "web_crawl") {
+      const { crawlSite } = await import("./scrapling-bridge");
+      const startUrl = args.start_url || args.url || String(Object.values(args)[0] || "");
+      const maxPages = args.max_pages || args.maxPages || 10;
+
+      const crawlRes = await crawlSite(startUrl, { maxPages });
+      if (!crawlRes.success) {
+        return { name, result: `Crawl failed: ${crawlRes.error}`, success: false };
+      }
+
+      return {
+        name,
+        result: `[Crawled ${crawlRes.pagesScraped} pages from ${startUrl}]\n\n${JSON.stringify(crawlRes.items.slice(0, 5), null, 2)}${crawlRes.pagesScraped > 5 ? `\n... and ${crawlRes.pagesScraped - 5} more pages` : ""}`,
+        success: true,
+        metadata: { startUrl, pagesScraped: crawlRes.pagesScraped, latency: crawlRes.latency },
+      };
+    }
+
+    // 5c. CUA Desktop Automation Tools
+    if (name === "desktop_action" || name === "desktop_screenshot" || name === "desktop_inspect" || name === "desktop" || name === "cua") {
+      const { executeCUAAction } = await import("./cua-driver");
+      let action;
+      if (name === "desktop_screenshot") {
+        action = { type: "screenshot" as const };
+      } else if (name === "desktop_inspect") {
+        action = { type: "inspect" as const, target: args.app || args.target };
+      } else {
+        action = {
+          type: (args.action_type || args.type || "inspect") as "click" | "type" | "screenshot" | "inspect" | "launch" | "key" | "scroll",
+          target: args.target || args.app,
+          text: args.text,
+          coordinates: args.coordinates,
+          key: args.key,
+          direction: args.direction,
+          amount: args.amount,
+        };
+      }
+
+      const cuaRes = await executeCUAAction(action);
+      if (!cuaRes.success) {
+        return { name, result: `Desktop action failed: ${cuaRes.error}`, success: false };
+      }
+
+      let resultText = cuaRes.output || `Desktop ${action.type} completed successfully`;
+      if (cuaRes.screenshot) {
+        try {
+          const downloadDir = path.join(process.cwd(), "public", "downloads");
+          await fs.mkdir(downloadDir, { recursive: true });
+          const fileName = `screenshot-${Date.now()}.png`;
+          const filePath = path.join(downloadDir, fileName);
+          await fs.writeFile(filePath, Buffer.from(cuaRes.screenshot, "base64"));
+          const fileUrl = `/downloads/${fileName}`;
+          resultText += `\n\n![Desktop Screenshot](${fileUrl})\n*[Captured desktop screenshot saved to \`${fileName}\`]*`;
+        } catch {
+          resultText += `\n\n*(Screenshot captured)*`;
+        }
+      }
+
+      return {
+        name,
+        result: resultText,
+        success: true,
+        metadata: { action: cuaRes.action, latency: cuaRes.latency, hasScreenshot: !!cuaRes.screenshot },
+      };
+    }
+
+    // 5d. MCP File Writing / Reading
     if (name.startsWith("fs_") || name.startsWith("postgres_") || name.startsWith("github_")) {
       const mcpRes = await mcpManager.executeTool(name, args);
       const text = mcpRes.content.map((c) => c.text).join("\n");
@@ -480,14 +574,19 @@ export async function runAgenticLoop(params: {
 
   // Ground with Code filesystem & workspace capabilities
   systemPromptAugmented += `\n\n[WORKSPACE & CODE CAPABILITIES]
-You have full autonomous access to the project workspace and can create files and folders throughout the project:
+You have full autonomous access to the project workspace and can create files, scrape the web, and control the desktop:
 - \`create_file(path="path/to/file.ext", content="...")\`: Create or overwrite any file anywhere throughout the project.
 - \`create_folder(path="path/to/folder")\`: Create new directories anywhere in the project.
 - \`read_file(path="path/to/file.ext")\`: Read and inspect existing project files.
 - \`list_dir(path="path/to/directory")\`: List files and subfolders in any project directory.
 - \`search(query="...")\`: Real-time web search.
 - \`code(code="...", language="javascript"|"python")\`: Execute code in sandbox.
-When asked to create files, write code, or create folders, call these tools directly.
+- \`scrape_page(url="https://...", selectors="...", render_js=false)\`: Scrape any web page with Scrapling stealth anti-bot bypass.
+- \`scrape_to_markdown(url="https://...")\`: Scrape web page and convert to clean Markdown.
+- \`crawl_site(start_url="https://...", max_pages=10)\`: Crawl multiple site pages.
+- \`desktop_screenshot()\`: Capture real desktop screenshot via CUA Driver.
+- \`desktop_action(action_type="click"|"type"|"launch"|"key"|"scroll", target="...", text="...", key="...")\`: Full computer automation.
+When asked to create files, scrape web data, or perform desktop actions, call these tools directly.
 
 [CONVERSATION CONTINUITY]
 You are replying in an ongoing active conversation. Do NOT re-introduce yourself (never say "Hello, I am [Name], your orchestration specialist in the Agent Studio OS..."), do NOT deliver unsolicited greetings, and do NOT reset context. Directly answer the user's latest message while preserving all previous turn context.`;
@@ -571,7 +670,35 @@ or \`<skill_name>(key="value")\`.`;
         });
       } catch {}
 
-      const execution = await executeTool(toolCall);
+      // Execute tool with autonomous self-healing and error diagnostic auto-fix
+      const healingResult = await executeToolWithSelfHealing(toolCall, executeTool, 2);
+      const execution = {
+        name: toolCall.name,
+        result: healingResult.result,
+        success: healingResult.success,
+        metadata: toolCall.args,
+      };
+
+      if (healingResult.auditEntries && healingResult.auditEntries.length > 0) {
+        const auditLines = healingResult.auditEntries
+          .map(
+            (a) =>
+              `- **Attempt ${a.attempt}/${a.maxAttempts}**: ${a.diagnosis}\n  - *Applied Fix*: \`${a.appliedFix}\`\n  - *Status*: ${a.resolved ? "✅ Resolved" : "⚠️ Needs intervention"}`
+          )
+          .join("\n");
+
+        outputs.push({
+          content: `🔧 **Autonomous Self-Healing Audit**\n\n${auditLines}`,
+          type: "tool_execution",
+          agentName: "Self-Healing Diagnostic",
+          latency: 220,
+          metadata: {
+            tool: toolCall.name,
+            audits: healingResult.auditEntries,
+            resolved: healingResult.success,
+          },
+        });
+      }
 
       if (execution.metadata?.fileUrl) {
         createdDeliverableFiles.push({
@@ -582,10 +709,11 @@ or \`<skill_name>(key="value")\`.`;
       }
 
       // Add a clean output for the tool execution step
-      const queryPreview = toolCall.args.query
-        ? `\`${toolCall.args.query}\``
-        : toolCall.args.path || toolCall.args.filename || toolCall.args.folder
-        ? `\`${toolCall.args.path || toolCall.args.filename || toolCall.args.folder}\``
+      const effectiveArgs = healingResult.correctedArgs || toolCall.args;
+      const queryPreview = effectiveArgs.query
+        ? `\`${effectiveArgs.query}\``
+        : effectiveArgs.path || effectiveArgs.filename || effectiveArgs.folder
+        ? `\`${effectiveArgs.path || effectiveArgs.filename || effectiveArgs.folder}\``
         : `\`${toolCall.name}\``;
 
       let actionDesc = `Executed ${toolCall.name} for ${queryPreview}`;
@@ -599,17 +727,22 @@ or \`<skill_name>(key="value")\`.`;
         actionDesc = `Listed project directory ${queryPreview}`;
       } else if (toolCall.name === "web" || toolCall.name === "search") {
         actionDesc = `Searched live web for ${queryPreview}`;
+      } else if (toolCall.name.includes("scrape")) {
+        actionDesc = `Scraped web data via Scrapling for ${queryPreview}`;
+      } else if (toolCall.name.includes("desktop") || toolCall.name === "cua") {
+        actionDesc = `Executed CUA desktop action: ${queryPreview}`;
       }
 
       outputs.push({
-        content: `🔍 **Autonomous Tool Execution**\n\n- **Tool**: \`${toolCall.name}\`\n- **Action**: ${actionDesc}\n- **Status**: ${execution.success ? "Completed ✓" : "Failed ✗"}`,
+        content: `🔍 **Autonomous Tool Execution**\n\n- **Tool**: \`${toolCall.name}\`\n- **Action**: ${actionDesc}\n- **Status**: ${execution.success ? "Completed ✓" : "Failed ✗"}${healingResult.auditEntries.length > 0 && healingResult.success ? " *(Self-Healed 🔧)*" : ""}`,
         type: "tool_execution",
         agentName: params.agentName || "Autonomous Specialist",
         latency: 180,
         metadata: {
           tool: toolCall.name,
-          args: toolCall.args,
+          args: effectiveArgs,
           success: execution.success,
+          selfHealed: healingResult.auditEntries.length > 0 && healingResult.success,
         },
       });
 

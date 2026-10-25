@@ -33,6 +33,8 @@ interface CodeConsoleDrawerProps {
   onToggleOpen: () => void;
   fileList?: string[];
   activeProject: string;
+  onAutoFixError?: (errorText: string) => void;
+  isFixing?: boolean;
 }
 
 export function CodeConsoleDrawer({
@@ -43,6 +45,8 @@ export function CodeConsoleDrawer({
   onToggleOpen,
   fileList = [],
   activeProject,
+  onAutoFixError,
+  isFixing,
 }: CodeConsoleDrawerProps) {
   const [activeTab, setActiveTab] = useState<"console" | "terminal" | "build">("console");
   const [filterLevel, setFilterLevel] = useState<"all" | "error" | "warn" | "log">("all");
@@ -294,6 +298,25 @@ export function CodeConsoleDrawer({
                 Warnings ({warnCount})
               </button>
             </div>
+          )}
+
+          {onAutoFixError && errorCount > 0 && (
+            <button
+              type="button"
+              disabled={isFixing}
+              onClick={() => {
+                const errorLines = entries
+                  .filter((e) => e.level === "error")
+                  .map((e) => e.message)
+                  .join("\n");
+                onAutoFixError(errorLines);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gradient-to-r from-amber-500/20 to-purple-500/20 border border-amber-500/40 hover:border-amber-500 text-amber-500 dark:text-amber-300 text-[11px] font-semibold transition cursor-pointer shadow-xs disabled:opacity-50"
+              title="Autonomous Agent Diagnoses & Patches Code"
+            >
+              <Sparkles className="w-3 h-3 text-amber-400 animate-pulse" />
+              <span>{isFixing ? "Fixing..." : `Auto-Fix (${errorCount})`}</span>
+            </button>
           )}
 
           <button

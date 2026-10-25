@@ -46,6 +46,8 @@ import {
   FileDown,
   ArrowRight,
   MapPin,
+  Globe,
+  Monitor,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
@@ -435,6 +437,18 @@ export default function WorkflowsPage() {
       promptTemplate:
         type === "agent" || type === "aggregator"
           ? "Process objectives based on upstream inputs:\n\n{{input}}\n\n{{previous_output}}"
+          : type === "scrapling_scraper"
+          ? "Scrape target URL and extract structured data:\n\n{{input}}"
+          : type === "cua_automator"
+          ? "Execute desktop automation and capture verification screenshot"
+          : undefined,
+      config:
+        type === "scrapling_scraper"
+          ? { url: "https://news.ycombinator.com", stealthMode: true }
+          : type === "cua_automator"
+          ? { action: "screenshot" }
+          : type === "code"
+          ? { language: "python", code: "print('Hello from Agent Studio Sandbox!')" }
           : undefined,
       status: "idle",
     };
@@ -908,6 +922,10 @@ export default function WorkflowsPage() {
         return "border-violet-500/40 bg-violet-500/5 hover:border-violet-500";
       case "code":
         return "border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500";
+      case "scrapling_scraper":
+        return "border-rose-500/40 bg-rose-500/5 hover:border-rose-500";
+      case "cua_automator":
+        return "border-amber-400/40 bg-amber-400/5 hover:border-amber-400";
       case "storage":
         return "border-indigo-500/40 bg-indigo-500/5 hover:border-indigo-500";
       case "end":
@@ -931,6 +949,10 @@ export default function WorkflowsPage() {
         return <ShieldCheck className="w-4 h-4 text-violet-500" />;
       case "code":
         return <Code2 className="w-4 h-4 text-emerald-500" />;
+      case "scrapling_scraper":
+        return <Globe className="w-4 h-4 text-rose-500" />;
+      case "cua_automator":
+        return <Monitor className="w-4 h-4 text-amber-400" />;
       case "storage":
         return <Database className="w-4 h-4 text-indigo-500" />;
       case "end":
@@ -1324,6 +1346,26 @@ export default function WorkflowsPage() {
             >
               <Code2 className="w-3.5 h-3.5" />
               <span>Code</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleAddNode("scrapling_scraper")}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-semibold transition cursor-pointer shrink-0"
+              title="Add Stealth Web Scraper Node (Scrapling)"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Scraper</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleAddNode("cua_automator")}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-400/10 hover:bg-amber-400/20 text-amber-500 dark:text-amber-300 text-xs font-semibold transition cursor-pointer shrink-0"
+              title="Add Desktop CUA Automator Node"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>Desktop</span>
             </button>
 
             <button

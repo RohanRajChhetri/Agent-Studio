@@ -315,6 +315,22 @@ export const NODE_TYPE_INFO: Record<
     bgColor: "bg-emerald-500/10",
     iconName: "Code2",
   },
+  scrapling_scraper: {
+    label: "Web Scraper",
+    description: "High-speed stealth web extraction and anti-bot bypass via Scrapling",
+    color: "text-rose-500",
+    borderColor: "border-rose-500/40 hover:border-rose-500",
+    bgColor: "bg-rose-500/10",
+    iconName: "Globe",
+  },
+  cua_automator: {
+    label: "Desktop CUA",
+    description: "OS-level desktop automation, app control, and screenshot capture",
+    color: "text-amber-400",
+    borderColor: "border-amber-400/40 hover:border-amber-400",
+    bgColor: "bg-amber-400/10",
+    iconName: "Monitor",
+  },
   storage: {
     label: "Vault Storage",
     description: "Permanently archives synthesized deliverables into Obsidian Vault",
