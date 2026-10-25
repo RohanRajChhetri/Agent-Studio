@@ -163,6 +163,7 @@ function CodePageContent() {
   const language = activeTab?.language || "html";
 
   const [prompt, setPrompt] = useState<string>("");
+  const [selectedModel, setSelectedModel] = useState<string>("gemini-3.6-flash");
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Autonomous Diff Review & Auto-Fix State
@@ -170,6 +171,7 @@ function CodePageContent() {
   const [pendingDiffs, setPendingDiffs] = useState<FileDiffItem[]>([]);
   const [diffReasoning, setDiffReasoning] = useState<string>("");
   const [isAutoFixing, setIsAutoFixing] = useState<boolean>(false);
+  const [isRunningScript, setIsRunningScript] = useState<boolean>(false);
 
   // Read persisted project conversation messages from global context
   const messages = getProjectMessages(selectedProject);
@@ -682,6 +684,91 @@ function CodePageContent() {
     }
   };
 
+  // 1-Click Script Runner for Python, Node, and Shell scripts
+  const handleRunActiveFile = useCallback(
+    async (filePathToRun?: string) => {
+      const targetFile = filePathToRun || currentFilePath;
+      if (!targetFile) return;
+
+      setIsRunningScript(true);
+      setConsoleOpen(true);
+      playTaskStartedSound();
+      toast.info(`Executing ${targetFile}...`);
+
+      setConsoleEntries((prev) => [
+        ...prev,
+        {
+          id: `run-start-${Date.now()}`,
+          level: "build",
+          message: `▶ Running ${targetFile} in workspace "${selectedProject}"...`,
+          timestamp: Date.now(),
+        },
+      ]);
+
+      try {
+        const res = await fetch("/api/code/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectName: selectedProject,
+            filePath: targetFile,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          if (data.stdout) {
+            setConsoleEntries((prev) => [
+              ...prev,
+              {
+                id: `stdout-${Date.now()}`,
+                level: "log",
+                message: data.stdout,
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+          if (data.stderr) {
+            setConsoleEntries((prev) => [
+              ...prev,
+              {
+                id: `stderr-${Date.now()}`,
+                level: data.success ? "warn" : "error",
+                message: data.stderr,
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+          if (data.success) {
+            toast.success(`Executed ${targetFile} successfully (${data.latency}ms)`);
+            playTaskCompletedSound();
+          } else {
+            toast.warning(`Process exited with code ${data.exitCode}`);
+            playWarningSound();
+          }
+        } else {
+          toast.error(data.error || "Failed to execute script");
+          setConsoleEntries((prev) => [
+            ...prev,
+            {
+              id: `err-${Date.now()}`,
+              level: "error",
+              message: `Execution failed: ${data.error}`,
+              timestamp: Date.now(),
+            },
+          ]);
+          playWarningSound();
+        }
+      } catch (err: any) {
+        toast.error(err.message || "Network error running script");
+        playWarningSound();
+      } finally {
+        setIsRunningScript(false);
+      }
+    },
+    [currentFilePath, selectedProject]
+  );
+
   // Format active document
   const handleFormatCode = () => {
     const formatted = formatCodeSnippet(code, language);
@@ -1010,6 +1097,26 @@ function CodePageContent() {
   // 16. Build Sandboxed HTML/CSS/JS Project Preview
   const buildProjectPreview = useCallback(async () => {
     try {
+      // Direct executable runner for Python, Shell, and Node scripts
+      if (currentFilePath.endsWith(".py") || currentFilePath.endsWith(".sh")) {
+        const isPy = currentFilePath.endsWith(".py");
+        setPreviewHtml(
+          `<div style="font-family:system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;background:#09090b;color:#f4f4f5;text-align:center;padding:2rem;">
+            <div style="max-width:440px;padding:2.5rem;background:#18181b;border-radius:1.25rem;border:1px solid #27272a;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);">
+              <div style="font-size:48px;margin-bottom:12px;">${isPy ? "🐍" : "🐚"}</div>
+              <h3 style="color:#fafafa;margin-top:0;font-size:18px;font-weight:700;">${isPy ? "Python Script Ready" : "Shell Script Ready"}</h3>
+              <p style="font-size:13px;line-height:1.6;color:#a1a1aa;margin-bottom:1.5rem;">
+                <code style="background:#27272a;color:#10b981;padding:2px 8px;border-radius:4px;font-size:12px;font-family:monospace;">${currentFilePath}</code> is a backend script. Click below to execute it in the workspace and inspect output in the Console Drawer.
+              </p>
+              <button onclick="window.parent.postMessage({type:'run-active-file', path:'${currentFilePath}'},'*')" style="cursor:pointer;background:#10b981;color:#ffffff;border:none;padding:10px 22px;border-radius:10px;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 4px 12px rgba(16,185,129,0.3);transition:all 0.15s ease;">
+                ▶ Run Script in Workspace
+              </button>
+            </div>
+          </div>`
+        );
+        return;
+      }
+
       let htmlContent = "";
       if (currentFilePath.endsWith(".html") && code.trim()) {
         htmlContent = code;
@@ -1090,8 +1197,16 @@ function CodePageContent() {
         }
       }
 
-      // Inject Console Bridge and Safety Headers
-      const safetyHeadInjection = `<base target="_blank"><script>window.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.getAttribute('href')&&!a.getAttribute('href').startsWith('#')){a.target='_blank';}},true);</script>${PREVIEW_CONSOLE_BRIDGE_SCRIPT}`;
+      // Inject Console Bridge, Tailwind CSS CDN, React/Babel Standalone, and Safety Headers
+      let externalRuntimes = "";
+      if (bundled.includes("tailwind") || bundled.includes("class=")) {
+        externalRuntimes += `<script src="https://cdn.tailwindcss.com"></script>`;
+      }
+      if (bundled.includes("text/babel") || bundled.includes("React") || bundled.includes("ReactDOM")) {
+        externalRuntimes += `<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>`;
+      }
+
+      const safetyHeadInjection = `<base target="_blank">${externalRuntimes}<script>window.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.getAttribute('href')&&!a.getAttribute('href').startsWith('#')){a.target='_blank';}},true);</script>${PREVIEW_CONSOLE_BRIDGE_SCRIPT}`;
       if (bundled.includes("<head>")) {
         bundled = bundled.replace("<head>", `<head>${safetyHeadInjection}`);
       } else {
@@ -1130,11 +1245,14 @@ function CodePageContent() {
         };
         setConsoleEntries((prev) => [...prev.slice(-150), newEntry]);
       }
+      if (e.data && e.data.type === "run-active-file") {
+        handleRunActiveFile(e.data.path);
+      }
     };
 
     window.addEventListener("message", handleWindowMessage);
     return () => window.removeEventListener("message", handleWindowMessage);
-  }, []);
+  }, [handleRunActiveFile]);
 
   // Run code evaluation in sandboxed iframe via REPL
   const handleRunEvalInPreview = (evalCode: string) => {
@@ -1214,6 +1332,7 @@ function CodePageContent() {
       targetFolder: targetFolderScope || undefined,
       currentFilePath,
       currentCode: code,
+      model: selectedModel,
       history: messages.slice(-6).map((m) => ({ role: m.role, content: m.content })),
     });
 
@@ -1474,6 +1593,8 @@ function CodePageContent() {
         onNewSession={handleNewSession}
         onNewProject={() => setShowNewProjectModal(true)}
         onDeleteProject={() => setShowDeleteProjectModal(true)}
+        selectedModel={selectedModel}
+        onSelectModel={setSelectedModel}
         activeArtifactTab={activeArtifactTab}
         onChangeArtifactTab={setActiveArtifactTab}
         activeFilePath={currentFilePath}
@@ -1625,6 +1746,9 @@ function CodePageContent() {
             onRunEval={handleRunEvalInPreview}
             fileList={flatFileList}
             activeProject={selectedProject}
+            activeFilePath={currentFilePath}
+            onRunActiveFile={handleRunActiveFile}
+            isRunningFile={isRunningScript}
             onAutoFixError={handleAutoFixError}
             isFixing={isAutoFixing}
           />

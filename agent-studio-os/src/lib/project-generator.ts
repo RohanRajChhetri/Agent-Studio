@@ -263,27 +263,53 @@ export async function buildProjectWithAgent(params: {
   };
   const existingFiles = flattenPaths(existingTree);
 
+  // Read contents of existing project files to give the LLM 100% full context of the project
+  const projectFileSnippets: string[] = [];
+  for (const relPath of existingFiles.slice(0, 15)) {
+    try {
+      const fullFilePath = path.join(process.cwd(), projectBasePath, relPath);
+      const stats = await fs.stat(fullFilePath);
+      const ext = path.extname(relPath).toLowerCase();
+      const isBinary = [".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".zip", ".tar", ".gz"].includes(ext);
+      if (!isBinary && stats.size < 35000) {
+        const content = await fs.readFile(fullFilePath, "utf-8");
+        projectFileSnippets.push(`--- FILE: "${relPath}" ---\n${content}\n`);
+      } else if (!isBinary) {
+        projectFileSnippets.push(`--- FILE: "${relPath}" (${(stats.size / 1024).toFixed(1)} KB) ---`);
+      }
+    } catch {
+      // Ignore unreadable files
+    }
+  }
+
   // Target subfolder guidance
   const folderScope = params.targetFolder ? `\nTarget Subfolder to add files: "${params.targetFolder}"` : "";
 
-  // Prepare elite Claude-grade system prompt
+  // Prepare elite Claude-grade system prompt with complete project context
   const systemPrompt = `You are an elite Lead Software Architect & Autonomous Project Builder in Agent Studio OS.
-You specialize in designing, creating, and completely implementing entire multi-file software projects, web applications, components, and tools.
+You specialize in designing, creating, and completely implementing entire multi-file software projects, web applications, components, tools, and scripts.
 
 WORKING PROJECT FOLDER: "${projectName}" (${projectBasePath})${folderScope}
-EXISTING FILES IN THIS PROJECT:
+EXISTING FILES IN THIS PROJECT (${existingFiles.length} files):
 ${existingFiles.length > 0 ? existingFiles.map((f) => `- ${f}`).join("\n") : "(Empty project folder)"}
 
+${projectFileSnippets.length > 0 ? `CURRENT PROJECT FILE CONTENTS:\n${projectFileSnippets.join("\n")}\n` : ""}
+
 ACTIVE FILE OPEN IN EDITOR: "${params.currentFilePath || "index.html"}"
-${params.currentCode ? `Current Open File Code:\n\`\`\`\n${params.currentCode.slice(0, 1500)}\n\`\`\`` : ""}
+${params.currentCode ? `ACTIVE FILE CURRENT CODE:\n\`\`\`${detectLanguageFromPath(params.currentFilePath || "index.html")}\n${params.currentCode}\n\`\`\`` : ""}
 
 AUTONOMOUS PROJECT BUILDER DIRECTIVES:
 1. FULL IMPLEMENTATIONS ONLY: Always output 100% complete, fully implemented, runnable production code. NEVER use placeholders like "// TODO", "// implement here", or truncate any section.
-2. DESIGN SYSTEM & POLISH:
-   - Use clean, premium aesthetics: modern dark/light mode palettes, glassmorphism, responsive CSS flex/grid layouts.
-   - Clean typography using system fonts or Google Fonts (Inter, Outfit).
-   - Fluid interactive states: hover, active, focus rings, and micro-transitions.
-3. MULTI-FILE CODE BLOCKS:
+2. INTELLIGENT PROJECT EDITING & REVISIONS:
+   - When updating or adding features to an existing project, preserve working architecture and conventions.
+   - Output the complete content for every file you create or modify.
+   - Do NOT emit files that do not require any changes. Any file you do not emit will remain untouched on disk.
+3. MULTI-RUNTIME & STACK SUPPORT:
+   - Web Applications (HTML/CSS/JS): Modern semantic HTML5, beautiful responsive styling (Tailwind CSS or clean CSS variables), rich micro-interactions, robust logic, and interactive state management.
+   - React / TypeScript Apps: If asked for React or components, write clean, self-contained, modern React code (hooks, modular components).
+   - Python Scripts & Automation: Provide complete, runnable Python code with clear entrypoints (\`if __name__ == "__main__":\`), error handling, and helpful terminal feedback.
+   - Node.js APIs & Tools: Provide clean, idiomatic Node.js or Express code with structured routes and clear error handling.
+4. MULTI-FILE CODE BLOCKS FORMAT:
    For EVERY file you create or update, format it with a clear header and tagged code block:
    \`\`\`file:path/to/file.ext
    [Complete production-ready code]
@@ -299,18 +325,17 @@ AUTONOMOUS PROJECT BUILDER DIRECTIVES:
    \`\`\`file:app.js
    ...
    \`\`\`
+   \`\`\`file:main.py
+   ...
+   \`\`\`
    \`\`\`file:README.md
    ...
    \`\`\`
-4. INTELLIGENT, EXPANSIVE RESPONSE:
+5. ARTICULATE ARCHITECTURE BREAKDOWN:
    Provide an articulate, highly thorough explanation including:
-   - 🚀 **Project Overview & Architecture**: Executive summary of what was designed and the stack used.
-   - 📁 **Files & Components**: Detailed explanation of each file's purpose and how they connect.
-   - 🎯 **How to Run & Features**: Interactive capabilities, instructions to test, and user experience.
-   - 💡 **Key Algorithms & Design Choices**: Deep dive into state management, animations, and responsive styling.
-5. FOLDER SCOPE:
-   If the user asks to add files in a specific folder (e.g. "components/", "utils/", "src/"), place the files in that folder.
-   Create complete files that import and integrate seamlessly.`;
+   - 🚀 **Architecture & Features**: Summary of what was created or upgraded.
+   - 📁 **Files Modified/Created**: Breakdown of each file's purpose and how they connect.
+   - 🎯 **How to Run & Test**: Clear, actionable instructions.`;
 
   const modelToUse = normalizeModelName(params.model || "auto/best-coding");
 

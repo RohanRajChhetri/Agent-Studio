@@ -63,15 +63,75 @@ export function CodeChatPanel({
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
-              <Bot className="w-6 h-6" />
+          <div className="py-3 px-1 space-y-3.5">
+            <div className="text-center space-y-1.5">
+              <div className="w-10 h-10 mx-auto rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
+                  Autonomous Project Architect
+                </h4>
+                <p className="text-[11.5px] text-muted-foreground mt-0.5">
+                  Select a starter preset or describe your requirements below.
+                </p>
+              </div>
             </div>
-            <div>
-              <h4 className="text-sm font-semibold text-foreground">Ready to Build</h4>
-              <p className="text-xs text-muted-foreground mt-1 max-w-[220px]">
-                Ask the agent to generate full-stack components, fix bugs, or build new features.
-              </p>
+
+            {/* Starter Architecture Presets */}
+            <div className="space-y-1.5 pt-1">
+              {[
+                {
+                  icon: "🌐",
+                  title: "Modern Web Application",
+                  desc: "Interactive HTML5/Tailwind app with state & dark mode",
+                  prompt: "Build an interactive single-page application with modern Tailwind CSS styling, dark/light theme toggle, responsive layout, and smooth animations.",
+                },
+                {
+                  icon: "⚛️",
+                  title: "React Component App",
+                  desc: "React UI with interactive state hooks & data cards",
+                  prompt: "Create a modern React component application with interactive state hooks, animated cards, search filtering, and local storage persistence.",
+                },
+                {
+                  icon: "🐍",
+                  title: "Python Automation Tool",
+                  desc: "Python CLI script with args & data processing",
+                  prompt: "Build a modular Python automation tool with command-line arguments, structured data processing, error handling, and clean terminal feedback.",
+                },
+                {
+                  icon: "🚀",
+                  title: "Node.js REST API",
+                  desc: "Full backend API service with mock database",
+                  prompt: "Build a Node.js REST API service with clean modular routing, CRUD endpoints, request validation, and an in-memory JSON mock database.",
+                },
+                {
+                  icon: "🎮",
+                  title: "Canvas Arcade Game",
+                  desc: "Retro game with keyboard controls & scorekeeper",
+                  prompt: "Build a complete retro arcade game on HTML5 Canvas with keyboard controls, sound effects, particle effects, and high-score tracking.",
+                },
+              ].map((preset, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    onChangePrompt(preset.prompt);
+                    textareaRef.current?.focus();
+                  }}
+                  className="w-full flex items-start gap-2.5 p-2 rounded-xl border border-border/80 bg-card hover:border-primary/40 hover:bg-secondary/40 text-left transition cursor-pointer group shadow-2xs"
+                >
+                  <span className="text-lg shrink-0 mt-0.5">{preset.icon}</span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors">
+                      {preset.title}
+                    </div>
+                    <div className="text-[10.5px] text-muted-foreground leading-tight truncate">
+                      {preset.desc}
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         ) : (

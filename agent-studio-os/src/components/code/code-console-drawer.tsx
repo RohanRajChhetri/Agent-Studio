@@ -33,6 +33,9 @@ interface CodeConsoleDrawerProps {
   onToggleOpen: () => void;
   fileList?: string[];
   activeProject: string;
+  activeFilePath?: string;
+  onRunActiveFile?: (path: string) => void;
+  isRunningFile?: boolean;
   onAutoFixError?: (errorText: string) => void;
   isFixing?: boolean;
 }
@@ -45,6 +48,9 @@ export function CodeConsoleDrawer({
   onToggleOpen,
   fileList = [],
   activeProject,
+  activeFilePath,
+  onRunActiveFile,
+  isRunningFile,
   onAutoFixError,
   isFixing,
 }: CodeConsoleDrawerProps) {
@@ -201,13 +207,30 @@ export function CodeConsoleDrawer({
           )}
         </button>
 
-        <button
-          onClick={onToggleOpen}
-          className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition rounded cursor-pointer"
-          title="Open Console Drawer"
-        >
-          <ChevronUp className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {onRunActiveFile && activeFilePath && (activeFilePath.endsWith(".py") || activeFilePath.endsWith(".js") || activeFilePath.endsWith(".ts") || activeFilePath.endsWith(".sh")) && (
+            <button
+              type="button"
+              disabled={isRunningFile}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRunActiveFile(activeFilePath);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-500 text-[10.5px] font-semibold transition cursor-pointer"
+            >
+              <Play className={`w-3 h-3 ${isRunningFile ? "animate-spin" : "fill-emerald-500"}`} />
+              <span>{isRunningFile ? "Running..." : `Run ${activeFilePath.split("/").pop()}`}</span>
+            </button>
+          )}
+
+          <button
+            onClick={onToggleOpen}
+            className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition rounded cursor-pointer"
+            title="Open Console Drawer"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     );
   }
@@ -298,6 +321,19 @@ export function CodeConsoleDrawer({
                 Warnings ({warnCount})
               </button>
             </div>
+          )}
+
+          {onRunActiveFile && activeFilePath && (activeFilePath.endsWith(".py") || activeFilePath.endsWith(".js") || activeFilePath.endsWith(".ts") || activeFilePath.endsWith(".sh")) && (
+            <button
+              type="button"
+              disabled={isRunningFile}
+              onClick={() => onRunActiveFile(activeFilePath)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-500 text-[11px] font-semibold transition cursor-pointer disabled:opacity-50"
+              title={`Run ${activeFilePath} in Workspace`}
+            >
+              <Play className={`w-3 h-3 ${isRunningFile ? "animate-spin" : "fill-emerald-500"}`} />
+              <span>{isRunningFile ? "Running..." : `Run ${activeFilePath.split("/").pop()}`}</span>
+            </button>
           )}
 
           {onAutoFixError && errorCount > 0 && (

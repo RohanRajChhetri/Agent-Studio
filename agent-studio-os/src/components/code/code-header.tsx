@@ -22,8 +22,20 @@ import {
   FolderPlus,
   Trash2,
   ExternalLink,
+  Cpu,
+  Check,
 } from "lucide-react";
 import type { WorkspaceProjectInfo } from "@/lib/project-filesystem";
+
+export const AVAILABLE_CODE_MODELS = [
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", badge: "Fast & Smart", provider: "Google" },
+  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", badge: "Ultra", provider: "Google" },
+  { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet", badge: "Elite Code", provider: "Anthropic" },
+  { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", badge: "Architect", provider: "Anthropic" },
+  { id: "gpt-4o", name: "GPT-4o", badge: "Reasoning", provider: "OpenAI" },
+  { id: "deepseek-chat", name: "DeepSeek V3", badge: "Efficient", provider: "DeepSeek" },
+  { id: "auto/best-coding", name: "Auto (Best Coding)", badge: "Smart Route", provider: "OmniRoute" },
+];
 
 interface CodeHeaderProps {
   selectedProject: string;
@@ -32,6 +44,8 @@ interface CodeHeaderProps {
   onNewSession: () => void;
   onNewProject: () => void;
   onDeleteProject: () => void;
+  selectedModel?: string;
+  onSelectModel?: (model: string) => void;
   activeArtifactTab: "code" | "split" | "preview";
   onChangeArtifactTab: (tab: "code" | "split" | "preview") => void;
   activeFilePath?: string;
@@ -54,6 +68,8 @@ export function CodeHeader({
   onNewSession,
   onNewProject,
   onDeleteProject,
+  selectedModel = "auto/best-coding",
+  onSelectModel,
   activeArtifactTab,
   onChangeArtifactTab,
   activeFilePath = "index.html",
@@ -69,11 +85,16 @@ export function CodeHeader({
   isGenerating = false,
 }: CodeHeaderProps) {
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [searchFilter, setSearchFilter] = useState("");
 
   const filteredProjects = projects.filter((p) =>
     p.name.toLowerCase().includes(searchFilter.toLowerCase())
   );
+
+  const activeModelObj =
+    AVAILABLE_CODE_MODELS.find((m) => m.id === selectedModel) ||
+    AVAILABLE_CODE_MODELS[0];
 
   return (
     <header className="h-14 border-b border-border bg-card/95 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between gap-3 shrink-0 select-none z-30">
@@ -180,6 +201,58 @@ export function CodeHeader({
           <FolderPlus className="w-3.5 h-3.5" />
           <span className="hidden md:inline">New Project</span>
         </button>
+
+        {/* Model Selector Dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowModelDropdown((prev) => !prev)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-border bg-secondary/40 hover:bg-secondary text-xs font-medium text-foreground transition cursor-pointer shrink-0 shadow-xs"
+            title="Select AI Reasoning Model"
+          >
+            <Cpu className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="max-w-[130px] truncate hidden sm:inline">{activeModelObj.name}</span>
+            <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+          </button>
+
+          {showModelDropdown && (
+            <div className="absolute top-full left-0 mt-1.5 w-64 rounded-2xl border border-border bg-card shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 space-y-0.5">
+              <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                AI Coding Model
+              </div>
+              {AVAILABLE_CODE_MODELS.map((m) => {
+                const isSelected = m.id === selectedModel;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      onSelectModel?.(m.id);
+                      setShowModelDropdown(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs text-left transition cursor-pointer ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground font-semibold"
+                        : "hover:bg-muted text-foreground"
+                    }`}
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <span className="truncate leading-snug">{m.name}</span>
+                      <span
+                        className={`text-[10px] ${
+                          isSelected ? "text-primary-foreground/80" : "text-muted-foreground"
+                        }`}
+                      >
+                        {m.provider} • {m.badge}
+                      </span>
+                    </div>
+                    {isSelected && <Check className="w-3.5 h-3.5 shrink-0 ml-2" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── CENTER: Segmented View Switcher ─── */}
