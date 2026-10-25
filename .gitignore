@@ -53,3 +53,14 @@ scratch/
 **/.agents/
 .agent
 .agents
+
+# Python virtual environment & local backups
+.venv/
+**/.venv/
+venv/
+**/venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+global_python_backup.txt

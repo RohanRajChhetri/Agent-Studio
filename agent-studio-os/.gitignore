@@ -72,3 +72,9 @@ scratch/
 **/.agents/
 .agent
 .agents
+
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.pyc

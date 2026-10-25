@@ -86,6 +86,9 @@ import { CodeSearchReplace } from "@/components/code/code-search-replace";
 import { CodeEditorView } from "@/components/code/code-editor-view";
 import { CodeStatusBar } from "@/components/code/code-status-bar";
 import { CodeDiffModal, type FileDiffItem } from "@/components/code/code-diff-modal";
+import { CodeHeader } from "@/components/code/code-header";
+import { CodeSidebar } from "@/components/code/code-sidebar";
+import { CodeChatPanel } from "@/components/code/code-chat-panel";
 import {
   ProjectTemplatesModal,
   type ProjectTemplateType,
@@ -220,12 +223,21 @@ function CodePageContent() {
     },
   ]);
 
-  // File Tree State
+  // File Tree & Sidebar State
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [showFileExplorer, setShowFileExplorer] = useState<boolean>(true);
   const [fileTree, setFileTree] = useState<FileTreeNode[]>([]);
   const [isLoadingTree, setIsLoadingTree] = useState<boolean>(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [fileFilterQuery, setFileFilterQuery] = useState<string>("");
+
+  // New Session Handler: resets conversation prompt context without deleting project workspace files
+  const handleNewSession = useCallback(() => {
+    setMessages([]);
+    setPrompt("");
+    toast.success(`Started new session for "${selectedProject}"`);
+    playTaskStartedSound();
+  }, [selectedProject, setMessages]);
 
   // Modals
   const [showNewFileDialog, setShowNewFileDialog] = useState<boolean>(false);
@@ -906,6 +918,29 @@ function CodePageContent() {
     }
   };
 
+  const handleDeleteFileDirect = async (relPath: string) => {
+    if (!confirm(`Are you sure you want to delete "${relPath}"?`)) return;
+    try {
+      const cleanRel = relPath.startsWith(projectBasePath)
+        ? relPath.slice(projectBasePath.length).replace(/^[/\\]+/, "")
+        : relPath.replace(/^[/\\]+/, "");
+      const targetPath = `${projectBasePath}/${cleanRel}`;
+      const res = await fetch(`/api/filesystem?path=${encodeURIComponent(targetPath)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        toast.success(`Deleted file "${cleanRel}"`);
+        handleCloseTab(cleanRel);
+        loadProjectTree();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to delete");
+      }
+    } catch {
+      toast.error("Network error deleting item");
+    }
+  };
+
   // 15. Rename File or Folder
   const openRenameDialog = (relPath: string, isFolder: boolean, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1431,615 +1466,65 @@ function CodePageContent() {
         className="hidden"
       />
 
+      {/* ─── UNIFIED SLEEK TOP HEADER ─── */}
+      <CodeHeader
+        selectedProject={selectedProject}
+        projects={projects}
+        onSelectProject={handleSelectProject}
+        onNewSession={handleNewSession}
+        onNewProject={() => setShowNewProjectModal(true)}
+        onDeleteProject={() => setShowDeleteProjectModal(true)}
+        activeArtifactTab={activeArtifactTab}
+        onChangeArtifactTab={setActiveArtifactTab}
+        activeFilePath={currentFilePath}
+        isDirty={activeTab?.isDirty}
+        isSaving={isSaving}
+        onSaveFile={handleSaveToProject}
+        onReloadPreview={buildProjectPreview}
+        onFormatCode={handleFormatCode}
+        onCopyCode={() => {
+          navigator.clipboard.writeText(code);
+          toast.success("Code copied to clipboard");
+        }}
+        onToggleSearch={() => setIsSearchOpen((prev) => !prev)}
+        previewViewport={previewViewport}
+        onChangePreviewViewport={setPreviewViewport}
+        isGenerating={isGenerating}
+      />
+
+      {/* ─── 3-PANEL DEV STUDIO BODY ─── */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* ─── LEFT PANEL: Chat Assistant + File Explorer ─── */}
-        <div
-          className={`flex flex-col min-h-0 border-r border-[var(--border)] bg-[var(--card)] transition-all duration-300 ${
-            artifactExpanded ? "w-0 overflow-hidden" : "w-full lg:w-[380px] xl:w-[440px] shrink-0 min-w-0"
-          }`}
-        >
-          {/* Left Panel Top Header */}
-          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[var(--border)] shrink-0 bg-[var(--card)]">
-            <div className="flex items-center gap-2 min-w-0">
-              {/* Project Workspace Selector */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowProjectDropdown((prev) => !prev)}
-                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-[var(--muted)]/70 hover:bg-[var(--muted)] text-[12.5px] font-semibold text-[var(--foreground)] transition cursor-pointer border border-[var(--border)]"
-                >
-                  <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="truncate max-w-[140px]">{selectedProject}</span>
-                  <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)]" />
-                </button>
+        {/* Panel 1: Collapsible File Explorer */}
+        <CodeSidebar
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen((prev) => !prev)}
+          fileTree={fileTree}
+          activeFilePath={currentFilePath}
+          onSelectFile={(node) => openFileInTab(node.path)}
+          onNewFile={() => {
+            setNewFilePathInput("");
+            setShowNewFileDialog(true);
+          }}
+          onNewFolder={() => {
+            setNewFolderPathInput("");
+            setShowNewFolderDialog(true);
+          }}
+          onDeleteFile={(path) => handleDeleteFileDirect(path)}
+        />
 
-                {/* Project Dropdown */}
-                <AnimatePresence>
-                  {showProjectDropdown && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                      transition={{ duration: 0.12 }}
-                      className="absolute left-0 top-full mt-1.5 z-50 w-72 rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-2 space-y-1"
-                    >
-                      <div className="px-2 py-1 flex items-center justify-between">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                          Workspaces
-                        </span>
-                        <span className="text-[11px] text-[var(--muted-foreground)] font-mono">{projects.length} total</span>
-                      </div>
+        {/* Panel 2: Focused AI Conversation Studio */}
+        <CodeChatPanel
+          messages={messages}
+          prompt={prompt}
+          onChangePrompt={setPrompt}
+          onSubmit={handleGenerate}
+          isGenerating={isGenerating}
+          selectedProject={selectedProject}
+          onPreviewFile={(path) => openFileInTab(path)}
+        />
 
-                      {/* Project Search */}
-                      <div className="px-1 pb-1">
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[var(--background)] border border-[var(--border)] text-[12px]">
-                          <Search className="w-3 h-3 text-[var(--muted-foreground)]" />
-                          <input
-                            type="text"
-                            value={projectSearchQuery}
-                            onChange={(e) => setProjectSearchQuery(e.target.value)}
-                            placeholder="Filter workspaces..."
-                            className="w-full bg-transparent outline-none text-[11.5px]"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Projects List */}
-                      <div className="max-h-56 overflow-y-auto space-y-0.5 scrollbar-thin">
-                        {projects
-                          .filter((p) => p.name.toLowerCase().includes(projectSearchQuery.toLowerCase()))
-                          .map((proj) => (
-                            <button
-                              key={proj.name}
-                              onClick={() => handleSelectProject(proj.name)}
-                              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-[12px] transition cursor-pointer ${
-                                selectedProject === proj.name
-                                  ? "bg-[var(--primary)]/10 text-[var(--primary)] font-semibold"
-                                  : "hover:bg-[var(--muted)] text-[var(--foreground)]"
-                              }`}
-                            >
-                              <span className="flex items-center gap-2 truncate">
-                                <Folder className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                <span className="truncate">{proj.name}</span>
-                              </span>
-                              <span className="text-[10px] text-[var(--muted-foreground)] font-mono">
-                                {proj.fileCount} files
-                              </span>
-                            </button>
-                          ))}
-                      </div>
-
-                      <div className="border-t border-[var(--border)] pt-1 mt-1 space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowProjectDropdown(false);
-                            setShowNewProjectModal(true);
-                          }}
-                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-[12px] text-[var(--primary)] font-medium hover:bg-[var(--primary)]/5 transition cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>New Workspace (with Templates)</span>
-                        </button>
-                        {selectedProject !== "default-project" && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowProjectDropdown(false);
-                              setShowDeleteProjectModal(true);
-                            }}
-                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-[12px] text-red-500 font-medium hover:bg-red-500/5 transition cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Delete &quot;{selectedProject}&quot;</span>
-                          </button>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Export ZIP Button */}
-              <button
-                type="button"
-                onClick={handleExportZip}
-                className="p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition cursor-pointer"
-                title="Download entire project as ZIP"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {/* Toggle File Explorer */}
-              <button
-                type="button"
-                onClick={() => setShowFileExplorer((prev) => !prev)}
-                className="p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition cursor-pointer"
-                title="Toggle file explorer"
-              >
-                {showFileExplorer ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0 flex overflow-hidden">
-            {/* File Explorer Sidebar */}
-            <AnimatePresence>
-              {showFileExplorer && (
-                <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 190, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.18 }}
-                  className="border-r border-[var(--border)] bg-[var(--card)] flex flex-col min-h-0 overflow-hidden shrink-0"
-                >
-                  {/* Explorer Header */}
-                  <div className="p-2 border-b border-[var(--border)] space-y-1.5 shrink-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                        Files ({flatFileList.length})
-                      </span>
-                      <div className="flex items-center gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewFilePathInput("");
-                            setShowNewFileDialog(true);
-                          }}
-                          className="p-1 text-[var(--muted-foreground)] hover:text-blue-500 rounded transition cursor-pointer"
-                          title="New file"
-                        >
-                          <FilePlus className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewFolderPathInput("");
-                            setShowNewFolderDialog(true);
-                          }}
-                          className="p-1 text-[var(--muted-foreground)] hover:text-amber-500 rounded transition cursor-pointer"
-                          title="New folder"
-                        >
-                          <FolderPlus className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => fileUploadInputRef.current?.click()}
-                          className="p-1 text-[var(--muted-foreground)] hover:text-emerald-500 rounded transition cursor-pointer"
-                          title="Upload files"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={loadProjectTree}
-                          disabled={isLoadingTree}
-                          className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded transition cursor-pointer"
-                          title="Refresh tree"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTree ? "animate-spin" : ""}`} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Quick File Filter */}
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[var(--background)] border border-[var(--border)] text-[11px]">
-                      <Search className="w-3 h-3 text-[var(--muted-foreground)] shrink-0" />
-                      <input
-                        type="text"
-                        value={fileFilterQuery}
-                        onChange={(e) => setFileFilterQuery(e.target.value)}
-                        placeholder="Search files..."
-                        className="w-full bg-transparent outline-none text-[11px]"
-                      />
-                      {fileFilterQuery && (
-                        <button onClick={() => setFileFilterQuery("")} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* File Tree Items */}
-                  <div className="flex-1 overflow-y-auto p-1 scrollbar-thin">
-                    {isLoadingTree && fileTree.length === 0 ? (
-                      <div className="p-4 text-center text-[12px] text-[var(--muted-foreground)] flex items-center justify-center gap-2">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Loading files...</span>
-                      </div>
-                    ) : filteredTree.length > 0 ? (
-                      filteredTree.map((node) => renderTreeNode(node, 0))
-                    ) : (
-                      <div className="p-4 text-center text-[12px] text-[var(--muted-foreground)] space-y-2">
-                        <Folder className="w-6 h-6 mx-auto opacity-30 text-amber-500" />
-                        <p className="font-medium text-[var(--foreground)] text-[12px]">
-                          {fileFilterQuery ? "No matching files" : "Empty project"}
-                        </p>
-                        <p className="text-[11px]">
-                          {fileFilterQuery ? "Try a different search term" : "Ask AI to generate files or create one."}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Chat Assistant Section */}
-            <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-[var(--background)] overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 scrollbar-thin">
-                {messages.length === 0 && (
-                  <div className="pt-10 pb-6 text-center space-y-4 max-w-sm mx-auto">
-                    <div className="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-tr from-amber-500/20 to-orange-500/20 flex items-center justify-center text-amber-500 shadow-lg shadow-amber-500/10">
-                      <Sparkles className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h2 className="text-[15px] font-semibold text-[var(--foreground)]">
-                        Autonomous Project Builder
-                      </h2>
-                      <p className="text-[12.5px] text-[var(--muted-foreground)] mt-1 leading-relaxed">
-                        Ask the AI to build complete multi-file applications in{" "}
-                        <span className="font-mono text-[var(--primary)] font-medium text-[11.5px]">{selectedProject}</span>.
-                      </p>
-                    </div>
-
-                    {/* Quick Starter Suggestions */}
-                    <div className="space-y-2 pt-2">
-                      {[
-                        { icon: "⚡", title: "Build a Weather Forecast app with interactive charts" },
-                        { icon: "📊", title: "Create a modern Analytics Dashboard with simulated metrics" },
-                        { icon: "🎮", title: "Build a retro Brick Breaker Arcade game on HTML5 Canvas" },
-                      ].map((item, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setPrompt(item.title)}
-                          className="w-full flex items-center gap-2.5 p-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/40 text-left text-[12.5px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition cursor-pointer"
-                        >
-                          <span className="text-base shrink-0">{item.icon}</span>
-                          <span className="leading-snug">{item.title}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Conversation Messages */}
-                {messages.map((msg) => (
-                  <div key={msg.id} className="min-w-0 max-w-full">
-                    {msg.role === "user" ? (
-                      <div className="flex justify-end">
-                        <div className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-br-sm bg-[var(--primary)] text-white text-[13px] leading-relaxed break-words">
-                          <div className="whitespace-pre-wrap">{msg.content}</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="text-[13px] leading-relaxed text-[var(--foreground)] break-words">
-                          <MarkdownRenderer content={msg.content} />
-                        </div>
-
-                        {/* Created Files Card */}
-                        {msg.createdFiles && msg.createdFiles.length > 0 && (
-                          <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-2">
-                            <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--foreground)]">
-                              <Layers className="w-3.5 h-3.5 text-[var(--primary)]" />
-                              <span>{msg.createdFiles.length} file(s) generated</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {msg.createdFiles.map((f, idx) => (
-                                <button
-                                  key={idx}
-                                  onClick={() => openFileInTab(f.path)}
-                                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[var(--muted)] text-[11.5px] font-mono hover:bg-[var(--primary)]/10 hover:text-[var(--primary)] transition cursor-pointer"
-                                  title={`Open ${f.path}`}
-                                >
-                                  <FileCode className="w-3 h-3 text-[var(--primary)]" />
-                                  <span className="truncate">{f.path}</span>
-                                </button>
-                              ))}
-                            </div>
-                            {msg.createdFiles.some((f) => f.path.endsWith(".html")) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveArtifactTab("preview");
-                                  buildProjectPreview();
-                                }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11.5px] font-medium border border-emerald-500/20 transition cursor-pointer mt-1"
-                              >
-                                <Play className="w-3 h-3" />
-                                <span>Preview Live Build</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {isGenerating && (
-                  <div className="flex items-center gap-2.5 py-2 text-[12px] text-[var(--muted-foreground)]">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--primary)]" />
-                    <span>AI agent is synthesizing and generating project files...</span>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Chat Bottom Input & Quick Chips */}
-              <div className="border-t border-[var(--border)] bg-[var(--card)] p-3 space-y-2 shrink-0">
-                {/* Quick Action Prompt Chips */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                  {PROMPT_CHIPS.map((chip, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleGenerate(undefined, chip.prompt)}
-                      disabled={isGenerating}
-                      className="px-2 py-0.5 rounded-full bg-[var(--muted)] hover:bg-[var(--primary)]/10 hover:text-[var(--primary)] text-[11px] font-medium whitespace-nowrap transition cursor-pointer shrink-0 disabled:opacity-40"
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
-
-                {targetFolderScope && (
-                  <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-[var(--primary)]/10 text-[11px] text-[var(--primary)]">
-                    <span className="flex items-center gap-1.5 truncate">
-                      <Target className="w-3 h-3 shrink-0" />
-                      <span>Scoped to: <strong>{targetFolderScope}/</strong></span>
-                    </span>
-                    <button onClick={() => setTargetFolderScope("")} className="hover:text-[var(--foreground)]">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-
-                <form onSubmit={handleGenerate} className="relative">
-                  <div className="relative flex items-end bg-[var(--background)] border border-[var(--border)] rounded-2xl focus-within:border-[var(--primary)]/50 focus-within:shadow-sm transition">
-                    <textarea
-                      ref={promptInputRef}
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleGenerate(e as any);
-                        }
-                      }}
-                      placeholder={targetFolderScope ? `Add files to ${targetFolderScope}/...` : "Describe what you want to build..."}
-                      disabled={isGenerating}
-                      rows={1}
-                      className="flex-1 bg-transparent px-3 py-2.5 text-[13px] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none resize-none min-h-[42px] max-h-[120px] leading-relaxed"
-                    />
-                    <div className="px-2 pb-2">
-                      <button
-                        type="submit"
-                        disabled={isGenerating || !prompt.trim()}
-                        className="p-2 rounded-xl bg-[var(--primary)] text-white hover:opacity-90 disabled:opacity-30 transition cursor-pointer shrink-0 flex items-center justify-center"
-                      >
-                        {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ─── RIGHT PANEL: Multi-Tab Editor + Live Sandboxed Preview ─── */}
-        <div
-          className={`flex flex-col min-h-0 bg-[var(--card)] transition-all duration-300 relative ${
-            artifactExpanded ? "flex-1" : "hidden lg:flex flex-1"
-          }`}
-        >
-          {/* Top Artifact Header Bar */}
-          <div className="flex items-center justify-between gap-1.5 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--card)] shrink-0 select-none overflow-x-auto scrollbar-none min-w-0">
-            {/* Left: View Tabs (Code, Split, Preview) */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="flex items-center bg-[var(--muted)] p-0.5 rounded-lg text-[12px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveArtifactTab("code");
-                    setIsDiffMode(false);
-                  }}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
-                    activeArtifactTab === "code" && !isDiffMode
-                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-xs"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  }`}
-                  title="Code Editor"
-                >
-                  <Code className="w-3.5 h-3.5" />
-                  <span>Editor</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveArtifactTab("split");
-                    setIsDiffMode(false);
-                    buildProjectPreview();
-                  }}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
-                    activeArtifactTab === "split"
-                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-xs"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  }`}
-                  title="Side-by-side Editor & Live Preview"
-                >
-                  <Columns2 className="w-3.5 h-3.5" />
-                  <span>Split</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveArtifactTab("preview");
-                    setIsDiffMode(false);
-                    buildProjectPreview();
-                  }}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
-                    activeArtifactTab === "preview"
-                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-xs"
-                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  }`}
-                  title="Full Live Preview"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Preview</span>
-                </button>
-              </div>
-
-              {/* Diff / Changes Mode Toggle */}
-              <button
-                type="button"
-                onClick={() => setIsDiffMode((prev) => !prev)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[12px] font-medium transition cursor-pointer border shrink-0 ${
-                  isDiffMode
-                    ? "bg-[var(--primary)] text-white border-[var(--primary)] shadow-xs"
-                    : "border-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]"
-                }`}
-                title="View local differences"
-              >
-                <ArrowLeftRight className="w-3.5 h-3.5" />
-                <span>Diff</span>
-              </button>
-            </div>
-
-            {/* Right: Actions */}
-            <div className="flex items-center gap-1 shrink-0 ml-auto">
-              {activeArtifactTab !== "preview" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchOpen((prev) => !prev)}
-                    className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] rounded-lg transition cursor-pointer shrink-0"
-                    title="Find & Replace (Ctrl+F)"
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleFormatCode}
-                    className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] rounded-lg transition cursor-pointer shrink-0"
-                    title="Format Code (Shift+Alt+F)"
-                  >
-                    <AlignLeft className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(code);
-                      toast.success("Code copied to clipboard");
-                    }}
-                    className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] rounded-lg transition cursor-pointer shrink-0"
-                    title="Copy code"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSaveToProject}
-                    disabled={isSaving}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[var(--primary)] text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-40 transition cursor-pointer shrink-0"
-                    title="Save active file (Ctrl+S)"
-                  >
-                    {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    <span className="hidden sm:inline">Save</span>
-                  </button>
-                </>
-              )}
-
-              {(activeArtifactTab === "preview" || activeArtifactTab === "split") && (
-                <>
-                  {/* Viewport Switcher */}
-                  <div className="flex items-center bg-[var(--muted)] p-0.5 rounded-lg border border-[var(--border)] shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewViewport("desktop")}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        previewViewport === "desktop" ? "bg-[var(--card)] text-[var(--foreground)] shadow-xs" : "text-[var(--muted-foreground)]"
-                      }`}
-                      title="Desktop (100%)"
-                    >
-                      <Monitor className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewViewport("tablet")}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        previewViewport === "tablet" ? "bg-[var(--card)] text-[var(--foreground)] shadow-xs" : "text-[var(--muted-foreground)]"
-                      }`}
-                      title="Tablet (768px)"
-                    >
-                      <Tablet className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewViewport("mobile")}
-                      className={`p-1 rounded transition cursor-pointer ${
-                        previewViewport === "mobile" ? "bg-[var(--card)] text-[var(--foreground)] shadow-xs" : "text-[var(--muted-foreground)]"
-                      }`}
-                      title="Mobile (375px)"
-                    >
-                      <Smartphone className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Dark Mode toggle for preview */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPreviewDarkMode((prev) => !prev);
-                      setTimeout(buildProjectPreview, 50);
-                    }}
-                    className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] rounded-lg transition cursor-pointer shrink-0"
-                    title="Toggle preview dark/light theme"
-                  >
-                    {previewDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={buildProjectPreview}
-                    className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] rounded-lg transition cursor-pointer shrink-0"
-                    title="Reload preview"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleOpenPreviewNewTab}
-                    className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] rounded-lg transition cursor-pointer shrink-0"
-                    title="Open preview in new browser tab"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-
-              <div className="w-px h-4 bg-[var(--border)] mx-0.5 shrink-0" />
-
-              <button
-                type="button"
-                onClick={() => setArtifactExpanded((prev) => !prev)}
-                className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] rounded-lg transition cursor-pointer shrink-0"
-                title={artifactExpanded ? "Show chat panel" : "Maximize editor"}
-              >
-                {artifactExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
+        {/* Panel 3: Editor & Sandboxed Live Preview */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-[var(--card)] relative">
           {/* ─── TABS BAR (when in Editor or Split mode) ─── */}
           {activeArtifactTab !== "preview" && !isDiffMode && (
             <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--muted)]/40 px-2 py-0 select-none overflow-x-auto scrollbar-none shrink-0">
