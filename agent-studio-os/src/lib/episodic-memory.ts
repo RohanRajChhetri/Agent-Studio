@@ -40,15 +40,15 @@ updatedAt: "${new Date().toISOString()}"
 
 # Episodic Memory: ${normalized.toUpperCase()}
 
-## 🎯 User Preferences & Directives
+## User Preferences & Directives
 - Deliver concise, highly-structured executive responses with code and tables.
 - Provide clear, actionable, expert guidance without generic conversational filler, robotic greetings, or forced tags.
 
-## 🧠 Project Context & Rules
+## Project Context & Rules
 - Agent Studio OS uses Omniroute as primary brain and SQLite for local state.
 - All code deliverables must be production-ready and error-free.
 
-## 🔄 Self-Reflection & Critique Learnings
+## Self-Reflection & Critique Learnings
 - *System initialized*: Ready to record iteration improvements and critique feedback.
 `;
     await fs.writeFile(filePath, initialContent, "utf-8");
@@ -70,13 +70,18 @@ export async function appendAgentLearning(
   const timestamp = new Date().toISOString().split("T")[0];
   const newEntry = `\n- **[${timestamp} - ${category}]**: ${learning.trim()}`;
 
-  if (current.includes("## 🔄 Self-Reflection & Critique Learnings")) {
+  if (current.includes("## Self-Reflection & Critique Learnings")) {
     current = current.replace(
-      "## 🔄 Self-Reflection & Critique Learnings",
-      `## 🔄 Self-Reflection & Critique Learnings${newEntry}`
+      "## Self-Reflection & Critique Learnings",
+      `## Self-Reflection & Critique Learnings${newEntry}`
+    );
+  } else if (/##\s*[^\w\s]*\s*Self-Reflection & Critique Learnings/.test(current)) {
+    current = current.replace(
+      /##\s*[^\w\s]*\s*Self-Reflection & Critique Learnings/,
+      `## Self-Reflection & Critique Learnings${newEntry}`
     );
   } else {
-    current += `\n\n## 🔄 Self-Reflection & Critique Learnings${newEntry}\n`;
+    current += `\n\n## Self-Reflection & Critique Learnings${newEntry}\n`;
   }
 
   // Update frontmatter updatedAt

@@ -49,7 +49,7 @@ export interface TaskItem {
   title: string;
   description: string;
   status: "backlog" | "in_progress" | "review" | "done";
-  priority: "low" | "medium" | "high";
+  priority: "low" | "medium" | "high" | "urgent";
   position: number;
   dueDate: string | null;
   agentId: string | null;

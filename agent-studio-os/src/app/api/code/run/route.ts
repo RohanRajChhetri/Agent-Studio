@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { projectName = "default-project", filePath, command: customCommand } = body;
+    const { projectName = "workspace", filePath, command: customCommand } = body;
 
     if (!filePath || typeof filePath !== "string") {
       return NextResponse.json({ error: "filePath is required" }, { status: 400 });

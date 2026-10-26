@@ -2,7 +2,19 @@
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageSquare, Users, ArrowRight } from "lucide-react";
+import {
+  MessageSquare,
+  Users,
+  ArrowRight,
+  Share2,
+  Zap,
+  Brain,
+  CheckCircle2,
+  HelpCircle,
+  AlertCircle,
+  Sparkles,
+} from "lucide-react";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 
 export interface ConferenceEvent {
   id: string;
@@ -35,17 +47,27 @@ export const getEventColor = (t: string) =>
     phase: "border-l-violet-500 bg-violet-500/5",
   }[t] || "border-l-border");
 
-export const getEventIcon = (t: string) =>
-  ({
-    delegation: "📤",
-    execution: "⚡",
-    synthesis: "🧠",
-    speaking: "💬",
-    complete: "✅",
-    thinking: "🤔",
-    error: "❌",
-    phase: "🔷",
-  }[t] || "•");
+export const renderEventIcon = (t: string) => {
+  switch (t) {
+    case "delegation":
+      return <Share2 className="w-3.5 h-3.5 text-amber-500" />;
+    case "execution":
+      return <Zap className="w-3.5 h-3.5 text-blue-500" />;
+    case "synthesis":
+      return <Brain className="w-3.5 h-3.5 text-purple-500" />;
+    case "speaking":
+      return <MessageSquare className="w-3.5 h-3.5 text-primary" />;
+    case "complete":
+      return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />;
+    case "thinking":
+      return <HelpCircle className="w-3.5 h-3.5 text-slate-400" />;
+    case "error":
+      return <AlertCircle className="w-3.5 h-3.5 text-red-500" />;
+    case "phase":
+    default:
+      return <Sparkles className="w-3.5 h-3.5 text-violet-500" />;
+  }
+};
 
 export function ConferenceLiveStream({
   events,
@@ -55,13 +77,13 @@ export function ConferenceLiveStream({
   onToggleTranscript,
 }: ConferenceLiveStreamProps) {
   return (
-    <div className="notion-card p-5 flex flex-col min-h-0 border border-border/80 shadow-sm">
+    <div className="rounded-lg p-5 flex flex-col min-h-0 border border-border bg-card shadow-2xs">
       <div className="flex items-center justify-between mb-3 border-b border-border/50 pb-2.5">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 font-mono">
           <MessageSquare className="w-3.5 h-3.5 text-primary" />
           <span>Live Deliberation Stream</span>
           {events.length > 0 && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary border border-border font-mono">
+            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-secondary border border-border font-mono">
               {events.length} events
             </span>
           )}
@@ -87,7 +109,7 @@ export function ConferenceLiveStream({
       >
         {events.length === 0 && !isExecuting && (
           <div className="text-center py-20 text-muted-foreground">
-            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-secondary/60 border border-border flex items-center justify-center">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-lg bg-secondary/60 border border-border flex items-center justify-center">
               <Users className="w-6 h-6 opacity-30 text-primary" />
             </div>
             <p className="text-xs font-medium text-foreground">A2A Council Chamber Ready</p>
@@ -98,11 +120,11 @@ export function ConferenceLiveStream({
         )}
 
         {showTranscript ? (
-          <div className="space-y-1 font-mono text-[11px] p-2 bg-secondary/30 rounded-lg border border-border">
+          <div className="space-y-1 font-mono text-[11px] p-2 bg-secondary/30 rounded-md border border-border">
             {events.map((evt, i) => (
               <div
                 key={evt.id}
-                className="flex gap-2 py-0.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded px-1 transition"
+                className="flex gap-2 py-0.5 text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-sm px-1 transition"
               >
                 <span className="w-5 text-right shrink-0 opacity-40">{i + 1}</span>
                 <span className="w-16 shrink-0 font-medium">
@@ -145,17 +167,17 @@ export function ConferenceLiveStream({
                 key={evt.id}
                 initial={{ opacity: 0, x: -12 }}
                 animate={{ opacity: 1, x: 0 }}
-                className={`flex gap-2.5 p-2.5 rounded-xl border-l-2 ${getEventColor(evt.type)}`}
+                className={`flex gap-2.5 p-2.5 rounded-md border-l-2 ${getEventColor(evt.type)}`}
               >
-                <span className="text-sm shrink-0 mt-0.5">{getEventIcon(evt.type)}</span>
+                <span className="shrink-0 mt-0.5">{renderEventIcon(evt.type)}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                    <span>{evt.fromAvatar}</span>
+                    <AgentAvatar avatar={evt.fromAvatar} className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span className="font-bold text-foreground">{evt.fromAgent}</span>
                     {evt.toAgent && (
                       <>
                         <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                        <span>{evt.toAvatar}</span>
+                        <AgentAvatar avatar={evt.toAvatar} className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span className="font-bold text-foreground">{evt.toAgent}</span>
                       </>
                     )}

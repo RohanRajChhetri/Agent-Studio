@@ -7,6 +7,7 @@ import {
   createVaultFolder,
   renameVaultPath,
   deleteVaultFolder,
+  deleteVaultBatch,
   ensureVaultExists,
   getVaultPath,
   countVaultNotes,
@@ -107,6 +108,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    // Batch delete multiple notes and folders
+    if (action === "batch_delete") {
+      const items = body.items || body.paths;
+      if (!Array.isArray(items) || items.length === 0) {
+        return NextResponse.json({ error: "items array is required" }, { status: 400 });
+      }
+      const formattedItems = items.map((item: any) =>
+        typeof item === "string" ? { path: item, isFolder: false } : item
+      );
+      const res = await deleteVaultBatch(formattedItems);
+      return NextResponse.json({ success: true, ...res });
+    }
+
     if (!filePath || content === undefined) {
       return NextResponse.json(
         { error: "Path and content are required" },
@@ -127,13 +141,43 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const userId = await getAuthUserId();
+    const effectiveUserId = userId || PRIMARY_LEGACY_USER_ID;
+    if (!effectiveUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const filePath = searchParams.get("path");
     const isFolder = searchParams.get("isFolder") === "true";
 
+    // Support JSON body for batch deletion
+    let body: any = null;
+    try {
+      body = await request.json();
+    } catch {
+      // Body may be empty if standard DELETE query
+    }
+
+    if (body?.items && Array.isArray(body.items)) {
+      const formatted = body.items.map((i: any) =>
+        typeof i === "string" ? { path: i, isFolder: false } : i
+      );
+      const res = await deleteVaultBatch(formatted);
+      return NextResponse.json({ success: true, ...res });
+    }
+
+    if (body?.paths && Array.isArray(body.paths)) {
+      const formatted = body.paths.map((p: any) =>
+        typeof p === "string" ? { path: p, isFolder: false } : p
+      );
+      const res = await deleteVaultBatch(formatted);
+      return NextResponse.json({ success: true, ...res });
+    }
+
     if (!filePath) {
       return NextResponse.json(
-        { error: "Path is required" },
+        { error: "Path or items array is required" },
         { status: 400 }
       );
     }

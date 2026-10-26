@@ -1,4 +1,4 @@
-import type { DAGNode, DAGEdge, DAGNodeType, DAGWorkflow } from "@/types/workflow-dag";
+import type { DAGNode, DAGEdge, DAGNodeType } from "@/types/workflow-dag";
 
 export interface DAGValidationResult {
   isValid: boolean;

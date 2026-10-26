@@ -24,11 +24,13 @@ export function timeAgo(date: string | Date): string {
   return d.toLocaleDateString();
 }
 
-/** Generate a random emoji for agent avatars */
-export function randomAgentEmoji(): string {
-  const emojis = ["🤖", "🧠", "🦾", "🎯", "🔮", "⚡", "🌟", "🎨", "🔬", "📊", "🛡️", "🚀", "💡", "🔧", "📝", "🎭", "🦊", "🐙", "🦅", "🐋"];
-  return emojis[Math.floor(Math.random() * emojis.length)];
+/** Generate a random icon identifier for agent avatars */
+export function randomAgentIcon(): string {
+  const icons = ["bot", "brain", "code", "zap", "shield", "rocket", "microscope", "palette", "chart", "search", "terminal", "crown", "target", "sparkles", "file-text", "building", "scale", "lock", "compass", "flask"];
+  return icons[Math.floor(Math.random() * icons.length)];
 }
+export const randomAgentEmoji = randomAgentIcon;
+
 
 /** Slugify a string for use as a profile name */
 export function slugify(text: string): string {

@@ -208,6 +208,7 @@ export async function PUT(request: Request) {
     const body = await request.json();
     const {
       id,
+      ids,
       status,
       position,
       title,
@@ -218,6 +219,32 @@ export async function PUT(request: Request) {
       result,
       subtasks,
     } = body;
+
+    // Batch update support
+    if (Array.isArray(ids) && ids.length > 0) {
+      const updateData: Record<string, unknown> = {};
+      if (status !== undefined) updateData.status = status;
+      if (priority !== undefined) updateData.priority = priority;
+      if (agentId !== undefined) updateData.agentId = agentId || null;
+
+      await prisma.task.updateMany({
+        where: await getUserScopedWhere({ id: { in: ids } }),
+        data: updateData,
+      });
+
+      if (status) {
+        const userId = await getAuthUserId();
+        await prisma.activityLog.create({
+          data: {
+            type: "task_moved",
+            message: `Batch moved ${ids.length} tasks to ${status.replace("_", " ")}`,
+            userId,
+          },
+        });
+      }
+
+      return NextResponse.json({ success: true, count: ids.length });
+    }
 
     if (!id) {
       return NextResponse.json({ error: "Task ID is required" }, { status: 400 });
@@ -303,7 +330,17 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
+    const ids = searchParams.get("ids");
     const status = searchParams.get("status");
+
+    if (ids || (id && id.includes(","))) {
+      const raw = ids || id;
+      const idList = raw!.split(",").map((s) => s.trim()).filter(Boolean);
+      const deleted = await prisma.task.deleteMany({
+        where: await getUserScopedWhere({ id: { in: idList } }),
+      });
+      return NextResponse.json({ success: true, count: deleted.count });
+    }
 
     if (id) {
       await prisma.task.deleteMany({

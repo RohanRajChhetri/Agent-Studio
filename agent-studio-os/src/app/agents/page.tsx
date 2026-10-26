@@ -43,13 +43,14 @@ import {
   ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
+import { AgentAvatar, AGENT_ICON_PRESETS } from "@/components/ui/agent-avatar";
+
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
 import { TOOL_DEFINITIONS, INTEGRATION_DEFINITIONS } from "@/types";
 import { slugify } from "@/lib/utils";
 import { HermesTerminalModal } from "@/components/agents/hermes-terminal-modal";
 import { AgentHierarchyView } from "@/components/agents/agent-hierarchy-view";
-import { AgentPipelineBuilder } from "@/components/agents/agent-pipeline-builder";
 import { AgentPacksModal } from "@/components/agents/agent-packs-modal";
 
 const iconMap: Record<string, React.ElementType> = {
@@ -95,13 +96,13 @@ function AgentFormModal({
 }) {
   const isEditMode = !!editAgent;
   const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState("🤖");
+  const [avatar, setAvatar] = useState("bot");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [model, setModel] = useState("");
   const [description, setDescription] = useState("");
   const [role, setRole] = useState("specialist");
   const [department, setDepartment] = useState("Engineering");
-  const [reportsToId, setReportsToId] = useState<string>("" );
+  const [reportsToId, setReportsToId] = useState<string>("");
   const [selectedTools, setSelectedTools] = useState<string[]>(["terminal", "file", "web"]);
   const [selectedIntegrations, setSelectedIntegrations] = useState<string[]>([]);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -136,13 +137,13 @@ function AgentFormModal({
           setAvailableModels(Array.from(map.values()));
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [isOpen]);
 
   useEffect(() => {
     if (editAgent) {
       setName(editAgent.displayName || "");
-      setAvatar(editAgent.avatar || "🤖");
+      setAvatar(editAgent.avatar || "bot");
       setSystemPrompt(editAgent.systemPrompt || "");
       setModel(editAgent.model || "");
       setDescription(editAgent.description || "");
@@ -170,7 +171,7 @@ function AgentFormModal({
             setChannelConfigs(configs);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
 
       // Fetch whatsapp status
       fetch(`/api/integrations/whatsapp?agentId=${editAgent.id}`)
@@ -178,10 +179,10 @@ function AgentFormModal({
         .then((data) => {
           setWaState({ hasSession: Boolean(data.hasSession) });
         })
-        .catch(() => {});
+        .catch(() => { });
     } else {
       setName("");
-      setAvatar("🤖");
+      setAvatar("bot");
       setSystemPrompt("");
       setModel("");
       setDescription("");
@@ -213,7 +214,7 @@ function AgentFormModal({
           setWaState((prev) => ({ ...prev, qrDataUrl: undefined, hasSession: true }));
           toast.success("WhatsApp paired successfully!");
         }
-      } catch {}
+      } catch { }
     }, 2500);
     return () => clearInterval(timer);
   }, [waState.qrDataUrl, waState.hasSession, editAgent?.id]);
@@ -370,7 +371,7 @@ Operational Directives:
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action: "start_poller" }),
-              }).catch(() => {});
+              }).catch(() => { });
             }
           } catch (e) {
             console.error(`Failed to save integration for ${platform}:`, e);
@@ -393,7 +394,7 @@ Operational Directives:
                   enabled: false,
                 }),
               });
-            } catch {}
+            } catch { }
           }
         }
       }
@@ -409,8 +410,6 @@ Operational Directives:
   };
 
   if (!isOpen) return null;
-
-  const EMOJI_PRESETS = ["🤖", "🧠", "💻", "🔬", "⚡", "🎨", "👑", "🛡️", "🚀", "📝", "🔍", "🕵️"];
 
   return (
     <AnimatePresence>
@@ -448,30 +447,35 @@ Operational Directives:
 
           {/* Form */}
           <div className="space-y-4 py-4 max-h-[72vh] overflow-y-auto pr-1">
-            {/* Name & Emoji */}
+            {/* Name & Avatar Icon */}
             <div className="flex items-center gap-3">
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-                  className="w-10 h-10 rounded-lg border border-border bg-secondary/40 flex items-center justify-center text-xl hover:bg-secondary transition cursor-pointer"
-                  title="Choose emoji"
+                  className="w-10 h-10 rounded-lg border border-border bg-secondary/40 flex items-center justify-center text-primary hover:bg-secondary transition cursor-pointer"
+                  title="Choose avatar icon"
                 >
-                  {avatar}
+                  <AgentAvatar avatar={avatar} className="w-5 h-5 text-primary" />
                 </button>
                 {showAvatarPicker && (
-                  <div className="absolute top-12 left-0 z-50 p-2 rounded-lg border border-border bg-card shadow-lg grid grid-cols-6 gap-1 w-52">
-                    {EMOJI_PRESETS.map((e) => (
+                  <div className="absolute top-12 left-0 z-50 p-2 rounded-xl border border-border bg-card shadow-xl grid grid-cols-6 gap-1 w-64">
+                    {AGENT_ICON_PRESETS.map((preset) => (
                       <button
-                        key={e}
+                        key={preset.id}
                         type="button"
+                        title={preset.label}
                         onClick={() => {
-                          setAvatar(e);
+                          setAvatar(preset.id);
                           setShowAvatarPicker(false);
                         }}
-                        className="w-7 h-7 rounded flex items-center justify-center text-base hover:bg-muted cursor-pointer"
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition cursor-pointer ${
+                          avatar === preset.id
+                            ? "bg-primary/20 text-primary border border-primary/30"
+                            : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                        }`}
                       >
-                        {e}
+                        <preset.icon className="w-4 h-4" />
                       </button>
                     ))}
                   </div>
@@ -530,7 +534,7 @@ Operational Directives:
                   .filter((a) => !editAgent || a.id !== editAgent.id)
                   .map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.avatar} {a.displayName} ({a.role})
+                      {a.displayName} ({a.role})
                     </option>
                   ))}
               </select>
@@ -600,11 +604,10 @@ Operational Directives:
                           isSelected ? prev.filter((t) => t !== tool.id) : [...prev, tool.id]
                         )
                       }
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
-                        isSelected
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${isSelected
                           ? "bg-[#e6f3fe] border-[#0075de]/30 text-[#0075de]"
                           : "bg-card border-border text-muted-foreground hover:text-foreground"
-                      }`}
+                        }`}
                     >
                       {tool.label}
                     </button>
@@ -628,11 +631,10 @@ Operational Directives:
                           isSelected ? prev.filter((i) => i !== integ.id) : [...prev, integ.id]
                         )
                       }
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
-                        isSelected
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${isSelected
                           ? "bg-[#e6f3fe] border-[#0075de]/30 text-[#0075de] font-semibold"
                           : "bg-card border-border text-muted-foreground hover:text-foreground"
-                      }`}
+                        }`}
                     >
                       {integ.label}
                     </button>
@@ -1069,12 +1071,22 @@ function AgentRow({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 hover:bg-muted/40 transition-colors"
+      className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 hover:bg-muted/40 transition-colors"
     >
-      {/* Left: Avatar, Name, Status, Role, Dept */}
+      {/* Left: Avatar, Status Dot, Name, Role, Dept */}
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="w-9 h-9 rounded-lg bg-secondary/50 border border-border flex items-center justify-center text-base shrink-0">
-          {agent.avatar || "🤖"}
+        <div className="relative shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-secondary/50 border border-border flex items-center justify-center text-primary">
+            <AgentAvatar avatar={agent.avatar} className="w-4 h-4" />
+          </div>
+          <span
+            className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-card ${agent.status === "busy"
+                ? "bg-amber-500 animate-pulse"
+                : agent.status === "offline"
+                  ? "bg-muted-foreground/40"
+                  : "bg-emerald-500"
+              }`}
+          />
         </div>
 
         <div className="min-w-0 flex-1">
@@ -1084,21 +1096,20 @@ function AgentRow({
             </span>
 
             <span
-              className={`px-2 py-0.5 rounded-md text-[10px] font-medium border ${
-                agent.role === "orchestrator"
-                  ? "bg-[#e6f3fe] text-[#0075de] border-[#0075de]/20"
+              className={`px-2 py-0.5 rounded-sm text-[10px] font-mono font-medium border ${agent.role === "orchestrator"
+                  ? "bg-primary/10 text-primary border-primary/20"
                   : agent.role === "manager"
-                  ? "bg-secondary text-foreground border-border"
-                  : agent.role === "worker"
-                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                  : "bg-purple-500/10 text-purple-600 dark:text-purple-300 border-purple-500/20"
-              }`}
+                    ? "bg-secondary text-foreground border-border"
+                    : agent.role === "worker"
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                      : "bg-purple-500/10 text-purple-600 dark:text-purple-300 border-purple-500/20"
+                }`}
             >
               {agent.role || "specialist"}
             </span>
 
             {agent.department && (
-              <span className="hidden sm:inline-block px-2 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border text-[10px] font-medium">
+              <span className="hidden sm:inline-block px-2 py-0.5 rounded-sm bg-secondary text-muted-foreground border border-border text-[10px] font-mono font-medium">
                 {agent.department}
               </span>
             )}
@@ -1121,19 +1132,19 @@ function AgentRow({
       {/* Middle: Capabilities summary */}
       <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground shrink-0">
         {agent.model && (
-          <span className="font-mono text-[11px] bg-secondary/50 px-2 py-0.5 rounded border border-border/50 max-w-[120px] truncate">
+          <span className="font-mono text-[11px] bg-secondary/50 px-2 py-0.5 rounded-sm border border-border/50 max-w-[120px] truncate">
             {agent.model.split("/").pop()}
           </span>
         )}
 
         {enabledTools.length > 0 && (
-          <span className="text-[11px]">
+          <span className="text-[11px] font-mono text-muted-foreground">
             {enabledTools.length} {enabledTools.length === 1 ? "tool" : "tools"}
           </span>
         )}
 
         {enabledIntegrations.length > 0 && (
-          <span className="inline-flex items-center gap-1 text-[11px] text-[#0075de] bg-[#e6f3fe] px-2 py-0.5 rounded-full border border-[#0075de]/20">
+          <span className="inline-flex items-center gap-1 text-[11px] font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-sm border border-primary/20">
             <Radio className="w-2.5 h-2.5" />
             {enabledIntegrations.length} {enabledIntegrations.length === 1 ? "channel" : "channels"}
           </span>
@@ -1144,7 +1155,7 @@ function AgentRow({
       <div className="flex items-center gap-1.5 shrink-0 justify-end">
         <Link
           href={`/chat?agentId=${agent.id}`}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-secondary hover:bg-secondary/80 text-foreground border border-border transition cursor-pointer"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary hover:bg-muted-highlight text-foreground border border-border transition cursor-pointer"
           title="Chat with agent"
         >
           <MessageSquare className="w-3 h-3" />
@@ -1153,7 +1164,7 @@ function AgentRow({
 
         <button
           onClick={() => onOpenHermes(agent)}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary border border-border transition cursor-pointer"
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted-highlight border border-border transition cursor-pointer"
           title="Hermes Terminal"
         >
           <Terminal className="w-3.5 h-3.5" />
@@ -1161,7 +1172,7 @@ function AgentRow({
 
         <button
           onClick={() => onOpenMemories(agent)}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary border border-border transition cursor-pointer"
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted-highlight border border-border transition cursor-pointer"
           title="Knowledge & Memories"
         >
           <Brain className="w-3.5 h-3.5" />
@@ -1169,7 +1180,7 @@ function AgentRow({
 
         <button
           onClick={() => onEdit(agent)}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary border border-border transition cursor-pointer"
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted-highlight border border-border transition cursor-pointer"
           title="Edit agent & connections"
         >
           <Pencil className="w-3.5 h-3.5" />
@@ -1177,7 +1188,7 @@ function AgentRow({
 
         <button
           onClick={() => onDelete(agent)}
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-500/10 border border-border transition cursor-pointer"
+          className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-border transition cursor-pointer"
           title="Delete agent"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -1235,7 +1246,9 @@ function AgentMemoryModal({
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-border">
             <div className="flex items-center gap-2.5">
-              <span className="text-xl">{agent.avatar || "🤖"}</span>
+              <div className="w-8 h-8 rounded-lg bg-secondary/60 border border-border flex items-center justify-center text-primary">
+                <AgentAvatar avatar={agent.avatar} className="w-4 h-4" />
+              </div>
               <div>
                 <h2 className="text-sm font-semibold text-foreground">
                   {agent.displayName} Memory Vault
@@ -1257,17 +1270,15 @@ function AgentMemoryModal({
           <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border w-fit text-xs">
             <button
               onClick={() => setViewTab("directives")}
-              className={`px-3 py-1 rounded-md transition cursor-pointer ${
-                viewTab === "directives" ? "bg-card text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-3 py-1 rounded-md transition cursor-pointer ${viewTab === "directives" ? "bg-card text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               Learned Directives ({memoryItem?.extractedDirectives?.length || 0})
             </button>
             <button
               onClick={() => setViewTab("raw")}
-              className={`px-3 py-1 rounded-md transition cursor-pointer ${
-                viewTab === "raw" ? "bg-card text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-3 py-1 rounded-md transition cursor-pointer ${viewTab === "raw" ? "bg-card text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               Raw Vault Note
             </button>
@@ -1318,7 +1329,7 @@ export default function AgentsPage() {
   const [terminalAgent, setTerminalAgent] = useState<AgentProfile | null>(null);
   const [selectedMemoryAgent, setSelectedMemoryAgent] = useState<AgentProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"directory" | "hierarchy" | "pipeline">("directory");
+  const [viewMode, setViewMode] = useState<"directory" | "hierarchy">("directory");
   const [showPacksModal, setShowPacksModal] = useState(false);
 
   const fetchAgents = useCallback(async () => {
@@ -1341,7 +1352,11 @@ export default function AgentsPage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
-      if (tabParam === "pipeline" || tabParam === "hierarchy" || tabParam === "directory") {
+      if (tabParam === "pipeline") {
+        window.location.replace("/workflows?tab=pipeline");
+        return;
+      }
+      if (tabParam === "hierarchy" || tabParam === "directory") {
         setViewMode(tabParam);
       }
       if (params.get("new") === "true") {
@@ -1408,18 +1423,9 @@ export default function AgentsPage() {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-medium text-[#0075de] bg-[#e6f3fe] px-2.5 py-0.5 rounded-full border border-[#0075de]/20 inline-flex items-center gap-1.5">
-              <Bot className="w-3 h-3 text-[#0075de]" />
-              Autonomous Workforce
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {agents.length} Agents Configured
-            </span>
-          </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Agents</h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Directory and organizational hierarchy of autonomous personas
+            Directory and organizational hierarchy of specialist personas
           </p>
         </div>
 
@@ -1428,27 +1434,17 @@ export default function AgentsPage() {
           <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border text-xs">
             <button
               onClick={() => setViewMode("directory")}
-              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
-                viewMode === "directory" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${viewMode === "directory" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               Directory
             </button>
             <button
               onClick={() => setViewMode("hierarchy")}
-              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
-                viewMode === "hierarchy" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${viewMode === "hierarchy" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               Hierarchy
-            </button>
-            <button
-              onClick={() => setViewMode("pipeline")}
-              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
-                viewMode === "pipeline" ? "bg-card text-foreground font-semibold shadow-xs" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Pipeline
             </button>
           </div>
 
@@ -1471,9 +1467,8 @@ export default function AgentsPage() {
         </div>
       </div>
 
-      {/* Uncongested Search Bar & Role Filters (hidden in Pipeline view) */}
-      {viewMode !== "pipeline" && (
-        <div className="w-full max-w-xl mx-auto space-y-2.5">
+      {/* Uncongested Search Bar & Role Filters */}
+      <div className="w-full max-w-xl mx-auto space-y-2.5">
         <div className="relative">
           <Search className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -1511,14 +1506,13 @@ export default function AgentsPage() {
                 key={tab.id}
                 type="button"
                 onClick={() => setSelectedRoleFilter(tab.id)}
-                className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                  selectedRoleFilter === tab.id
-                    ? "bg-[#e6f3fe] text-[#0075de] font-semibold border border-[#0075de]/30"
-                    : "bg-card border border-border text-muted-foreground hover:text-foreground"
-                }`}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${selectedRoleFilter === tab.id
+                    ? "bg-primary text-primary-foreground font-semibold shadow-2xs"
+                    : "bg-secondary/60 border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  }`}
               >
                 <span>{tab.label}</span>
-                <span className="opacity-60 text-[10px] font-mono">({count})</span>
+                <span className="opacity-70 text-[10px] font-mono">({count})</span>
               </button>
             );
           })}
@@ -1535,14 +1529,13 @@ export default function AgentsPage() {
                 setSearchQuery("");
                 setSelectedRoleFilter("all");
               }}
-              className="text-[#0075de] hover:underline cursor-pointer"
+              className="text-primary hover:underline cursor-pointer font-medium"
             >
               Reset filters
             </button>
           </div>
         )}
       </div>
-      )}
 
       {loading ? (
         <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden animate-pulse">
@@ -1584,8 +1577,6 @@ export default function AgentsPage() {
           onEdit={(a) => setEditingAgent(a)}
           onDelete={(a) => setAgentToDelete(a)}
         />
-      ) : viewMode === "pipeline" ? (
-        <AgentPipelineBuilder agents={agents} />
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden shadow-xs">
           <AnimatePresence mode="popLayout">

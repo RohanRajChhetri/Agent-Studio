@@ -24,6 +24,7 @@ import {
   Search,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmModal } from "@/components/confirm-modal";
 import type { MCPServerConfig } from "@/types/mcp";
 
 interface MCPTabProps {
@@ -109,6 +110,22 @@ export function MCPTab({
   const [args, setArgs] = useState("");
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [serverToDelete, setServerToDelete] = useState<MCPServerConfig | null>(null);
+  const [isDeletingServer, setIsDeletingServer] = useState(false);
+
+  const handleConfirmDeleteServer = async () => {
+    if (!serverToDelete || !onDeleteServer) return;
+    setIsDeletingServer(true);
+    try {
+      await onDeleteServer(serverToDelete.id);
+      toast.success(`Removed MCP server "${serverToDelete.name}"`);
+      setServerToDelete(null);
+    } catch {
+      toast.error("Failed to remove MCP server");
+    } finally {
+      setIsDeletingServer(false);
+    }
+  };
 
   const applyPreset = (preset: typeof MCP_PRESETS[0]) => {
     setName(preset.name);
@@ -316,11 +333,7 @@ export function MCPTab({
 
                     {onDeleteServer && (
                       <button
-                        onClick={() => {
-                          if (confirm(`Remove MCP server "${server.name}"?`)) {
-                            onDeleteServer(server.id);
-                          }
-                        }}
+                        onClick={() => setServerToDelete(server)}
                         className="p-1.5 rounded-xl border border-border text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition cursor-pointer"
                         title="Delete server"
                       >
@@ -500,6 +513,22 @@ export function MCPTab({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Delete MCP Server Confirm Modal */}
+      <ConfirmModal
+        isOpen={!!serverToDelete}
+        onClose={() => {
+          if (!isDeletingServer) setServerToDelete(null);
+        }}
+        onConfirm={handleConfirmDeleteServer}
+        title="Remove MCP Server"
+        description="Are you sure you want to remove this MCP server configuration?"
+        itemTitle={serverToDelete?.name}
+        dangerDetails="Connected tool capabilities will be unmounted from your orchestrators."
+        confirmText="Remove Server"
+        variant="danger"
+        loading={isDeletingServer}
+      />
     </motion.div>
   );
 }

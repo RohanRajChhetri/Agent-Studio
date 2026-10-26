@@ -215,7 +215,7 @@ export function WebhookSimulator({ agents }: WebhookSimulatorProps) {
                 <option value="monitoring-alert">Monitoring &amp; Sentry (monitoring-alert)</option>
                 {agents?.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.avatar} {a.displayName} Direct Hook
+                    {a.displayName} Direct Hook
                   </option>
                 ))}
               </select>

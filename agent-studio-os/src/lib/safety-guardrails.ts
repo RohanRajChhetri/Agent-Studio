@@ -10,7 +10,7 @@ export interface SafetyCheckResult {
   requiresApproval: boolean;
   riskLevel: RiskLevel;
   reason?: string;
-  sanitizedArgs?: Record<string, any>;
+  sanitizedArgs?: Record<string, unknown>;
 }
 
 // Files that should never be overwritten or read by unprivileged agent tool calls
@@ -41,7 +41,7 @@ const DESTRUCTIVE_SHELL_PATTERNS = [
  */
 export function validateToolActionSafety(
   toolName: string,
-  args: Record<string, any> = {},
+  args: Record<string, unknown> = {},
   options?: { allowHighRiskWithApproval?: boolean; isUserExplicitlyApproved?: boolean }
 ): SafetyCheckResult {
   const normalizedTool = (toolName || "").toLowerCase().trim();

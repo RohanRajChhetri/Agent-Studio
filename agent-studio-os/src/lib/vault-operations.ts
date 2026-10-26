@@ -140,3 +140,41 @@ export async function countVaultNotes(dirPath?: string): Promise<number> {
 
   return count;
 }
+
+/** Batch delete multiple files and folders safely from the vault */
+export async function deleteVaultBatch(
+  items: Array<{ path: string; isFolder: boolean }>
+): Promise<{ deletedCount: number; errors: string[] }> {
+  let deletedCount = 0;
+  const errors: string[] = [];
+
+  // Deduplicate items by path
+  const uniqueItems = items.filter(
+    (item, index, self) => index === self.findIndex((t) => t.path === item.path)
+  );
+
+  for (const item of uniqueItems) {
+    try {
+      const fullPath = resolveSafeVaultPath(item.path);
+      // Check if target still exists (e.g. if parent directory was deleted earlier)
+      try {
+        await fs.access(fullPath);
+      } catch {
+        deletedCount++;
+        continue;
+      }
+
+      if (item.isFolder) {
+        await fs.rm(fullPath, { recursive: true, force: true });
+      } else {
+        await fs.unlink(fullPath);
+      }
+      deletedCount++;
+    } catch (err: any) {
+      console.error(`Failed to delete vault item ${item.path}:`, err);
+      errors.push(`${item.path}: ${err.message || "Failed to delete"}`);
+    }
+  }
+
+  return { deletedCount, errors };
+}

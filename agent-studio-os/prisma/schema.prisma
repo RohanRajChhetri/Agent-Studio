@@ -12,7 +12,7 @@ model Agent {
   userId       String?
   name         String
   displayName  String
-  avatar       String      @default("🤖")
+  avatar       String      @default("bot")
   systemPrompt String      @default("")
   model        String?
   themeColor   String      @default("#6366f1")

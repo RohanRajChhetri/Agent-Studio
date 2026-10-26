@@ -98,7 +98,7 @@ export function BrainDumpModal({
 
       recognition.onstart = () => {
         setIsListening(true);
-        toast.info("🎙️ Listening... Speak naturally to stream your thoughts");
+        toast.info("Listening... Speak naturally to stream your thoughts");
       };
 
       recognition.onresult = (event: any) => {
@@ -199,8 +199,8 @@ export function BrainDumpModal({
           title: `BrainDump_${timestamp}`,
           folder: "braindumps",
           tags: ["braindump", "quick-capture", "raw-thought"],
-          content: `# 🧠 Quick Capture Brain Dump (${new Date().toLocaleString()})\n\n### Raw Thought Stream\n${text}\n\n---\n\n### Decomposed & Assigned Tickets (${createdCount})\n${subtasks
-            .map((st, i) => `${i + 1}. **${st.title}** [${st.priority.toUpperCase()}] → Assigned to ${st.agentAvatar} ${st.agentName}\n   *${st.description}*`)
+          content: `# Quick Capture Brain Dump (${new Date().toLocaleString()})\n\n### Raw Thought Stream\n${text}\n\n---\n\n### Decomposed & Assigned Tickets (${createdCount})\n${subtasks
+            .map((st, i) => `${i + 1}. **${st.title}** [${st.priority.toUpperCase()}] → Assigned to ${st.agentName}\n   *${st.description}*`)
             .join("\n\n")}`,
         }),
       });

@@ -97,5 +97,35 @@ describe("Project Filesystem (Code Operations)", () => {
     const list = await listProjectDirectory(testDir, false);
     expect(list.some((item) => item.name === "renamed.ts")).toBe(false);
   });
+
+  it("renames and deletes workspace projects using dedicated helpers", async () => {
+    const {
+      createWorkspaceProject,
+      renameWorkspaceProject,
+      deleteWorkspaceProject,
+      listWorkspaceProjects,
+    } = await import("../project-filesystem");
+
+    // 1. Create
+    await createWorkspaceProject("test-rename-original");
+    let projs = await listWorkspaceProjects();
+    expect(projs.some((p) => p.name === "test-rename-original")).toBe(true);
+
+    // 2. Rename
+    const renameRes = await renameWorkspaceProject("test-rename-original", "test-rename-updated");
+    expect(renameRes.success).toBe(true);
+    expect(renameRes.newName).toBe("test-rename-updated");
+
+    projs = await listWorkspaceProjects();
+    expect(projs.some((p) => p.name === "test-rename-original")).toBe(false);
+    expect(projs.some((p) => p.name === "test-rename-updated")).toBe(true);
+
+    // 3. Delete
+    const deleteRes = await deleteWorkspaceProject("test-rename-updated");
+    expect(deleteRes.success).toBe(true);
+
+    projs = await listWorkspaceProjects();
+    expect(projs.some((p) => p.name === "test-rename-updated")).toBe(false);
+  });
 });
 

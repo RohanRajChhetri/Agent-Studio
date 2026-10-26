@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { executeChatCompletion } from "@/lib/llm-router";
 import { writeVaultFile, ensureVaultExists } from "@/lib/vault";
 import { slugify, formatResponseTime } from "@/lib/utils";
 import type { Task, Agent } from "@prisma/client";
@@ -231,7 +230,7 @@ export async function findAndExecuteMatchingTask(
   const cleanQuery = (query || "").trim();
   let task = null;
 
-  if (cleanQuery && cleanQuery !== "all" && cleanQuery.length > 2) {
+  if (cleanQuery && !["all", "next", "pending", "first"].includes(cleanQuery.toLowerCase()) && cleanQuery.length > 1) {
     // 1. Try finding by ID first scoped to user
     task = await prisma.task.findFirst({
       where: await getUserScopedWhere({ id: cleanQuery }),
@@ -251,9 +250,17 @@ export async function findAndExecuteMatchingTask(
         orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
       });
     }
+
+    // Explicit query was given but not found: DO NOT fall back to random tasks
+    if (!task) {
+      return {
+        success: false,
+        message: `No active Kanban task matching "${cleanQuery}" was found on your board.`,
+      };
+    }
   }
 
-  // 3. Fallback: find highest-priority pending task on the board scoped to user
+  // 3. Fallback: only execute top pending task if user asked for general/next/pending task
   if (!task) {
     task = await prisma.task.findFirst({
       where: await getUserScopedWhere({

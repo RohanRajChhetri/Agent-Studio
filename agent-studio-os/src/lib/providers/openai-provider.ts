@@ -47,9 +47,29 @@ export class OpenAIProvider extends BaseLLMProvider {
 
     try {
       return await this.executeWithTimeout(async (signal) => {
-        const bodyPayload: Record<string, any> = {
+        const formattedMessages = messages.map((m) => {
+          if (m.images && m.images.length > 0) {
+            return {
+              role: m.role,
+              content: [
+                { type: "text", text: m.content },
+                ...m.images.map((img) => ({
+                  type: "image_url",
+                  image_url: {
+                    url: img.data.startsWith("data:")
+                      ? img.data
+                      : `data:${img.mimeType || "image/png"};base64,${img.data}`,
+                  },
+                })),
+              ],
+            };
+          }
+          return { role: m.role, content: m.content };
+        });
+
+        const bodyPayload: Record<string, unknown> = {
           model: cleanModel,
-          messages,
+          messages: formattedMessages,
         };
 
         if (tools && tools.length > 0) {
@@ -80,7 +100,7 @@ export class OpenAIProvider extends BaseLLMProvider {
           const content = choice?.message?.content || "";
           const rawToolCalls = choice?.message?.tool_calls;
           const parsedToolCalls = Array.isArray(rawToolCalls)
-            ? rawToolCalls.map((tc: any) => {
+            ? rawToolCalls.map((tc: { id?: string; function?: { name?: string; arguments?: string } }) => {
                 let parsedArgs = {};
                 try {
                   parsedArgs = JSON.parse(tc.function?.arguments || "{}");

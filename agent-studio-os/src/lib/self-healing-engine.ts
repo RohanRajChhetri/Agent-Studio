@@ -103,6 +103,26 @@ function attemptHeuristicFix(
     }
   }
 
+  // 4. CUA Desktop automation heuristic fixes
+  if (toolName.includes("desktop") || toolName === "cua") {
+    const rawTarget = args.target || args.app || args.url || "";
+    if (rawTarget && typeof rawTarget === "string") {
+      const lower = rawTarget.toLowerCase().trim();
+      if (lower.includes("youtube") || lower.includes("google") || lower.includes("github") || lower.includes(".com")) {
+        const domain = lower.replace(/^(open|launch|visit|browse\s+to)\s+/i, "").trim();
+        const url = domain.startsWith("http")
+          ? domain
+          : `https://www.${domain.replace(/^www\./, "")}${domain.includes(".") ? "" : ".com"}`;
+        return {
+          canHeuristicFix: true,
+          newArgs: { ...args, action_type: "launch", target: url },
+          diagnosis: "Target is a web application or service requiring browser navigation.",
+          fixDescription: `Normalized web destination to ${url} for browser launch.`,
+        };
+      }
+    }
+  }
+
   return { canHeuristicFix: false, newArgs: args, diagnosis: "", fixDescription: "" };
 }
 
@@ -112,7 +132,7 @@ function attemptHeuristicFix(
  */
 export async function executeToolWithSelfHealing(
   toolCall: ParsedToolCall,
-  executor: (call: ParsedToolCall) => Promise<{ name: string; result: string; success: boolean; metadata?: any }>,
+  executor: (call: ParsedToolCall) => Promise<{ name: string; result: string; success: boolean; metadata?: Record<string, unknown> }>,
   maxRetries = 2
 ): Promise<SelfHealingResult> {
   const audits: SelfHealingAuditEntry[] = [];

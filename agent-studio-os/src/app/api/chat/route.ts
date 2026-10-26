@@ -72,7 +72,18 @@ export async function POST(request: Request) {
       sessionId,
       useVaultRAG,
       systemPrompt: customSystemPrompt,
+      attachments,
     } = body;
+
+    const images = Array.isArray(attachments)
+      ? attachments
+          .filter((a: any) => a && (a.type === "image" || a.mimeType?.startsWith("image/")) && a.content)
+          .map((a: any) => ({
+            mimeType: a.mimeType || "image/png",
+            data: a.content,
+            name: a.name,
+          }))
+      : body.images || undefined;
 
     // 1. Validate prompt with early return
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
@@ -96,6 +107,7 @@ export async function POST(request: Request) {
       targetAgent,
       skipActionDispatch: body.skipActionDispatch,
       isCodeWorkspace: body.isCodeWorkspace,
+      skipDirectTask: true,
     });
 
     if (actionResult.handled) {
@@ -115,7 +127,7 @@ export async function POST(request: Request) {
           id: targetAgent?.id || "autonomous-specialist",
           name: actionResult.agentName || targetAgent?.name || "Specialist",
           displayName: actionResult.agentName || targetAgent?.displayName || "Specialist Agent",
-          avatar: actionResult.agentAvatar || targetAgent?.avatar || "⚡",
+          avatar: actionResult.agentAvatar || targetAgent?.avatar || "zap",
         },
         sessionId: activeSessionId,
         model: effectiveModel,
@@ -165,6 +177,7 @@ export async function POST(request: Request) {
       agentName: targetAgent?.name || agentName,
       useVaultRAG,
       history: sessionHistory,
+      images,
     });
 
     // 5. Persist chat messages non-blockingly
@@ -202,7 +215,7 @@ export async function POST(request: Request) {
         id: targetAgent?.id || "autonomous-specialist",
         name: targetAgent?.name || agentName || "Specialist",
         displayName: targetAgent?.displayName || agentName || "Autonomous Specialist",
-        avatar: targetAgent?.avatar || "🤖",
+        avatar: targetAgent?.avatar || "bot",
       },
       sessionId: activeSessionId,
       model: loopResult.model || effectiveModel,

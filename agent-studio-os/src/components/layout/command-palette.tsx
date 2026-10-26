@@ -144,7 +144,7 @@ export function CommandPalette() {
       {
         id: "nav-code",
         title: "Go to Code & Project Builder",
-        subtitle: "Multi-file application scaffold & live sandbox",
+        subtitle: "Multi-file application scaffold & interactive preview",
         category: "Navigation",
         icon: Code,
         action: () => { router.push("/code"); close(); },
@@ -196,7 +196,7 @@ export function CommandPalette() {
         icon: Coins,
         shortcut: "Alt+C",
         action: () => {
-          window.dispatchEvent(new CustomEvent("open-cost-tracker"));
+          router.push("/settings?tab=analytics");
           close();
         },
       },

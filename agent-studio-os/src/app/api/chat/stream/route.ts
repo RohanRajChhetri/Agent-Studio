@@ -5,6 +5,7 @@ import { compileAndDeliverFile } from "@/lib/file-deliverable-engine";
 import { streamUniversalCompletion } from "@/lib/llm-streaming";
 import { queryVaultRAG, formatRAGPromptContext } from "@/lib/rag";
 import { formatEpisodicMemoryPrompt } from "@/lib/episodic-memory";
+import { dispatchAutonomousAction } from "@/lib/autonomous-action-dispatcher";
 import { prisma } from "@/lib/prisma";
 import { getUserScopedWhere, getAuthUserId } from "@/lib/user-auth";
 
@@ -22,7 +23,18 @@ export async function POST(request: Request) {
       useVaultRAG = true,
       useEpisodicMemory = true,
       history = [],
+      attachments = [],
     } = await request.json();
+
+    const images = Array.isArray(attachments)
+      ? attachments
+          .filter((a: any) => a && (a.type === "image" || a.mimeType?.startsWith("image/")) && a.content)
+          .map((a: any) => ({
+            mimeType: a.mimeType || "image/png",
+            data: a.content,
+            name: a.name,
+          }))
+      : undefined;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -178,7 +190,7 @@ export async function POST(request: Request) {
     const messages = [
       { role: "system" as const, content: augmentedSystem },
       ...validHistory,
-      { role: "user" as const, content: prompt },
+      { role: "user" as const, content: prompt, images },
     ];
 
     // Prepare TransformStream for SSE
@@ -211,12 +223,71 @@ export async function POST(request: Request) {
           })}\n\n`
         );
 
+        // Check if user request is an autonomous action (desktop launch/screenshot/type/click, or direct kanban/routine/workflow creation)
+        const autonomousResult = await dispatchAutonomousAction(prompt, {
+          agentId: targetAgent?.id,
+          targetAgent,
+          skipDirectTask: false,
+        });
+
+        if (autonomousResult.handled && autonomousResult.content) {
+          fullContent = autonomousResult.content;
+          await safeWrite(`data: ${JSON.stringify({ type: "chunk", text: fullContent })}\n\n`);
+          const latency = Date.now() - start;
+
+          // Persist to database
+          if (targetAgent?.id && fullContent.trim()) {
+            try {
+              await prisma.chatMessage.create({
+                data: {
+                  agentId: targetAgent.id,
+                  sessionId: activeSessionId,
+                  role: "user",
+                  content: prompt,
+                  model: effectiveModel,
+                  userId,
+                },
+              });
+
+              await prisma.chatMessage.create({
+                data: {
+                  agentId: targetAgent.id,
+                  sessionId: activeSessionId,
+                  role: "assistant",
+                  content: fullContent,
+                  model: effectiveModel,
+                  latency,
+                  userId,
+                },
+              });
+            } catch (dbErr) {
+              console.warn("[Stream API] Failed to persist autonomous action message:", dbErr);
+            }
+          }
+
+          // Send done signal
+          await safeWrite(
+            `data: ${JSON.stringify({
+              type: "done",
+              fullText: fullContent,
+              latency,
+              sessionId: activeSessionId,
+              source: "autonomous_action",
+              modelUsed: effectiveModel,
+              totalTokens: 0,
+            })}\n\n`
+          );
+          await safeWrite("data: [DONE]\n\n");
+          return;
+        }
+
         let result: any = { fullContent: "" };
         try {
           result = await streamUniversalCompletion({
             model: effectiveModel,
             messages,
             prompt,
+            images,
             history: validHistory,
             systemPrompt: augmentedSystem,
             agentName: targetAgent?.name,
@@ -242,10 +313,12 @@ export async function POST(request: Request) {
             try {
               const execResult = await executeTool(tc);
               if (execResult.metadata?.fileUrl) {
-                deliverableLink = `\n\n### 📄 Deliverable Ready for Download\n\n- **File**: \`${execResult.metadata.path}\`\n- **Direct Download**: [Download ${execResult.metadata.path}](${execResult.metadata.fileUrl})\n\n> You can open this file directly in Microsoft Word, Google Docs, or any text editor.`;
+                deliverableLink = `\n\n### Deliverable Ready for Download\n\n- **File**: \`${execResult.metadata.path}\`\n- **Direct Download**: [Download ${execResult.metadata.path}](${execResult.metadata.fileUrl})\n\n> You can open this file directly in Microsoft Word, Google Docs, or any text editor.`;
               }
               if (execResult.metadata?.content) {
-                resolvedBody = execResult.metadata.content;
+                resolvedBody = (resolvedBody ? resolvedBody + "\n\n" : "") + execResult.metadata.content;
+              } else if (execResult.result) {
+                resolvedBody = (resolvedBody ? resolvedBody + "\n\n" : "") + execResult.result;
               }
             } catch (toolErr) {
               console.warn("[Stream API] Tool execution error:", toolErr);

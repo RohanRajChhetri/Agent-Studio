@@ -42,7 +42,7 @@ export async function routeMobileCommand(
 
   // 1. HELP & START
   if (command === "/start" || command === "/help") {
-    const helpMsg = `⚡ *Agent Studio OS — Mobile Command Center*
+    const helpMsg = `*Agent Studio OS — Mobile Command Center*
 Connected as: **${aName}**
 User: **${context.sender}**
 
@@ -73,8 +73,8 @@ _Tip: You can also send any normal text to chat directly with your primary agent
       counts[t.status] = t._count.id;
     }
 
-    const statusMsg = `⚡ *Agent Studio OS — System Status*
-• Primary Brain (Omniroute): ${omniOnline ? "🟢 Online (`127.0.0.1:20128`)" : "🟡 Direct Cloud Fallbacks Active"}
+    const statusMsg = `*Agent Studio OS — System Status*
+• Primary Brain (Omniroute): ${omniOnline ? "Online (`127.0.0.1:20128`)" : "Direct Cloud Fallbacks Active"}
 • Active Workforce: **${agentCount} agents**
 • Active Tasks: **${counts["in_progress"] || 0} in progress**, **${counts["review"] || 0} in review**, **${counts["backlog"] || 0} backlog**
 • Completed Deliverables: **${counts["done"] || 0} done**`;
@@ -97,7 +97,7 @@ _Tip: You can also send any normal text to chat directly with your primary agent
     if (tasks.length === 0) {
       return {
         handled: true,
-        replyText: `📋 *Kanban Workspace*\nAll caught up! No active tasks pending in Backlog, In Progress, or Review.`,
+        replyText: `*Kanban Workspace*\nAll caught up! No active tasks pending in Backlog, In Progress, or Review.`,
         parseMode: "Markdown",
       };
     }
@@ -106,10 +106,10 @@ _Tip: You can also send any normal text to chat directly with your primary agent
     const progressTasks = tasks.filter((t) => t.status === "in_progress");
     const backlogTasks = tasks.filter((t) => t.status === "backlog");
 
-    const lines: string[] = [`📋 *Active Tasks (${tasks.length})*`];
+    const lines: string[] = [`*Active Tasks (${tasks.length})*`];
 
     if (reviewTasks.length > 0) {
-      lines.push(`\n🔍 *NEEDS REVIEW (${reviewTasks.length}):*`);
+      lines.push(`\n*NEEDS REVIEW (${reviewTasks.length}):*`);
       for (const t of reviewTasks) {
         const shortId = t.id.slice(0, 7);
         lines.push(`• \`${shortId}\` *${t.title}* (${t.agent?.displayName || "Unassigned"})\n  ↳ Use \`/approve ${shortId}\` or \`/run ${shortId}\``);
@@ -117,7 +117,7 @@ _Tip: You can also send any normal text to chat directly with your primary agent
     }
 
     if (progressTasks.length > 0) {
-      lines.push(`\n⚡ *IN PROGRESS (${progressTasks.length}):*`);
+      lines.push(`\n*IN PROGRESS (${progressTasks.length}):*`);
       for (const t of progressTasks) {
         const shortId = t.id.slice(0, 7);
         lines.push(`• \`${shortId}\` *${t.title}* (${t.agent?.displayName || "Agent executing..."})`);
@@ -125,7 +125,7 @@ _Tip: You can also send any normal text to chat directly with your primary agent
     }
 
     if (backlogTasks.length > 0) {
-      lines.push(`\n📥 *BACKLOG (${backlogTasks.length}):*`);
+      lines.push(`\n*BACKLOG (${backlogTasks.length}):*`);
       for (const t of backlogTasks.slice(0, 5)) {
         const shortId = t.id.slice(0, 7);
         lines.push(`• \`${shortId}\` *${t.title}* [${t.priority.toUpperCase()}]\n  ↳ Use \`/run ${shortId}\` to execute`);
@@ -140,7 +140,7 @@ _Tip: You can also send any normal text to chat directly with your primary agent
     if (!args) {
       return {
         handled: true,
-        replyText: "⚠️ Please specify a Task ID. Example: `/run 3abc45` (Find IDs using `/tasks`)",
+        replyText: "Please specify a Task ID. Example: `/run 3abc45` (Find IDs using `/tasks`)",
         parseMode: "Markdown",
       };
     }
@@ -154,7 +154,7 @@ _Tip: You can also send any normal text to chat directly with your primary agent
     if (!target) {
       return {
         handled: true,
-        replyText: `⚠️ Task not found matching prefix "${args}". Run \`/tasks\` to view available task IDs.`,
+        replyText: `Task not found matching prefix "${args}". Run \`/tasks\` to view available task IDs.`,
         parseMode: "Markdown",
       };
     }
@@ -182,7 +182,7 @@ Provide a concise Executive Summary followed by the complete, production-grade d
         agentName: agent?.name,
       });
 
-      const updated = await prisma.task.update({
+      await prisma.task.update({
         where: { id: target.id },
         data: {
           status: "review",
@@ -224,15 +224,7 @@ ${execution.content}
         ? execution.content.slice(0, 800) + "\n\n...(Full deliverable saved to Obsidian Vault)"
         : execution.content;
 
-      const reply = `✅ *Task Completed & Ready for Review!*
-📌 *${target.title}*
-👤 Specialist: **${agent?.displayName || "Agent"}** (${execution.modelUsed})
-⏱️ Execution Time: **${formatResponseTime(execution.latency)}**
-
-*Deliverable Preview:*
-${preview}
-
-↳ Use \`/approve ${target.id.slice(0, 7)}\` to approve & finalize!`;
+      const reply = `*Task Completed & Ready for Review!*\n*${target.title}*\nSpecialist: **${agent?.displayName || "Agent"}** (${execution.modelUsed})\nExecution Time: **${formatResponseTime(execution.latency)}**\n\n*Deliverable Preview:*\n${preview}\n\n↳ Use \`/approve ${target.id.slice(0, 7)}\` to approve & finalize!`;
 
       return { handled: true, replyText: reply, parseMode: "Markdown" };
     } catch (err: unknown) {
@@ -242,7 +234,7 @@ ${preview}
       });
       return {
         handled: true,
-        replyText: `⚠️ Execution failed for "${target.title}": ${err instanceof Error ? err.message : String(err)}`,
+        replyText: `Execution failed for "${target.title}": ${err instanceof Error ? err.message : String(err)}`,
         parseMode: "Markdown",
       };
     }
@@ -253,7 +245,7 @@ ${preview}
     if (!args) {
       return {
         handled: true,
-        replyText: "⚠️ Please specify a Task ID to approve. Example: `/approve 3abc45`",
+        replyText: "Please specify a Task ID to approve. Example: `/approve 3abc45`",
         parseMode: "Markdown",
       };
     }
@@ -266,7 +258,7 @@ ${preview}
     if (!target) {
       return {
         handled: true,
-        replyText: `⚠️ Task not found matching prefix "${args}". Run \`/tasks\` to view available task IDs.`,
+        replyText: `Task not found matching prefix "${args}". Run \`/tasks\` to view available task IDs.`,
         parseMode: "Markdown",
       };
     }
@@ -287,8 +279,7 @@ ${preview}
 
     return {
       handled: true,
-      replyText: `🎉 *Task Approved!*
-📌 *${target.title}* is now marked **Done** and synced to your Obsidian knowledge vault.`,
+      replyText: `*Task Approved!*\n*${target.title}* is now marked **Done** and synced to your Obsidian knowledge vault.`,
       parseMode: "Markdown",
     };
   }
@@ -304,7 +295,7 @@ ${preview}
       const agentList = agents.map((a) => `• \`${a.name}\` (${a.displayName})`).join("\n");
       return {
         handled: true,
-        replyText: `⚠️ Usage: \`/ask <agent_name> <your query>\`\n\n*Available Agents:*\n${agentList}`,
+        replyText: `Usage: \`/ask <agent_name> <your query>\`\n\n*Available Agents:*\n${agentList}`,
         parseMode: "Markdown",
       };
     }
@@ -325,7 +316,7 @@ ${preview}
     if (!targetAgent) {
       return {
         handled: true,
-        replyText: `⚠️ Agent "${targetName}" not found. Run \`/ask\` without arguments to list all active agents.`,
+        replyText: `Agent "${targetName}" not found. Run \`/ask\` without arguments to list all active agents.`,
         parseMode: "Markdown",
       };
     }
@@ -342,12 +333,12 @@ ${preview}
         useEpisodicMemory: true,
       });
 
-      const reply = `🤖 *${targetAgent.displayName}* (${completion.modelUsed || "AI"})\n\n${completion.content}`;
+      const reply = `*${targetAgent.displayName}* (${completion.modelUsed || "AI"})\n\n${completion.content}`;
       return { handled: true, replyText: reply, parseMode: "Markdown" };
     } catch (err: unknown) {
       return {
         handled: true,
-        replyText: `⚠️ Failed to get response from ${targetAgent.displayName}: ${err instanceof Error ? err.message : String(err)}`,
+        replyText: `Failed to get response from ${targetAgent.displayName}: ${err instanceof Error ? err.message : String(err)}`,
         parseMode: "Markdown",
       };
     }
@@ -368,7 +359,7 @@ ${preview}
           : cached.content;
         return {
           handled: true,
-          replyText: `📊 *Daily Executive Briefing (${today})*\n\n${preview}`,
+          replyText: `*Daily Executive Briefing (${today})*\n\n${preview}`,
           parseMode: "Markdown",
         };
       }
@@ -383,7 +374,7 @@ ${preview}
       const progressCount = tasks.filter((t) => t.status === "in_progress").length;
       const doneCount = tasks.filter((t) => t.status === "done").length;
 
-      const summary = `📊 *Daily Executive Briefing (${today})*
+      const summary = `*Daily Executive Briefing (${today})*
 • Workforce: **${agents.length} agents deployed**
 • Workload: **${progressCount} active tasks**, **${reviewCount} deliverables awaiting review**, **${doneCount} completed**
 • Next Action: Check \`/tasks\` to review pending deliverables!`;
@@ -392,7 +383,7 @@ ${preview}
     } catch (err: unknown) {
       return {
         handled: true,
-        replyText: `⚠️ Could not generate briefing: ${err instanceof Error ? err.message : String(err)}`,
+        replyText: `Could not generate briefing: ${err instanceof Error ? err.message : String(err)}`,
         parseMode: "Markdown",
       };
     }

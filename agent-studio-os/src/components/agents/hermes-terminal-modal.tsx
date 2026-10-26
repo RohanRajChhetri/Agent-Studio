@@ -29,6 +29,8 @@ import {
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
 import { formatResponseTime } from "@/lib/utils";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
+
 
 interface TerminalLog {
   id: string;
@@ -760,7 +762,7 @@ export function HermesTerminalModal({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card hover:bg-secondary/70 border border-border text-xs font-semibold text-foreground transition-all shadow-sm cursor-pointer"
                 title="Switch Active Agent Shell"
               >
-                <span>{activeAgent.avatar || "🤖"}</span>
+                <AgentAvatar avatar={activeAgent.avatar} className="w-3.5 h-3.5 text-primary" />
                 <span>hermes@{activeAgent.name}</span>
                 <ChevronDown className="w-3 h-3 text-muted-foreground" />
               </button>
@@ -805,7 +807,7 @@ export function HermesTerminalModal({
                         }`}
                       >
                         <div className="flex items-center gap-2 truncate">
-                          <span>{ag.avatar}</span>
+                          <AgentAvatar avatar={ag.avatar} className="w-3.5 h-3.5 text-primary shrink-0" />
                           <span className="truncate">{ag.displayName}</span>
                         </div>
                         <span className="text-[10px] font-mono text-muted-foreground uppercase shrink-0">{ag.role}</span>

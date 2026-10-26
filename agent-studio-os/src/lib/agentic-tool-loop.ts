@@ -6,6 +6,7 @@ import { compileAndDeliverFile } from "./file-deliverable-engine";
 import type { LLMMessage, LLMResponse } from "./router-types";
 import fs from "fs/promises";
 import path from "path";
+import { getCodeOutputDir } from "./storage-config";
 
 import {
   createProjectFile,
@@ -20,6 +21,9 @@ import {
 } from "./external-skills";
 import { validateToolActionSafety } from "./safety-guardrails";
 import { executeToolWithSelfHealing } from "./self-healing-engine";
+import { prisma } from "./prisma";
+import { calculateNextRun } from "./scheduler";
+import { matchBestAgent } from "./agent-matcher";
 
 export interface ParsedToolCall {
   raw: string;
@@ -42,6 +46,109 @@ export interface AgenticLoopResult {
   model: string;
   latency: number;
   toolsExecuted: string[];
+}
+
+export function normalizeToolName(rawName: string): string {
+  const lower = rawName.toLowerCase().trim().replace(/[-]/g, "_");
+  const mapping: Record<string, string> = {
+    desktopaction: "desktop_action",
+    desktop_action: "desktop_action",
+    desktopscreenshot: "desktop_screenshot",
+    desktop_screenshot: "desktop_screenshot",
+    desktopinspect: "desktop_inspect",
+    desktop_inspect: "desktop_inspect",
+    scrapepage: "scrape_page",
+    scrape_page: "scrape_page",
+    scrapetomarkdown: "scrape_to_markdown",
+    scrape_to_markdown: "scrape_to_markdown",
+    crawlsite: "crawl_site",
+    crawl_site: "crawl_site",
+    webscrape: "scrape_page",
+    web_scrape: "scrape_page",
+    createfile: "create_file",
+    create_file: "create_file",
+    writefile: "write_file",
+    write_file: "write_file",
+    readfile: "read_file",
+    read_file: "read_file",
+    viewfile: "read_file",
+    view_file: "read_file",
+    listfiles: "terminal",
+    list_files: "terminal",
+    listdir: "list_dir",
+    list_dir: "list_dir",
+    createfolder: "create_folder",
+    create_folder: "create_folder",
+    searchweb: "search",
+    search_web: "search",
+    websearch: "search",
+    web_search: "search",
+    executecode: "code",
+    execute_code: "code",
+    createkanbantask: "create_kanban_task",
+    create_kanban_task: "create_kanban_task",
+    createtask: "create_kanban_task",
+    create_task: "create_kanban_task",
+    kanbancreate: "create_kanban_task",
+    kanban_create: "create_kanban_task",
+    newtask: "create_kanban_task",
+    new_task: "create_kanban_task",
+    addtask: "create_kanban_task",
+    add_task: "create_kanban_task",
+    listtasks: "list_kanban_tasks",
+    list_tasks: "list_kanban_tasks",
+    listkanbantasks: "list_kanban_tasks",
+    list_kanban_tasks: "list_kanban_tasks",
+    createroutine: "create_routine",
+    create_routine: "create_routine",
+    makeroutine: "create_routine",
+    make_routine: "create_routine",
+    routinecreate: "create_routine",
+    routine_create: "create_routine",
+    scheduletask: "create_routine",
+    schedule_task: "create_routine",
+    listroutines: "list_routines",
+    list_routines: "list_routines",
+    createworkflow: "create_workflow",
+    create_workflow: "create_workflow",
+    makeworkflow: "create_workflow",
+    make_workflow: "create_workflow",
+    workflowcreate: "create_workflow",
+    workflow_create: "create_workflow",
+    buildworkflow: "create_workflow",
+    build_workflow: "create_workflow",
+    listworkflows: "list_workflows",
+    list_workflows: "list_workflows",
+  };
+  return mapping[lower] || lower;
+}
+
+export function normalizeArgKey(rawKey: string): string {
+  const lower = rawKey.toLowerCase().trim().replace(/[-]/g, "_");
+  const mapping: Record<string, string> = {
+    actiontype: "action_type",
+    renderjs: "render_js",
+    starturl: "start_url",
+    maxpages: "max_pages",
+    tomarkdown: "to_markdown",
+    filepath: "path",
+    filename: "path",
+    file_path: "path",
+    file_name: "path",
+    folderpath: "path",
+    folder_path: "path",
+    taskname: "title",
+    task_name: "title",
+    routinename: "title",
+    routine_name: "title",
+    workflowname: "name",
+    workflow_name: "name",
+    assignedto: "agent",
+    assigned_to: "agent",
+    targetagent: "agent",
+    target_agent: "agent",
+  };
+  return mapping[lower] || lower;
 }
 
 /**
@@ -72,7 +179,7 @@ export function parseToolCalls(content: string): ParsedToolCall[] {
         const args = parseFunctionArguments(argsStr);
         toolCalls.push({
           raw: trimmedSnippet,
-          name,
+          name: normalizeToolName(name),
           args,
         });
       }
@@ -80,41 +187,161 @@ export function parseToolCalls(content: string): ParsedToolCall[] {
     if (toolCalls.length > 0) return toolCalls;
   }
 
-  // 2. XML format: <tool_call>...</tool_call>
-  const xmlRegex = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
-  let xmlMatch;
-  while ((xmlMatch = xmlRegex.exec(content)) !== null) {
-    const inner = xmlMatch[1].trim();
-    try {
-      const parsed = JSON.parse(inner);
-      if (parsed.name) {
-        toolCalls.push({
-          raw: xmlMatch[0],
-          name: parsed.name,
-          args: parsed.arguments || parsed.args || {},
-        });
+  // 2. Direct XML tool tags (e.g. <desktopaction actiontype="launch" target="https://www.youtube.com"/>, <desktop_screenshot/>, <scrape_page url="..."/>)
+  const xmlTagRegex = /<([a-zA-Z0-9_:-]+)(?:\s+([^>]*?))?(?:\s*\/>|>(?:([\s\S]*?)<\/\1>)?)/gi;
+  let tagMatch;
+  while ((tagMatch = xmlTagRegex.exec(content)) !== null) {
+    const rawTag = tagMatch[0];
+    const tagName = tagMatch[1].trim();
+    const attrStr = tagMatch[2] ? tagMatch[2].trim() : "";
+    const innerContent = tagMatch[3] ? tagMatch[3].trim() : "";
+
+    const lowerTagName = tagName.toLowerCase();
+    const isKnownTool =
+      lowerTagName.startsWith("desktop") ||
+      lowerTagName.startsWith("scrape") ||
+      lowerTagName.startsWith("crawl") ||
+      lowerTagName.startsWith("file") ||
+      lowerTagName.startsWith("search") ||
+      lowerTagName.startsWith("code") ||
+      lowerTagName.startsWith("tool") ||
+      lowerTagName.startsWith("kanban") ||
+      lowerTagName.startsWith("task") ||
+      lowerTagName.startsWith("routine") ||
+      lowerTagName.startsWith("workflow") ||
+      lowerTagName === "web" ||
+      lowerTagName === "cua" ||
+      lowerTagName === "terminal" ||
+      lowerTagName === "list_dir" ||
+      lowerTagName === "mkdir" ||
+      lowerTagName === "create_folder" ||
+      lowerTagName === "action";
+
+    const hasToolAttrs =
+      /actiontype|action_type|target|url|path|selectors|query|filename|start_url|title|prompt|priority|status|nodes/i.test(attrStr);
+
+    if (!isKnownTool && !hasToolAttrs) {
+      continue;
+    }
+
+    if (lowerTagName === "tool_call" && innerContent) {
+      try {
+        const parsed = JSON.parse(innerContent);
+        if (parsed.name) {
+          toolCalls.push({
+            raw: rawTag,
+            name: normalizeToolName(parsed.name),
+            args: parsed.arguments || parsed.args || {},
+          });
+          continue;
+        }
+      } catch {
+        const fnMatch = innerContent.match(/([a-zA-Z0-9_.-]+)\s*\(([\s\S]*?)\)/);
+        if (fnMatch) {
+          toolCalls.push({
+            raw: rawTag,
+            name: normalizeToolName(fnMatch[1]),
+            args: parseFunctionArguments(fnMatch[2]),
+          });
+          continue;
+        }
       }
-    } catch {
-      // Non-JSON XML, check for function format inside
-      const fnMatch = inner.match(/([a-zA-Z0-9_.-]+)\s*\(([\s\S]*?)\)/);
-      if (fnMatch) {
-        toolCalls.push({
-          raw: xmlMatch[0],
-          name: fnMatch[1],
-          args: parseFunctionArguments(fnMatch[2]),
-        });
+    }
+
+    const args: Record<string, any> = {};
+
+    if (attrStr) {
+      const attrRegex = /([a-zA-Z0-9_:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
+      let aMatch;
+      while ((aMatch = attrRegex.exec(attrStr)) !== null) {
+        const k = normalizeArgKey(aMatch[1]);
+        const v = aMatch[2] ?? aMatch[3] ?? aMatch[4];
+        args[k] = v;
       }
+    }
+
+    if (innerContent) {
+      if (innerContent.startsWith("{") && innerContent.endsWith("}")) {
+        try {
+          const parsedJson = JSON.parse(innerContent);
+          Object.assign(args, parsedJson.arguments || parsedJson.args || parsedJson);
+        } catch {}
+      } else {
+        const childRegex = /<([a-zA-Z0-9_:-]+)>([\s\S]*?)<\/\1>/gi;
+        let cMatch;
+        let foundChild = false;
+        while ((cMatch = childRegex.exec(innerContent)) !== null) {
+          foundChild = true;
+          args[normalizeArgKey(cMatch[1])] = cMatch[2].trim();
+        }
+        if (!foundChild && !attrStr) {
+          if (lowerTagName.includes("screenshot")) {
+            // no args needed
+          } else if (lowerTagName.includes("scrape") || lowerTagName.includes("crawl")) {
+            args.url = innerContent;
+          } else if (lowerTagName.includes("search") || lowerTagName.includes("web")) {
+            args.query = innerContent;
+          } else if (lowerTagName.includes("file") || lowerTagName.includes("folder")) {
+            args.path = innerContent;
+          } else if (lowerTagName.includes("action") || lowerTagName.includes("launch")) {
+            args.target = innerContent;
+          }
+        }
+      }
+    }
+
+    const normName = normalizeToolName(tagName);
+    toolCalls.push({
+      raw: rawTag,
+      name: normName === "action" || normName === "tool" ? (args.name || "desktop_action") : normName,
+      args,
+    });
+  }
+  if (toolCalls.length > 0) return toolCalls;
+
+  // 3. Standalone and multiple function calls: fn(...)
+  const fnCallRegex = /(?:^|\n|\[|\b)([a-zA-Z0-9_.-]+)\s*\(([\s\S]*?)\)(?:\]|$|\n|\s*(?=[a-zA-Z0-9_.-]+\s*\())/g;
+  let fnMatch;
+  while ((fnMatch = fnCallRegex.exec(content)) !== null) {
+    const rawFn = fnMatch[0].trim();
+    const fnName = fnMatch[1].trim();
+    const argsStr = fnMatch[2];
+
+    const lowerFn = fnName.toLowerCase();
+    const isCandidate =
+      lowerFn.startsWith("desktop") ||
+      lowerFn.startsWith("scrape") ||
+      lowerFn.startsWith("crawl") ||
+      lowerFn.startsWith("file") ||
+      lowerFn.startsWith("search") ||
+      lowerFn.startsWith("code") ||
+      lowerFn === "web" ||
+      lowerFn === "cua" ||
+      lowerFn === "terminal" ||
+      lowerFn === "read_file" ||
+      lowerFn === "create_file" ||
+      lowerFn === "write_file" ||
+      lowerFn === "list_dir" ||
+      lowerFn === "mkdir" ||
+      lowerFn === "python";
+
+    if (isCandidate) {
+      toolCalls.push({
+        raw: rawFn,
+        name: normalizeToolName(fnName),
+        args: parseFunctionArguments(argsStr),
+      });
     }
   }
   if (toolCalls.length > 0) return toolCalls;
 
-  // 3. Standalone function call prefix - includes Code filesystem tools & external skills
+  // 4. Standalone function call prefix fallback
   const standaloneFnRegex = /^(?:\[|\b)([a-zA-Z0-9_.-]+)\s*\(([\s\S]*?)\)(?:\]|$)/m;
   const standaloneMatch = content.match(standaloneFnRegex);
   if (standaloneMatch) {
     toolCalls.push({
       raw: standaloneMatch[0],
-      name: standaloneMatch[1],
+      name: normalizeToolName(standaloneMatch[1]),
       args: parseFunctionArguments(standaloneMatch[2]),
     });
   }
@@ -277,7 +504,7 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
       const dirPath = args.path || args.directory || "";
       const entries = await listProjectDirectory(dirPath, false);
       const formatted = entries
-        .map((e) => `${e.isDirectory ? "📁 [DIR] " : "📄 [FILE] "} ${e.name}${e.size ? ` (${(e.size / 1024).toFixed(1)} KB)` : ""}`)
+        .map((e) => `${e.isDirectory ? "[DIR] " : "[FILE] "} ${e.name}${e.size ? ` (${(e.size / 1024).toFixed(1)} KB)` : ""}`)
         .join("\n");
       return {
         name,
@@ -314,8 +541,22 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
         rawContent = args.query;
       }
 
+      // If rawPath has no directory specified, place it in agent-workspace to avoid polluting project root
+      const targetRelPath =
+        !rawPath.includes("/") && !rawPath.includes("\\")
+          ? path.join("agent-workspace", rawPath)
+          : rawPath;
+
       // Write directly to project workspace
-      const projFile = await createProjectFile(rawPath, rawContent, { overwrite: true });
+      const projFile = await createProjectFile(targetRelPath, rawContent, { overwrite: true });
+
+      // Also persist to configured code output directory
+      try {
+        const codeDir = getCodeOutputDir();
+        await fs.mkdir(codeDir, { recursive: true });
+        const codeDest = path.join(codeDir, path.basename(rawPath));
+        await fs.writeFile(codeDest, rawContent, "utf-8");
+      } catch {}
 
       // Also mirror to downloadable document vault for direct browser link
       let fileUrl = `/downloads/${encodeURIComponent(path.basename(rawPath))}`;
@@ -403,7 +644,13 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
     }
 
     // 5c. CUA Desktop Automation Tools
-    if (name === "desktop_action" || name === "desktop_screenshot" || name === "desktop_inspect" || name === "desktop" || name === "cua") {
+    if (
+      name === "desktop_action" ||
+      name === "desktop_screenshot" ||
+      name === "desktop_inspect" ||
+      name === "desktop" ||
+      name === "cua"
+    ) {
       const { executeCUAAction } = await import("./cua-driver");
       let action;
       if (name === "desktop_screenshot") {
@@ -412,13 +659,22 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
         action = { type: "inspect" as const, target: args.app || args.target };
       } else {
         action = {
-          type: (args.action_type || args.type || "inspect") as "click" | "type" | "screenshot" | "inspect" | "launch" | "key" | "scroll",
-          target: args.target || args.app,
+          type: (args.action_type || args.actiontype || args.type || "inspect") as
+            | "click"
+            | "type"
+            | "screenshot"
+            | "inspect"
+            | "launch"
+            | "key"
+            | "scroll"
+            | "wait",
+          target: args.target || args.app || args.url,
           text: args.text,
           coordinates: args.coordinates,
           key: args.key,
           direction: args.direction,
           amount: args.amount,
+          duration: args.duration || args.wait || args.ms,
         };
       }
 
@@ -427,7 +683,24 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
         return { name, result: `Desktop action failed: ${cuaRes.error}`, success: false };
       }
 
+      // If desktop action did not return screenshot, capture post-action screen state
+      if (!cuaRes.screenshot && (action.type === "launch" || action.type === "click" || action.type === "type" || action.type === "key")) {
+        try {
+          const waitMs = action.type === "launch" ? 1800 : 400;
+          await new Promise((r) => setTimeout(r, waitMs));
+          const postScreen = await executeCUAAction({ type: "screenshot" });
+          if (postScreen.screenshot) {
+            cuaRes.screenshot = postScreen.screenshot;
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
       let resultText = cuaRes.output || `Desktop ${action.type} completed successfully`;
+      let savedFileUrl: string | undefined;
+      let savedFileName: string | undefined;
+
       if (cuaRes.screenshot) {
         try {
           const downloadDir = path.join(process.cwd(), "public", "downloads");
@@ -435,18 +708,48 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
           const fileName = `screenshot-${Date.now()}.png`;
           const filePath = path.join(downloadDir, fileName);
           await fs.writeFile(filePath, Buffer.from(cuaRes.screenshot, "base64"));
-          const fileUrl = `/downloads/${fileName}`;
-          resultText += `\n\n![Desktop Screenshot](${fileUrl})\n*[Captured desktop screenshot saved to \`${fileName}\`]*`;
+          savedFileUrl = `/downloads/${fileName}`;
+          savedFileName = fileName;
+          resultText += `\n\n![Desktop Screenshot](${savedFileUrl})\n*[Captured desktop screenshot saved to \`${fileName}\`]*`;
         } catch {
           resultText += `\n\n*(Screenshot captured)*`;
         }
       }
 
+      // Persist to ActivityLog
+      try {
+        await prisma.activityLog.create({
+          data: {
+            type: "desktop_action",
+            message: `Desktop action: ${action.type}${action.target ? ` → ${action.target}` : ""} (${cuaRes.latency || 0}ms)`,
+            agentId: "desktop-operator",
+            metadata: JSON.stringify({
+              actionType: action.type,
+              title: `Desktop ${action.type}: ${action.target || "Operation"}`,
+              target: action.target,
+              status: cuaRes.success ? "success" : "failed",
+              success: cuaRes.success,
+              latency: cuaRes.latency || 0,
+              screenshotUrl: savedFileUrl,
+              agentName: "Desktop Operator",
+            }),
+          },
+        });
+      } catch {}
+
       return {
         name,
         result: resultText,
         success: true,
-        metadata: { action: cuaRes.action, latency: cuaRes.latency, hasScreenshot: !!cuaRes.screenshot },
+        metadata: {
+          action: cuaRes.action,
+          actionType: "desktop_action",
+          latency: cuaRes.latency,
+          hasScreenshot: !!cuaRes.screenshot,
+          fileUrl: savedFileUrl,
+          screenshotUrl: savedFileUrl,
+          path: savedFileName,
+        },
       };
     }
 
@@ -481,6 +784,358 @@ export async function executeTool(toolCall: ParsedToolCall): Promise<{
           category: externalSkill.category,
           latency: skillRes.latency,
         },
+      };
+    }
+
+    // 6b. System Control: Create Kanban Task
+    if (
+      name === "create_kanban_task" ||
+      name === "create_task" ||
+      name === "kanban_create" ||
+      name === "new_task" ||
+      name === "add_task"
+    ) {
+      const title = args.title || args.name || args.task || String(Object.values(args)[0] || "New Task");
+      const description = args.description || args.desc || args.body || "";
+      const rawStatus = (args.status || args.column || "backlog").toLowerCase();
+      const status = ["backlog", "todo", "in_progress", "review", "done"].includes(rawStatus)
+        ? rawStatus
+        : "backlog";
+      const priority = (args.priority || "medium").toLowerCase();
+      const requestedAgent = args.agentId || args.agent || args.assignedTo;
+
+      let targetAgentId: string | null = null;
+      let assignedAgentName = "Unassigned";
+      let assignedAvatar = "clipboard";
+
+      const agents = await prisma.agent.findMany();
+      if (requestedAgent) {
+        const found = agents.find(
+          (a) =>
+            a.id === requestedAgent ||
+            a.name.toLowerCase() === String(requestedAgent).toLowerCase() ||
+            a.displayName.toLowerCase().includes(String(requestedAgent).toLowerCase())
+        );
+        if (found) {
+          targetAgentId = found.id;
+          assignedAgentName = found.displayName;
+          assignedAvatar = found.avatar || "bot";
+        }
+      }
+
+      if (!targetAgentId && agents.length > 0) {
+        const matched = matchBestAgent(`${title} ${description}`, agents as any);
+        if (matched) {
+          targetAgentId = matched.id;
+          assignedAgentName = matched.displayName || matched.name;
+          assignedAvatar = matched.avatar || "bot";
+        }
+      }
+
+      const maxPos = await prisma.task.findFirst({
+        where: { status },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      });
+      const position = (maxPos?.position ?? -1) + 1;
+
+      const created = await prisma.task.create({
+        data: {
+          title: title.trim(),
+          description: description.trim(),
+          status,
+          priority: ["low", "medium", "high", "urgent"].includes(priority) ? priority : "medium",
+          position,
+          agentId: targetAgentId,
+        },
+        include: { agent: true },
+      });
+
+      try {
+        await prisma.activityLog.create({
+          data: {
+            type: "task_created",
+            message: `Created Kanban task "${created.title}" in ${status.toUpperCase()} (${created.priority})`,
+            agentId: targetAgentId,
+          },
+        });
+      } catch {}
+
+      return {
+        name,
+        result: `**Kanban Task Created Successfully**\n\n- **Task:** "${created.title}"\n- **Status Column:** \`${created.status.toUpperCase()}\`\n- **Priority:** \`${created.priority.toUpperCase()}\`\n- **Assigned Specialist:** **${assignedAgentName}**\n\n[Open Kanban Board](/kanban) to view or drag the card.`,
+        success: true,
+        metadata: {
+          taskId: created.id,
+          title: created.title,
+          status: created.status,
+          priority: created.priority,
+          agent: assignedAgentName,
+          kanbanUrl: "/kanban",
+        },
+      };
+    }
+
+    // 6c. System Control: Create Scheduled Routine
+    if (
+      name === "create_routine" ||
+      name === "routine_create" ||
+      name === "make_routine" ||
+      name === "schedule_task" ||
+      name === "new_routine"
+    ) {
+      const title = args.title || args.name || "Automated Routine";
+      const prompt = args.prompt || args.instructions || args.task || title;
+      const description = args.description || args.desc || "";
+      const type = (args.type || "daily").toLowerCase() === "one_time" ? "one_time" : "daily";
+      const time = args.time || "09:00";
+      const scheduledAt = args.scheduledAt || args.scheduled_at || null;
+      const priority = (args.priority || "medium").toLowerCase();
+      const requestedAgent = args.agentId || args.agent;
+
+      let targetAgentId: string | null = null;
+      let agentName = "Specialist Swarm";
+      let agentAvatar = "zap";
+
+      const agents = await prisma.agent.findMany();
+      if (requestedAgent) {
+        const found = agents.find(
+          (a) =>
+            a.id === requestedAgent ||
+            a.name.toLowerCase() === String(requestedAgent).toLowerCase() ||
+            a.displayName.toLowerCase().includes(String(requestedAgent).toLowerCase())
+        );
+        if (found) {
+          targetAgentId = found.id;
+          agentName = found.displayName;
+          agentAvatar = found.avatar || "bot";
+        }
+      }
+
+      if (!targetAgentId && agents.length > 0) {
+        const matched = matchBestAgent(`${title} ${prompt}`, agents as any);
+        if (matched) {
+          targetAgentId = matched.id;
+          agentName = matched.displayName || matched.name;
+          agentAvatar = matched.avatar || "bot";
+        }
+      }
+
+      const nextRunAt = calculateNextRun(type, time, scheduledAt);
+
+      const created = await prisma.routine.create({
+        data: {
+          title: title.trim(),
+          prompt: prompt.trim(),
+          description: description.trim(),
+          type,
+          time: type === "daily" ? time : null,
+          scheduledAt: type === "one_time" && scheduledAt ? new Date(scheduledAt) : null,
+          priority: ["low", "medium", "high", "urgent"].includes(priority) ? priority : "medium",
+          agentId: targetAgentId,
+          enabled: true,
+          autoExecute: true,
+          nextRunAt,
+        },
+        include: { agent: true },
+      });
+
+      try {
+        await prisma.activityLog.create({
+          data: {
+            type: "routine_created",
+            message: `Created ${type === "daily" ? "daily routine" : "scheduled task"} "${created.title}"`,
+            agentId: targetAgentId,
+          },
+        });
+      } catch {}
+
+      return {
+        name,
+        result: `**Automated Routine Scheduled Successfully**\n\n- **Routine Title:** "${created.title}"\n- **Execution Schedule:** ${type === "daily" ? `Daily at \`${time}\`` : `One-time at \`${scheduledAt}\``}\n- **Assigned Agent:** **${agentName}**\n- **Auto-Execute:** Autonomous pickup enabled\n- **Next Scheduled Run:** ${nextRunAt ? new Date(nextRunAt).toLocaleString() : "Pending next evaluation"}\n\n[Inspect on Routines Page](/routines)`,
+        success: true,
+        metadata: {
+          routineId: created.id,
+          title: created.title,
+          type: created.type,
+          time: created.time,
+          agent: agentName,
+          routinesUrl: "/routines",
+        },
+      };
+    }
+
+    // 6d. System Control: Create Visual DAG Workflow
+    if (
+      name === "create_workflow" ||
+      name === "workflow_create" ||
+      name === "make_workflow" ||
+      name === "build_workflow" ||
+      name === "new_workflow"
+    ) {
+      const wfName = args.name || args.title || "Multi-Agent Swarm Pipeline";
+      const description = args.description || args.desc || "Automated multi-agent DAG workflow";
+      const category = args.category || "Custom";
+      const workflowId = args.id || `workflow-${Date.now()}`;
+
+      const agents = await prisma.agent.findMany();
+      const firstAgent = agents[0] || null;
+      const secondAgent = agents[1] || firstAgent;
+
+      let nodes = args.nodes;
+      let edges = args.edges;
+
+      if (!Array.isArray(nodes) || nodes.length === 0) {
+        const triggerId = `node-trigger-${Date.now()}`;
+        const agent1Id = `node-agent1-${Date.now()}`;
+        const agent2Id = `node-agent2-${Date.now()}`;
+        const endId = `node-end-${Date.now()}`;
+
+        nodes = [
+          {
+            id: triggerId,
+            type: "trigger",
+            title: "Directive Intake",
+            description: "Intake mission directives and parameters",
+            position: { x: 80, y: 180 },
+            status: "idle",
+          },
+          {
+            id: agent1Id,
+            type: "agent",
+            title: `${firstAgent?.displayName || "Research"} Analysis`,
+            description: "Gather technical specifications & requirements",
+            position: { x: 360, y: 120 },
+            agentId: firstAgent?.id,
+            agentName: firstAgent?.displayName || "Researcher",
+            agentAvatar: firstAgent?.avatar || "search",
+            agentRole: firstAgent?.role || "specialist",
+            promptTemplate: "Analyze mission directive and extract core deliverables:\n\n{{input}}",
+            status: "idle",
+          },
+          {
+            id: agent2Id,
+            type: "agent",
+            title: `${secondAgent?.displayName || "Engineering"} Synthesis`,
+            description: "Implement production architecture & outputs",
+            position: { x: 640, y: 120 },
+            agentId: secondAgent?.id,
+            agentName: secondAgent?.displayName || "Engineer",
+            agentAvatar: secondAgent?.avatar || "zap",
+            agentRole: secondAgent?.role || "specialist",
+            promptTemplate: "Synthesize upstream findings into complete deliverable:\n\n{{previous_output}}",
+            status: "idle",
+          },
+          {
+            id: endId,
+            type: "end",
+            title: "Mission Complete",
+            description: "Deliverable verification and terminal state",
+            position: { x: 920, y: 180 },
+            status: "idle",
+          },
+        ];
+
+        edges = [
+          { id: `e1-${Date.now()}`, from: triggerId, to: agent1Id },
+          { id: `e2-${Date.now()}`, from: agent1Id, to: agent2Id },
+          { id: `e3-${Date.now()}`, from: agent2Id, to: endId },
+        ];
+      }
+
+      const sanitizedWorkflow = {
+        id: workflowId,
+        name: wfName.trim(),
+        description: description.trim(),
+        category,
+        nodes,
+        edges,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const setting = await prisma.setting.findUnique({
+        where: { key: "agent_studio_workflows" },
+      });
+      let existingCustom: any[] = [];
+      if (setting?.value) {
+        try {
+          const parsed = JSON.parse(setting.value);
+          if (Array.isArray(parsed)) existingCustom = parsed;
+        } catch {}
+      }
+
+      const updatedWorkflows = [
+        ...existingCustom.filter((w: any) => w.id !== workflowId),
+        sanitizedWorkflow,
+      ];
+
+      await prisma.setting.upsert({
+        where: { key: "agent_studio_workflows" },
+        update: { value: JSON.stringify(updatedWorkflows) },
+        create: { key: "agent_studio_workflows", value: JSON.stringify(updatedWorkflows) },
+      });
+
+      try {
+        await prisma.activityLog.create({
+          data: {
+            type: "workflow_created",
+            message: `Created DAG workflow: "${sanitizedWorkflow.name}" with ${sanitizedWorkflow.nodes.length} stages`,
+          },
+        });
+      } catch {}
+
+      return {
+        name,
+        result: `**Visual DAG Workflow Created Successfully**\n\n- **Workflow:** "${sanitizedWorkflow.name}" (ID: \`${workflowId}\`)\n- **Category:** \`${category}\`\n- **Stages:** ${sanitizedWorkflow.nodes.length} nodes connected across ${sanitizedWorkflow.edges.length} edges\n- **Pipeline Flow:** ${sanitizedWorkflow.nodes.map((n: any) => n.title).join(" → ")}\n\n[Open in Visual Workflow Canvas](/workflows?id=${workflowId}) to view and execute.`,
+        success: true,
+        metadata: {
+          workflowId,
+          name: sanitizedWorkflow.name,
+          nodeCount: sanitizedWorkflow.nodes.length,
+          workflowsUrl: `/workflows?id=${workflowId}`,
+        },
+      };
+    }
+
+    // 6e. System Control: Query Tasks and Routines
+    if (name === "list_kanban_tasks" || name === "get_tasks") {
+      const tasks = await prisma.task.findMany({
+        include: { agent: true },
+        orderBy: [{ status: "asc" }, { priority: "desc" }],
+        take: 15,
+      });
+      const formatted = tasks
+        .map(
+          (t) =>
+            `- [${t.status.toUpperCase()}] "${t.title}" (${t.priority}) — Assigned: ${t.agent?.displayName || "Unassigned"}`
+        )
+        .join("\n");
+      return {
+        name,
+        result: `**Current Kanban Tasks (${tasks.length} Active)**\n\n${formatted || "No active tasks in pipeline."}\n\n[Open Kanban Board](/kanban)`,
+        success: true,
+        metadata: { count: tasks.length },
+      };
+    }
+
+    if (name === "list_routines" || name === "get_routines") {
+      const routines = await prisma.routine.findMany({
+        include: { agent: true },
+        orderBy: [{ enabled: "desc" }, { createdAt: "desc" }],
+        take: 10,
+      });
+      const formatted = routines
+        .map(
+          (r) =>
+            `- ${r.enabled ? "" : ""} "${r.title}" (${r.type} ${r.time || ""}) — Agent: ${r.agent?.displayName || "Swarm"}`
+        )
+        .join("\n");
+      return {
+        name,
+        result: `**Active Routines (${routines.length})**\n\n${formatted || "No routines configured."}\n\n[View Routines Page](/routines)`,
+        success: true,
+        metadata: { count: routines.length },
       };
     }
 
@@ -551,9 +1206,10 @@ export async function runAgenticLoop(params: {
   useVaultRAG?: boolean;
   history?: LLMMessage[];
   maxTurns?: number;
+  images?: import("./router-types").LLMImageAttachment[];
 }): Promise<AgenticLoopResult> {
   const start = Date.now();
-  const maxTurns = params.maxTurns || 4;
+  const maxTurns = params.maxTurns || 6;
   const conversationHistory: LLMMessage[] = [...(params.history || [])];
   const outputs: AgenticOutput[] = [];
   const toolsExecuted: string[] = [];
@@ -572,9 +1228,24 @@ export async function runAgenticLoop(params: {
   // If user is looking for a file, ground the loop with existing downloads
   let systemPromptAugmented = params.systemPrompt || "";
 
-  // Ground with Code filesystem & workspace capabilities
-  systemPromptAugmented += `\n\n[WORKSPACE & CODE CAPABILITIES]
-You have full autonomous access to the project workspace and can create files, scrape the web, and control the desktop:
+  // Ground with Autonomous Operator instructions
+  systemPromptAugmented += `\n\n[AUTONOMOUS GOAL-DRIVEN OPERATOR]
+You are an autonomous AI operator in Agent Studio OS capable of solving complex multi-step objectives on your own without waiting for the user at each intermediate step.
+When given a user goal:
+1. Deconstruct the objective into clear, logical steps.
+2. Execute required tools sequentially across turns to accomplish each milestone (file creation, web searches, CUA computer automation, code execution).
+3. Observe tool outputs and screenshots to verify progress at every turn.
+5. Conclude with a clear deliverable summary, linking all created files, screenshots, or data artifacts.
+
+[WORKSPACE & SYSTEM CONTROL CAPABILITIES]
+You have full autonomous access to control the operating system, project workspace, Kanban board, Routines, and Workflows:
+- \`create_kanban_task(title="...", description="...", status="backlog"|"todo"|"in_progress"|"review", priority="low"|"medium"|"high"|"urgent", agent="...")\`: Create and assign a task on the Kanban board.
+- \`create_routine(title="...", prompt="...", type="daily"|"one_time", time="09:00", priority="...", agent="...")\`: Create an automated scheduled routine visible on the Routines page.
+- \`create_workflow(name="...", description="...", category="...")\`: Build a visual DAG multi-agent swarm workflow visible on the Workflows page.
+- \`list_kanban_tasks()\`: Inspect active tasks on the Kanban board.
+- \`list_routines()\`: Inspect configured recurring routines.
+- \`desktop_screenshot()\`: Capture real desktop screenshot via native CUA Driver.
+- \`desktop_action(action_type="launch"|"click"|"type"|"key"|"scroll"|"wait", target="...", text="...", key="...", duration=ms)\`: Full computer automation. Launch applications (e.g. calculator, chrome, notepad) or operate native windows.
 - \`create_file(path="path/to/file.ext", content="...")\`: Create or overwrite any file anywhere throughout the project.
 - \`create_folder(path="path/to/folder")\`: Create new directories anywhere in the project.
 - \`read_file(path="path/to/file.ext")\`: Read and inspect existing project files.
@@ -584,9 +1255,8 @@ You have full autonomous access to the project workspace and can create files, s
 - \`scrape_page(url="https://...", selectors="...", render_js=false)\`: Scrape any web page with Scrapling stealth anti-bot bypass.
 - \`scrape_to_markdown(url="https://...")\`: Scrape web page and convert to clean Markdown.
 - \`crawl_site(start_url="https://...", max_pages=10)\`: Crawl multiple site pages.
-- \`desktop_screenshot()\`: Capture real desktop screenshot via CUA Driver.
-- \`desktop_action(action_type="click"|"type"|"launch"|"key"|"scroll", target="...", text="...", key="...")\`: Full computer automation.
-When asked to create files, scrape web data, or perform desktop actions, call these tools directly.
+
+CRITICAL DIRECTIVE: When asked to create Kanban tasks, build routines, generate workflows, or operate the desktop, call these tools immediately. NEVER claim you cannot control the system or access the computer.
 
 [CONVERSATION CONTINUITY]
 You are replying in an ongoing active conversation. Do NOT re-introduce yourself (never say "Hello, I am [Name], your orchestration specialist in the Agent Studio OS..."), do NOT deliver unsolicited greetings, and do NOT reset context. Directly answer the user's latest message while preserving all previous turn context.`;
@@ -631,6 +1301,7 @@ or \`<skill_name>(key="value")\`.`;
       systemPrompt: systemPromptAugmented,
       agentName: params.agentName,
       useVaultRAG: turn === 0 ? params.useVaultRAG : false,
+      images: turn === 0 ? params.images : undefined,
     });
 
     finalModel = completion.modelUsed || finalModel;
@@ -683,12 +1354,12 @@ or \`<skill_name>(key="value")\`.`;
         const auditLines = healingResult.auditEntries
           .map(
             (a) =>
-              `- **Attempt ${a.attempt}/${a.maxAttempts}**: ${a.diagnosis}\n  - *Applied Fix*: \`${a.appliedFix}\`\n  - *Status*: ${a.resolved ? "✅ Resolved" : "⚠️ Needs intervention"}`
+              `- **Attempt ${a.attempt}/${a.maxAttempts}**: ${a.diagnosis}\n  - *Applied Fix*: \`${a.appliedFix}\`\n  - *Status*: ${a.resolved ? "Resolved" : "Needs intervention"}`
           )
           .join("\n");
 
         outputs.push({
-          content: `🔧 **Autonomous Self-Healing Audit**\n\n${auditLines}`,
+          content: `**Autonomous Self-Healing Audit**\n\n${auditLines}`,
           type: "tool_execution",
           agentName: "Self-Healing Diagnostic",
           latency: 220,
@@ -734,7 +1405,7 @@ or \`<skill_name>(key="value")\`.`;
       }
 
       outputs.push({
-        content: `🔍 **Autonomous Tool Execution**\n\n- **Tool**: \`${toolCall.name}\`\n- **Action**: ${actionDesc}\n- **Status**: ${execution.success ? "Completed ✓" : "Failed ✗"}${healingResult.auditEntries.length > 0 && healingResult.success ? " *(Self-Healed 🔧)*" : ""}`,
+        content: `**Autonomous Tool Execution**\n\n- **Tool**: \`${toolCall.name}\`\n- **Action**: ${actionDesc}\n- **Status**: ${execution.success ? "Completed" : "Failed"}${healingResult.auditEntries.length > 0 && healingResult.success ? " *(Self-Healed)*" : ""}`,
         type: "tool_execution",
         agentName: params.agentName || "Autonomous Specialist",
         latency: 180,
@@ -808,11 +1479,13 @@ or \`<skill_name>(key="value")\`.`;
     }
   }
 
-  // 4.5 Clean up raw tool tokens if present in finalContent
+  // 4.5 Clean up raw tool tokens and XML tags if present in finalContent
   let createdDocumentPath: string | null = null;
   if (
     finalContent.includes("<|tool_call") ||
     finalContent.includes("<tool_call>") ||
+    finalContent.includes("<desktop") ||
+    finalContent.includes("<scrape") ||
     finalContent.includes("file.create(") ||
     finalContent.includes("write_file(") ||
     finalContent.includes("file(") ||
@@ -838,7 +1511,26 @@ or \`<skill_name>(key="value")\`.`;
       finalContent = finalContent
         .replace(/<\|tool_call[_:](?:start|begin)\|?>[\s\S]*?<\|tool_call[_:](?:end|finish)\|?>/gi, "")
         .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+        .replace(/<(?:desktop_?[a-zA-Z0-9_]*|scrape_?[a-zA-Z0-9_]*|search|code|file_?[a-zA-Z0-9_]*)(?:\s+[^>]*?)?(?:\/>|>(?:[\s\S]*?<\/[^>]+>)?)/gi, "")
         .trim();
+    }
+  }
+
+  // 4.6 Fallback message if finalContent is empty after stripping raw tool tags
+  if (!finalContent && toolsExecuted.length > 0) {
+    const hasDesktop = toolsExecuted.some((t) => t.includes("desktop") || t === "cua");
+    if (hasDesktop) {
+      finalContent = "**Desktop action completed successfully.** (See captured screen and details below.)";
+    } else {
+      finalContent = `Autonomous task executed successfully using ${toolsExecuted.join(", ")}.`;
+    }
+  }
+
+  // 4.7 Ensure any captured screenshots are appended to finalContent if not already embedded
+  for (const out of outputs) {
+    if (out.metadata?.screenshotUrl && !finalContent.includes(out.metadata.screenshotUrl)) {
+      finalContent += `\n\n![Desktop Screenshot](${out.metadata.screenshotUrl})\n*[Captured desktop screenshot]*`;
+      break;
     }
   }
 
@@ -877,7 +1569,7 @@ or \`<skill_name>(key="value")\`.`;
     const isFifa = /fifa|world cup/i.test(params.prompt);
     const title = isFifa ? "FIFA World Cup 2026 Foul Statistics Dataset" : "Data Export Spreadsheet";
     outputs.push({
-      content: `### 📁 Deliverable: ${title}\n\n- **Format**: CSV Spreadsheet\n- **Records**: **${csvInfo.rowCount} data points**\n- **Direct Download**: [Download ${path.basename(csvInfo.fileUrl)}](${csvInfo.fileUrl})\n\n> The file has been written to the public download vault. You can click the link above to save it or import it directly into Excel, Python Pandas, or R.`,
+      content: `### Deliverable: ${title}\n\n- **Format**: CSV Spreadsheet\n- **Records**: **${csvInfo.rowCount} data points**\n- **Direct Download**: [Download ${path.basename(csvInfo.fileUrl)}](${csvInfo.fileUrl})\n\n> The file has been written to the public download vault. You can click the link above to save it or import it directly into Excel, Python Pandas, or R.`,
       type: "data_deliverable",
       agentName: params.agentName || "Autonomous Specialist",
       latency: 40,
@@ -893,7 +1585,7 @@ or \`<skill_name>(key="value")\`.`;
 
   for (const file of uniqueFiles.values()) {
     outputs.push({
-      content: `### 📄 Deliverable Ready for Download\n\n- **File**: \`${file.name}\`\n- **Direct Download**: [Download ${file.name}](${file.url})\n\n> The document has been saved to your workspace download vault. Click the link above to view or download it directly.`,
+      content: `### Deliverable Ready for Download\n\n- **File**: \`${file.name}\`\n- **Direct Download**: [Download ${file.name}](${file.url})\n\n> The document has been saved to your workspace download vault. Click the link above to view or download it directly.`,
       type: "data_deliverable",
       agentName: params.agentName || "Autonomous Specialist",
       latency: 40,
@@ -907,7 +1599,7 @@ or \`<skill_name>(key="value")\`.`;
     if (existing.length > 0) {
       const topFile = existing[0];
       outputs.push({
-        content: `### 📄 Available Deliverable in Workspace\n\n- **File**: \`${topFile.fileName}\`\n- **Direct Download**: [Download ${topFile.fileName}](${topFile.fileUrl})\n\n> The file is stored in your workspace download vault (\`public/downloads/${topFile.fileName}\`). Click the link above to download or open it.`,
+        content: `### Available Deliverable in Workspace\n\n- **File**: \`${topFile.fileName}\`\n- **Direct Download**: [Download ${topFile.fileName}](${topFile.fileUrl})\n\n> The file is stored in your workspace download vault (\`public/downloads/${topFile.fileName}\`). Click the link above to download or open it.`,
         type: "data_deliverable",
         agentName: params.agentName || "Autonomous Specialist",
         latency: 20,

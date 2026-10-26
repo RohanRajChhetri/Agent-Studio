@@ -5,6 +5,15 @@ import type { AgentProfile } from "@/types";
 import { toast } from "sonner";
 import { matchBestAgent } from "@/lib/agent-matcher";
 
+export interface DashboardAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: "document" | "image" | "audio" | "code" | "data";
+  mimeType: string;
+  content?: string;
+}
+
 export interface DashboardChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -17,6 +26,7 @@ export interface DashboardChatMessage {
   actionExecuted?: string;
   task?: any;
   metadata?: Record<string, any>;
+  attachments?: DashboardAttachment[];
 }
 
 interface DashboardChatContextType {
@@ -37,7 +47,7 @@ interface DashboardChatContextType {
   setIsMinimized: React.Dispatch<React.SetStateAction<boolean>>;
   agents: AgentProfile[];
   setAgents: React.Dispatch<React.SetStateAction<AgentProfile[]>>;
-  sendChatMessage: (text: string, customAgentId?: string) => Promise<void>;
+  sendChatMessage: (text: string, customAgentId?: string, attachments?: DashboardAttachment[]) => Promise<void>;
   openAgentChat: (agent: AgentProfile) => void;
   closeChat: () => void;
   clearChat: () => void;
@@ -156,9 +166,9 @@ export function DashboardChatProvider({ children }: { children: React.ReactNode 
 
   // Send message to agent with session continuity
   const sendChatMessage = useCallback(
-    async (text: string, customAgentId?: string) => {
+    async (text: string, customAgentId?: string, attachments?: DashboardAttachment[]) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      if (!trimmed && (!attachments || attachments.length === 0)) return;
 
       // Preserve agent across an ongoing conversation unless user explicitly picks another
       let targetAgent: AgentProfile | undefined;
@@ -181,7 +191,8 @@ export function DashboardChatProvider({ children }: { children: React.ReactNode 
       const userMessage: DashboardChatMessage = {
         id: "user-" + Date.now(),
         role: "user",
-        content: trimmed,
+        content: trimmed || (attachments && attachments.length > 0 ? "Attached files" : ""),
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
         createdAt: new Date().toISOString(),
       };
 
@@ -192,6 +203,31 @@ export function DashboardChatProvider({ children }: { children: React.ReactNode 
       setIsChatSending(true);
       setIsMinimized(false); // Auto-expand when a new message is sent
 
+      // Format prompt payload including attached files, code, and audio memo summaries
+      let promptPayload = trimmed;
+      if (attachments && attachments.length > 0) {
+        const summaryParts = attachments.map((att) => {
+          if (att.content && (att.type === "document" || att.type === "code" || att.type === "data")) {
+            const MAX_TEXT_LEN = 80000;
+            let fileText = att.content;
+            let truncationNotice = "";
+            if (fileText.length > MAX_TEXT_LEN) {
+              const truncatedKB = Math.round((fileText.length - MAX_TEXT_LEN) / 1024);
+              fileText = fileText.slice(0, MAX_TEXT_LEN);
+              truncationNotice = `\n... [Note: Remaining ${truncatedKB} KB truncated to fit context limits]`;
+            }
+            return `\n--- File Attachment: ${att.name} (${att.mimeType || "text/plain"}) ---\n\`\`\`\n${fileText}${truncationNotice}\n\`\`\``;
+          }
+          if (att.type === "image") {
+            return `[Attached Image: "${att.name}" (${(att.size / 1024).toFixed(1)} KB) - Image data forwarded for visual inspection]`;
+          }
+          return `[Attached File: "${att.name}" (${(att.size / 1024).toFixed(1)} KB, type: ${att.type})]`;
+        });
+        promptPayload = trimmed
+          ? `${trimmed}\n\n${summaryParts.join("\n\n")}`
+          : summaryParts.join("\n\n");
+      }
+
       // Use active session id if available
       const activeSession = currentSessionIdRef.current || currentSessionId || undefined;
 
@@ -200,7 +236,7 @@ export function DashboardChatProvider({ children }: { children: React.ReactNode 
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: trimmed,
+            prompt: promptPayload,
             agentId: targetAgent?.id,
             sessionId: activeSession,
             history: updatedHistory.slice(-10).map((m) => ({
@@ -208,6 +244,7 @@ export function DashboardChatProvider({ children }: { children: React.ReactNode 
               content: m.content,
             })),
             useVaultRAG: true,
+            attachments: attachments,
           }),
         });
 
@@ -226,7 +263,7 @@ export function DashboardChatProvider({ children }: { children: React.ReactNode 
             role: "assistant" as const,
             content: out.content || String(out),
             agentName: out.agentName || data.agent?.displayName || targetAgent?.displayName || "Autonomous Specialist",
-            agentAvatar: out.agentAvatar || data.agent?.avatar || targetAgent?.avatar || "🤖",
+            agentAvatar: out.agentAvatar || data.agent?.avatar || targetAgent?.avatar || "bot",
             latency: out.latency || data.latency,
             model: data.model,
             actionExecuted: data.actionExecuted,
@@ -245,7 +282,7 @@ export function DashboardChatProvider({ children }: { children: React.ReactNode 
             role: "assistant",
             content: data.content,
             agentName: data.agent?.displayName || targetAgent?.displayName || "Autonomous Specialist",
-            agentAvatar: data.agent?.avatar || targetAgent?.avatar || "🤖",
+            agentAvatar: data.agent?.avatar || targetAgent?.avatar || "bot",
             latency: data.latency,
             model: data.model,
             actionExecuted: data.actionExecuted,

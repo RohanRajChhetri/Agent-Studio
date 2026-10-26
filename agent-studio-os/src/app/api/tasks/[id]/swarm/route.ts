@@ -146,10 +146,10 @@ Synthesize these inputs into a single, cohesive, C-level executive report. Inclu
 > [!NOTE]
 > Autonomous multi-agent swarm execution completed by **${swarmAgents.map((a) => a.displayName).join(", ")}** orchestrated by **${orchestrator ? orchestrator.displayName : "Orchestrator"}**.
 
-## 👑 Executive Synthesis
+## Executive Synthesis
 ${finalSynthesis.content}
 
-## ⚡ Specialist Breakdown
+## Specialist Breakdown
 ${swarmSteps
   .map(
     (step) => `### Step ${step.stepIndex}: ${step.agentDisplayName} (${step.role})

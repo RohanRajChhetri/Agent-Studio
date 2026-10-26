@@ -19,9 +19,13 @@ import {
   Layers,
   Zap,
   Split,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import type { TaskItem, SubtaskItem } from "@/types";
 import { PRIORITY_COLORS, PRIORITY_BADGE_CLASSES } from "@/types";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
+
 
 interface KanbanCardProps {
   task: TaskItem;
@@ -33,6 +37,9 @@ interface KanbanCardProps {
   onDeconstruct?: (task: TaskItem) => void;
   isRunning?: boolean;
   isDeconstructing?: boolean;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (taskId: string, e: React.MouseEvent) => void;
 }
 
 function formatRelativeTime(dateStr?: string | Date | null): string {
@@ -79,6 +86,9 @@ export function KanbanCard({
   onDeconstruct,
   isRunning = false,
   isDeconstructing = false,
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: KanbanCardProps) {
   const {
     attributes,
@@ -145,11 +155,21 @@ export function KanbanCard({
     <div
       ref={setNodeRef}
       style={style}
-      onClick={() => onSelect(task)}
+      onClick={(e) => {
+        if (isSelectionMode && onToggleSelect) {
+          onToggleSelect(task.id, e);
+        } else {
+          onSelect(task);
+        }
+      }}
       className={`group relative rounded-lg border bg-card transition-colors cursor-pointer select-none ${
         isDragging
           ? "opacity-40 border-primary scale-[0.99]"
           : "border-border hover:border-border/90"
+      } ${
+        isSelected
+          ? "ring-2 ring-primary border-primary bg-primary/5 dark:bg-primary/10"
+          : ""
       } ${
         isInProgress
           ? "border-amber-400 dark:border-amber-500/50"
@@ -164,16 +184,35 @@ export function KanbanCard({
         {/* Top Metadata Row */}
         <div className="flex items-center justify-between gap-1.5 text-xs">
           <div className="flex items-center gap-1.5 min-w-0">
-            {/* Drag Handle */}
-            <button
-              {...attributes}
-              {...listeners}
-              onClick={(e) => e.stopPropagation()}
-              className="p-1 -ml-1 rounded hover:bg-muted text-foreground/60 hover:text-foreground cursor-grab active:cursor-grabbing transition-colors"
-              title="Drag task"
-            >
-              <GripVertical className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" />
-            </button>
+            {/* Selection Checkbox or Drag Handle */}
+            {isSelectionMode ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect?.(task.id, e);
+                }}
+                className="p-1 -ml-1 rounded hover:bg-muted text-foreground cursor-pointer transition-colors"
+                title={isSelected ? "Deselect task" : "Select task"}
+                aria-label={isSelected ? "Deselect task" : "Select task"}
+              >
+                {isSelected ? (
+                  <CheckSquare className="w-4 h-4 text-primary" />
+                ) : (
+                  <Square className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+            ) : (
+              <button
+                {...attributes}
+                {...listeners}
+                onClick={(e) => e.stopPropagation()}
+                className="p-1 -ml-1 rounded hover:bg-muted text-foreground/60 hover:text-foreground cursor-grab active:cursor-grabbing transition-colors"
+                title="Drag task"
+              >
+                <GripVertical className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100" />
+              </button>
+            )}
 
             {/* Priority Pill */}
             <span
@@ -376,8 +415,8 @@ export function KanbanCard({
           {/* Agent Pill */}
           <div className="min-w-0">
             {task.agent ? (
-              <span className="px-2 py-0.5 rounded-lg bg-muted text-foreground flex items-center gap-1 font-semibold border border-border text-[11px] truncate max-w-[135px]">
-                <span className="text-xs shrink-0">{task.agent.avatar}</span>
+              <span className="px-2 py-0.5 rounded-lg bg-muted text-foreground flex items-center gap-1.5 font-semibold border border-border text-[11px] truncate max-w-[135px]">
+                <AgentAvatar avatar={task.agent.avatar} className="w-3.5 h-3.5 shrink-0 text-primary" />
                 <span className="truncate">{task.agent.displayName}</span>
               </span>
             ) : (

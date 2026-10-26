@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { GeminiLiveOrb } from "@/components/voice/gemini-live-orb";
-import { CostTrackerModal } from "@/components/telemetry/cost-tracker-modal";
 import {
   DashboardChatProvider,
   useDashboardChat,
@@ -65,9 +64,12 @@ function FloatingPersistentDashboardChat() {
   );
 }
 
+import { NotificationCenterDrawer } from "@/components/notifications/notification-center-drawer";
+
 export function GlobalCockpitProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
-  const [isCostTrackerOpen, setIsCostTrackerOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -80,29 +82,37 @@ export function GlobalCockpitProvider({ children }: { children: React.ReactNode 
         e.preventDefault();
         setIsVoiceOpen((prev) => !prev);
       }
-      // Alt+C or Ctrl+Shift+C -> Token & Cost Tracker
+      // Alt+C or Ctrl+Shift+C -> Analytics Tab
       if (
         (e.altKey && e.key.toLowerCase() === "c") ||
         ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c")
       ) {
         e.preventDefault();
-        setIsCostTrackerOpen((prev) => !prev);
+        router.push("/settings?tab=analytics");
+      }
+      // Alt+N or Ctrl+Shift+N -> Notification Center
+      if (
+        (e.altKey && e.key.toLowerCase() === "n") ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "n")
+      ) {
+        e.preventDefault();
+        setIsNotificationsOpen((prev) => !prev);
       }
     };
 
     const handleCustomEvents = (e: any) => {
       if (e.type === "open-voice-cockpit") setIsVoiceOpen(true);
-      if (e.type === "open-cost-tracker") setIsCostTrackerOpen(true);
+      if (e.type === "open-notifications") setIsNotificationsOpen(true);
     };
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("open-voice-cockpit", handleCustomEvents);
-    window.addEventListener("open-cost-tracker", handleCustomEvents);
+    window.addEventListener("open-notifications", handleCustomEvents);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("open-voice-cockpit", handleCustomEvents);
-      window.removeEventListener("open-cost-tracker", handleCustomEvents);
+      window.removeEventListener("open-notifications", handleCustomEvents);
     };
   }, []);
 
@@ -116,9 +126,9 @@ export function GlobalCockpitProvider({ children }: { children: React.ReactNode 
           onClose={() => setIsVoiceOpen(false)}
         />
 
-        <CostTrackerModal
-          isOpen={isCostTrackerOpen}
-          onClose={() => setIsCostTrackerOpen(false)}
+        <NotificationCenterDrawer
+          isOpen={isNotificationsOpen}
+          onClose={() => setIsNotificationsOpen(false)}
         />
 
         {/* Global Agent Task Tracker across all pages */}

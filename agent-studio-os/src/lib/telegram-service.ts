@@ -437,7 +437,7 @@ export async function processTelegramUpdate(
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : "Error executing request";
     console.error("[Telegram Execution Error]:", err);
-    await sendTelegramMessage(token, chatId, `⚠️ Sorry, an error occurred:\n${errorMsg}`);
+    await sendTelegramMessage(token, chatId, `Sorry, an error occurred:\n${errorMsg}`);
     return false;
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
@@ -57,6 +58,8 @@ import {
   playWarningSound,
 } from "@/lib/sound-effects";
 import { WORKFLOW_PRESETS } from "@/lib/workflow-presets";
+import { AgentPipelineBuilder } from "@/components/agents/agent-pipeline-builder";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 import {
   validateDAGClient,
   wouldCreateCycle,
@@ -74,10 +77,16 @@ import type { AgentProfile } from "@/types";
 
 const LOCAL_STORAGE_CUSTOM_WORKFLOWS = "agent-studio-custom-dag-workflows";
 
-export default function WorkflowsPage() {
+function WorkflowsContent() {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams?.get("tab") || searchParams?.get("view");
+
   const [workflows, setWorkflows] = useState<DAGWorkflow[]>(WORKFLOW_PRESETS);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(
     WORKFLOW_PRESETS[0].id
+  );
+  const [workflowView, setWorkflowView] = useState<"dag" | "pipeline">(
+    initialTab === "pipeline" ? "pipeline" : "dag"
   );
   const [missionInput, setMissionInput] = useState(
     "Build a production-ready AI image generator with Stripe subscription credits, credit ledger, and webhook synchronization"
@@ -89,6 +98,20 @@ export default function WorkflowsPage() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
+
+  const handleSwitchWorkflowView = (view: "dag" | "pipeline") => {
+    setWorkflowView(view);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (view === "pipeline") {
+        url.searchParams.set("tab", "pipeline");
+      } else {
+        url.searchParams.delete("tab");
+        url.searchParams.delete("view");
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
 
   // Agent Fleet from /api/agents
   const [agents, setAgents] = useState<AgentProfile[]>([]);
@@ -118,6 +141,16 @@ export default function WorkflowsPage() {
   const [zoom, setZoom] = useState(0.75);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerSmoothTransition = useCallback((durationMs = 350) => {
+    setIsTransitioning(true);
+    if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
+    transitionTimeoutRef.current = setTimeout(() => {
+      setIsTransitioning(false);
+    }, durationMs);
+  }, []);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileImportInputRef = useRef<HTMLInputElement>(null);
@@ -140,23 +173,51 @@ export default function WorkflowsPage() {
     return validateDAGClient(currentWorkflow.nodes, currentWorkflow.edges);
   }, [currentWorkflow]);
 
-  // Load custom workflows from localStorage + server presets
+  // Load custom workflows from server DB + localStorage + presets
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_CUSTOM_WORKFLOWS);
-      if (stored) {
-        const custom: DAGWorkflow[] = JSON.parse(stored);
-        if (Array.isArray(custom) && custom.length > 0) {
-          setWorkflows((prev) => {
-            const presetIds = new Set(WORKFLOW_PRESETS.map((p) => p.id));
-            const uniqueCustom = custom.filter((c) => !presetIds.has(c.id));
-            return [...WORKFLOW_PRESETS, ...uniqueCustom];
-          });
+    const loadWorkflows = async () => {
+      let localCustom: DAGWorkflow[] = [];
+      try {
+        const stored = localStorage.getItem(LOCAL_STORAGE_CUSTOM_WORKFLOWS);
+        if (stored) {
+          localCustom = JSON.parse(stored);
         }
+      } catch {}
+
+      try {
+        const res = await fetch("/api/workflows");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.workflows) && data.workflows.length > 0) {
+            const combinedMap = new Map<string, DAGWorkflow>();
+            data.workflows.forEach((w: DAGWorkflow) => combinedMap.set(w.id, w));
+            localCustom.forEach((w: DAGWorkflow) => {
+              if (!combinedMap.has(w.id)) combinedMap.set(w.id, w);
+            });
+            const merged = Array.from(combinedMap.values());
+            setWorkflows(merged);
+
+            const targetId = searchParams?.get("id") || searchParams?.get("workflowId");
+            if (targetId && combinedMap.has(targetId)) {
+              setSelectedWorkflowId(targetId);
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch server workflows, falling back to local storage:", err);
       }
-    } catch {
-      // Ignore parse errors
-    }
+
+      if (localCustom.length > 0) {
+        setWorkflows((prev) => {
+          const presetIds = new Set(WORKFLOW_PRESETS.map((p) => p.id));
+          const uniqueCustom = localCustom.filter((c) => !presetIds.has(c.id));
+          return [...WORKFLOW_PRESETS, ...uniqueCustom];
+        });
+      }
+    };
+
+    loadWorkflows();
 
     // Fetch live agents
     fetch("/api/agents")
@@ -165,7 +226,16 @@ export default function WorkflowsPage() {
         if (Array.isArray(data)) setAgents(data);
       })
       .catch(() => {});
-  }, []);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const tab = searchParams?.get("tab") || searchParams?.get("view");
+    if (tab === "pipeline") {
+      setWorkflowView("pipeline");
+    } else if (tab === "dag") {
+      setWorkflowView("dag");
+    }
+  }, [searchParams]);
 
   // Update current workflow helper
   const updateCurrentWorkflow = useCallback(
@@ -178,54 +248,132 @@ export default function WorkflowsPage() {
     [currentWorkflow.id]
   );
 
-  // Fit all workflow nodes into view
-  const fitView = useCallback(() => {
-    if (!canvasRef.current || !currentWorkflow?.nodes?.length) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
+  // Fit all workflow nodes into view with smooth animated transitions & feedback
+  const fitView = useCallback(
+    (opts?: { nodes?: DAGNode[]; showFeedback?: boolean; smooth?: boolean }) => {
+      const showFeedback = opts?.showFeedback ?? true;
+      const smooth = opts?.smooth ?? true;
+      const targetNodes = opts?.nodes ?? currentWorkflow?.nodes;
 
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
+      if (!canvasRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
 
-    for (const n of currentWorkflow.nodes) {
-      minX = Math.min(minX, n.position.x);
-      maxX = Math.max(maxX, n.position.x + 230);
-      minY = Math.min(minY, n.position.y);
-      maxY = Math.max(maxY, n.position.y + 160);
-    }
+      if (smooth) {
+        triggerSmoothTransition(350);
+      }
 
-    const graphWidth = Math.max(maxX - minX, 300);
-    const graphHeight = Math.max(maxY - minY, 200);
-    const padding = 60;
+      // Empty workflow fallback: reset to clean default viewport
+      if (!targetNodes || targetNodes.length === 0) {
+        setPan({ x: 60, y: 60 });
+        setZoom(1.0);
+        if (showFeedback) {
+          toast.info("No nodes in workflow — reset to default 100% view", {
+            id: "fit-view-feedback",
+            duration: 1800,
+          });
+        }
+        return;
+      }
 
-    const scaleX = (rect.width - padding * 2) / graphWidth;
-    const scaleY = (rect.height - padding * 2) / graphHeight;
-    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.0);
+      // Standard node dimensions: w-56 is 224px, typical card height is 160px
+      const nodeWidth = 230;
+      const nodeHeight = 160;
 
-    const centerX = (rect.width - graphWidth * newZoom) / 2 - minX * newZoom;
-    const centerY = (rect.height - graphHeight * newZoom) / 2 - minY * newZoom;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
 
-    setZoom(Number(newZoom.toFixed(2)));
-    setPan({ x: Math.round(centerX), y: Math.round(centerY) });
-  }, [currentWorkflow]);
+      for (const n of targetNodes) {
+        minX = Math.min(minX, n.position.x);
+        maxX = Math.max(maxX, n.position.x + nodeWidth);
+        minY = Math.min(minY, n.position.y);
+        maxY = Math.max(maxY, n.position.y + nodeHeight);
+      }
 
-  // Auto-fit on workflow change and window resize
+      const graphWidth = Math.max(maxX - minX, 100);
+      const graphHeight = Math.max(maxY - minY, 100);
+
+      // Dedicated padding accounting for floating palettes (top dock ~60px, bottom nav ~60px)
+      const paddingX = 70;
+      const paddingTop = 75;
+      const paddingBottom = 75;
+
+      const availWidth = Math.max(rect.width - paddingX * 2, 100);
+      const availHeight = Math.max(rect.height - (paddingTop + paddingBottom), 100);
+
+      const scaleX = availWidth / graphWidth;
+      const scaleY = availHeight / graphHeight;
+
+      // Fit zoom bounded between 0.25 (for large graphs) and 1.0 (never over-zoom small graphs)
+      const calculatedZoom = Math.min(scaleX, scaleY);
+      const clampedZoom = Math.min(Math.max(calculatedZoom, 0.25), 1.0);
+      const newZoom = Number(clampedZoom.toFixed(2));
+
+      // True geometric center of the node cluster
+      const boxCenterX = (minX + maxX) / 2;
+      const boxCenterY = (minY + maxY) / 2;
+
+      // Target center within available viewport area
+      const targetCenterX = rect.width / 2;
+      const targetCenterY = paddingTop + availHeight / 2;
+
+      const newPanX = Math.round(targetCenterX - boxCenterX * newZoom);
+      const newPanY = Math.round(targetCenterY - boxCenterY * newZoom);
+
+      setZoom(newZoom);
+      setPan({ x: newPanX, y: newPanY });
+
+      if (showFeedback) {
+        toast.success(
+          `Fitted ${targetNodes.length} node${targetNodes.length === 1 ? "" : "s"} to view (${Math.round(newZoom * 100)}%)`,
+          {
+            id: "fit-view-feedback",
+            duration: 1800,
+          }
+        );
+      }
+    },
+    [currentWorkflow?.nodes, triggerSmoothTransition]
+  );
+
+  const fitViewRef = useRef(fitView);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fitView();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [selectedWorkflowId, fitView]);
-
-  useEffect(() => {
-    const handleResize = () => fitView();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    fitViewRef.current = fitView;
   }, [fitView]);
 
-  // Keyboard shortcuts (Delete node or edge)
+  // Auto-fit ONLY on initial mount and when switching workflow templates (NOT on node drags)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitViewRef.current({ showFeedback: false, smooth: false });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [selectedWorkflowId]);
+
+  // Window resize handler
+  useEffect(() => {
+    const handleResize = () => {
+      fitViewRef.current({ showFeedback: false, smooth: false });
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // When drawer panel is toggled, smoothly re-center view
+  const isFirstDrawerMountRef = useRef(true);
+  useEffect(() => {
+    if (isFirstDrawerMountRef.current) {
+      isFirstDrawerMountRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      fitViewRef.current({ showFeedback: false, smooth: true });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isDrawerOpen]);
+
+  // Keyboard shortcuts (Delete node or edge, F to Fit View, Esc to deselect)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -236,7 +384,12 @@ export default function WorkflowsPage() {
         return;
       }
 
-      if (e.key === "Delete" || e.key === "Backspace") {
+      if (e.key === "f" || e.key === "F") {
+        if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault();
+          fitViewRef.current({ showFeedback: true, smooth: true });
+        }
+      } else if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedEdgeId) {
           handleDeleteEdge(selectedEdgeId);
         } else if (selectedNodeId) {
@@ -430,7 +583,7 @@ export default function WorkflowsPage() {
       position: { x: Math.max(posX, 40), y: Math.max(posY, 40) },
       agentId: type === "agent" ? defaultAgent?.id : undefined,
       agentName: type === "agent" ? defaultAgent?.displayName || defaultAgent?.name : undefined,
-      agentAvatar: type === "agent" ? defaultAgent?.avatar || "🤖" : undefined,
+      agentAvatar: type === "agent" ? defaultAgent?.avatar || "bot" : undefined,
       agentRole: type === "agent" ? defaultAgent?.role || "specialist" : undefined,
       model: type === "agent" ? defaultAgent?.model || "auto/fast" : undefined,
       temperature: 0.7,
@@ -554,7 +707,7 @@ export default function WorkflowsPage() {
       updatedAt: new Date().toISOString(),
     }));
     toast.success("Applied topological auto-layout");
-    setTimeout(fitView, 50);
+    fitView({ nodes: formatted, showFeedback: false, smooth: true });
   };
 
   // Workflow Storage & Management
@@ -577,6 +730,14 @@ export default function WorkflowsPage() {
         JSON.stringify(updatedCustom)
       );
       setIsSaved(true);
+
+      // Also persist to server database
+      fetch("/api/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentWorkflow),
+      }).catch((e) => console.warn("Failed to sync workflow to server:", e));
+
       toast.success("Workflow saved to workspace storage");
     } catch {
       toast.error("Failed to save workflow");
@@ -607,7 +768,7 @@ export default function WorkflowsPage() {
           description: "Autonomous task processing",
           position: { x: 380, y: 180 },
           agentName: agents[0]?.displayName || "Specialist",
-          agentAvatar: agents[0]?.avatar || "🤖",
+          agentAvatar: agents[0]?.avatar || "bot",
           agentRole: agents[0]?.role || "specialist",
           promptTemplate: "Process directive:\n\n{{input}}",
           status: "idle",
@@ -680,6 +841,11 @@ export default function WorkflowsPage() {
         );
       }
     } catch {}
+
+    // Sync deletion to server database
+    fetch(`/api/workflows?id=${encodeURIComponent(currentWorkflow.id)}`, {
+      method: "DELETE",
+    }).catch((e) => console.warn("Failed to delete workflow from server:", e));
 
     toast.info("Custom workflow removed");
   };
@@ -996,173 +1162,189 @@ export default function WorkflowsPage() {
         className="hidden"
       />
 
-      {/* Top Header & Workflow Manager Toolbar */}
-      <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3 p-3.5 rounded-2xl bg-card border border-border shadow-sm shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs shrink-0">
-            <Workflow className="w-5 h-5" />
+      {/* Top Header Bar - Matches Agents page Directory/Hierarchy pattern */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-1 shrink-0">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Workflows</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+            Visual DAG swarm orchestration and collaborative multi-agent assembly lines
+          </p>
+        </div>
+
+        {/* View Mode Switch - Permanent, fixed location matching Agents page */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border text-xs">
+            <button
+              type="button"
+              onClick={() => handleSwitchWorkflowView("dag")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                workflowView === "dag"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              DAG Studio
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchWorkflowView("pipeline")}
+              className={`px-3 py-1 rounded-md transition-colors cursor-pointer ${
+                workflowView === "pipeline"
+                  ? "bg-card text-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Assembly Line
+            </button>
           </div>
-          <div>
+        </div>
+      </div>
+
+      {workflowView === "pipeline" ? (
+        <div className="flex-1 min-h-0 overflow-y-auto px-1 pb-10">
+          <AgentPipelineBuilder agents={agents} />
+        </div>
+      ) : (
+        <>
+          {/* DAG Studio Dedicated Control Bar */}
+          <div className="p-2.5 rounded-2xl bg-card border border-border shadow-xs flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+            {/* Left: Preset Selector, Save & File Actions */}
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-base sm:text-lg font-bold text-foreground">
-                Visual DAG Workflow Builder
-              </h1>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono font-semibold border border-primary/20">
-                Multi-Agent Swarm
-              </span>
+              <div className="flex items-center gap-1.5 bg-secondary/60 p-1 rounded-xl border border-border">
+                <select
+                  value={selectedWorkflowId}
+                  onChange={(e) => {
+                    setSelectedWorkflowId(e.target.value);
+                    setSelectedNodeId(null);
+                    setSelectedEdgeId(null);
+                    setExecutionResult(null);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-transparent text-xs text-foreground font-semibold outline-none cursor-pointer max-w-[200px] truncate"
+                >
+                  <optgroup label="Presets">
+                    {workflows
+                      .filter((w) => w.category !== "Custom")
+                      .map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name} ({w.nodes.length} nodes)
+                        </option>
+                      ))}
+                  </optgroup>
+                  {workflows.some((w) => w.category === "Custom") && (
+                    <optgroup label="Custom Workflows">
+                      {workflows
+                        .filter((w) => w.category === "Custom")
+                        .map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name} ({w.nodes.length} nodes)
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleSaveWorkflow}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-bold transition cursor-pointer shadow-xs"
+                  title="Save current workflow"
+                >
+                  <Save className="w-3 h-3" />
+                  <span>Save</span>
+                </button>
+              </div>
+
               {!isSaved && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-mono font-bold border border-amber-500/30">
                   Unsaved Changes
                 </span>
               )}
+
+              {/* Workflow Actions Pill: New, Duplicate, Export, Import, Delete */}
+              <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-secondary/40 border border-border text-xs">
+                <button
+                  type="button"
+                  onClick={handleCreateNewWorkflow}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-secondary text-xs font-semibold text-foreground transition cursor-pointer"
+                  title="Create blank DAG workflow"
+                >
+                  <Plus className="w-3.5 h-3.5 text-primary" />
+                  <span className="hidden sm:inline">New</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDuplicateWorkflow}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
+                  title="Duplicate workflow"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportJson}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
+                  title="Export DAG to JSON"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileImportInputRef.current?.click()}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition cursor-pointer"
+                  title="Import DAG from JSON"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                </button>
+
+                {currentWorkflow.category === "Custom" && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteWorkflow}
+                    className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition cursor-pointer"
+                    title="Delete custom workflow"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Orchestrate concurrent parallel fan-out pipelines, aggregators, conditions, and human approval gates.
-            </p>
-          </div>
-        </div>
 
-        {/* Workflow Template Selector & Canvas Controls */}
-        <div className="flex items-center gap-2 flex-wrap w-full xl:w-auto justify-end">
-          {/* Workflow Picker */}
-          <div className="flex items-center gap-1.5 bg-secondary/60 p-1 rounded-xl border border-border">
-            <select
-              value={selectedWorkflowId}
-              onChange={(e) => {
-                setSelectedWorkflowId(e.target.value);
-                setSelectedNodeId(null);
-                setSelectedEdgeId(null);
-                setExecutionResult(null);
-              }}
-              className="px-2.5 py-1 rounded-lg bg-transparent text-xs text-foreground font-semibold outline-none cursor-pointer"
-            >
-              <optgroup label="Presets">
-                {workflows
-                  .filter((w) => w.category !== "Custom")
-                  .map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} ({w.nodes.length} nodes)
-                    </option>
-                  ))}
-              </optgroup>
-              {workflows.some((w) => w.category === "Custom") && (
-                <optgroup label="Custom Workflows">
-                  {workflows
-                    .filter((w) => w.category === "Custom")
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} ({w.nodes.length} nodes)
-                      </option>
-                    ))}
-                </optgroup>
-              )}
-            </select>
+            {/* Right: Layout & Panel Toggle */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleAutoLayout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-foreground transition cursor-pointer"
+                title="Organize DAG nodes into clean topological hierarchy"
+              >
+                <Wand2 className="w-3.5 h-3.5 text-primary" />
+                <span className="hidden sm:inline">Auto-Layout</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleSaveWorkflow}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-bold transition cursor-pointer shadow-xs"
-              title="Save current workflow"
-            >
-              <Save className="w-3 h-3" />
-              <span>Save</span>
-            </button>
+              {/* Inspector Panel Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setIsDrawerOpen((prev) => !prev)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-foreground transition cursor-pointer"
+                title={isDrawerOpen ? "Hide Inspector Panel" : "Show Inspector Panel"}
+              >
+                {isDrawerOpen ? (
+                  <PanelRightClose className="w-3.5 h-3.5 text-primary" />
+                ) : (
+                  <PanelRightOpen className="w-3.5 h-3.5" />
+                )}
+                <span className="hidden md:inline">
+                  {isDrawerOpen ? "Collapse Panel" : "Inspector Panel"}
+                </span>
+              </button>
+            </div>
           </div>
 
-          {/* Workflow Action Buttons */}
-          <button
-            type="button"
-            onClick={handleCreateNewWorkflow}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-foreground transition cursor-pointer"
-            title="Create blank DAG workflow"
-          >
-            <Plus className="w-3.5 h-3.5 text-primary" />
-            <span className="hidden sm:inline">New DAG</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleDuplicateWorkflow}
-            className="p-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-muted-foreground hover:text-foreground transition cursor-pointer"
-            title="Duplicate workflow"
-          >
-            <Copy className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportJson}
-            className="p-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-muted-foreground hover:text-foreground transition cursor-pointer"
-            title="Export DAG to JSON"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => fileImportInputRef.current?.click()}
-            className="p-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-muted-foreground hover:text-foreground transition cursor-pointer"
-            title="Import DAG from JSON"
-          >
-            <Upload className="w-3.5 h-3.5" />
-          </button>
-
-          {currentWorkflow.category === "Custom" && (
-            <button
-              type="button"
-              onClick={handleDeleteWorkflow}
-              className="p-1.5 rounded-xl border border-border bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold text-red-500 transition cursor-pointer"
-              title="Delete custom workflow"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          <div className="h-5 w-px bg-border mx-1 hidden sm:block" />
-
-          {/* Auto-Layout */}
-          <button
-            type="button"
-            onClick={handleAutoLayout}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-foreground transition cursor-pointer"
-            title="Organize DAG nodes into clean topological hierarchy"
-          >
-            <Wand2 className="w-3.5 h-3.5 text-primary" />
-            <span className="hidden sm:inline">Auto-Layout</span>
-          </button>
-
-          {/* Fit View */}
-          <button
-            type="button"
-            onClick={fitView}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-foreground transition cursor-pointer"
-            title="Auto-Fit all nodes to screen"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Fit View</span>
-          </button>
-
-          {/* Toggle Side Panel */}
-          <button
-            type="button"
-            onClick={() => setIsDrawerOpen((prev) => !prev)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-semibold text-foreground transition cursor-pointer"
-            title={isDrawerOpen ? "Hide Side Panel" : "Show Side Panel"}
-          >
-            {isDrawerOpen ? (
-              <PanelRightClose className="w-3.5 h-3.5" />
-            ) : (
-              <PanelRightOpen className="w-3.5 h-3.5" />
-            )}
-            <span className="hidden sm:inline">
-              {isDrawerOpen ? "Collapse Panel" : "Show Panel"}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* Mission Input, Validation Badge & Execution Bar */}
-      <div className="p-3.5 rounded-2xl bg-card border border-border shadow-sm flex flex-col sm:flex-row items-center gap-3 shrink-0">
+          {/* Mission Input, Validation Badge & Execution Bar */}
+          <div className="p-3.5 rounded-2xl bg-card border border-border shadow-sm flex flex-col sm:flex-row items-center gap-3 shrink-0">
         <div className="relative flex-1 w-full flex items-center gap-2">
           <input
             type="text"
@@ -1393,7 +1575,10 @@ export default function WorkflowsPage() {
           <div className="absolute bottom-3 left-3 z-30 flex items-center gap-1 p-1.5 rounded-xl bg-card/90 backdrop-blur border border-border shadow-lg text-xs pointer-events-auto">
             <button
               type="button"
-              onClick={() => setZoom((z) => Math.max(Number((z - 0.1).toFixed(2)), 0.35))}
+              onClick={() => {
+                triggerSmoothTransition(200);
+                setZoom((z) => Math.max(Number((z - 0.1).toFixed(2)), 0.25));
+              }}
               className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
               title="Zoom Out (-)"
             >
@@ -1404,7 +1589,10 @@ export default function WorkflowsPage() {
             </span>
             <button
               type="button"
-              onClick={() => setZoom((z) => Math.min(Number((z + 0.1).toFixed(2)), 1.6))}
+              onClick={() => {
+                triggerSmoothTransition(200);
+                setZoom((z) => Math.min(Number((z + 0.1).toFixed(2)), 1.8));
+              }}
               className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
               title="Zoom In (+)"
             >
@@ -1413,9 +1601,9 @@ export default function WorkflowsPage() {
             <div className="h-4 w-px bg-border mx-0.5" />
             <button
               type="button"
-              onClick={fitView}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-bold text-[11px] transition cursor-pointer"
-              title="Fit All Nodes into Screen (Centered)"
+              onClick={() => fitView({ showFeedback: true, smooth: true })}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 font-bold text-[11px] transition cursor-pointer active:scale-95"
+              title="Fit All Nodes into Screen (Centered) [Press F]"
             >
               <Maximize2 className="w-3 h-3" />
               <span>Fit View</span>
@@ -1423,13 +1611,16 @@ export default function WorkflowsPage() {
             <button
               type="button"
               onClick={() => {
+                triggerSmoothTransition(250);
                 setPan({ x: 40, y: 40 });
                 setZoom(1.0);
+                toast.success("Zoom reset to 100%", { id: "zoom-reset", duration: 1200 });
               }}
-              className="px-2 py-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground text-[11px] font-medium transition cursor-pointer"
-              title="Reset to 100%"
+              className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground text-[11px] font-medium transition cursor-pointer active:scale-95"
+              title="Reset Zoom & Pan to 100%"
             >
-              100%
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset</span>
             </button>
             <div className="h-4 w-px bg-border mx-0.5" />
             <button
@@ -1511,6 +1702,9 @@ export default function WorkflowsPage() {
             style={{
               transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
               transformOrigin: "0 0",
+              transition: isTransitioning
+                ? "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)"
+                : "none",
               width: "4500px",
               height: "2800px",
               position: "absolute",
@@ -1761,7 +1955,7 @@ export default function WorkflowsPage() {
                   {/* Agent Pill (if agent or aggregator) */}
                   {node.agentName && (
                     <div className="flex items-center gap-1.5 p-1 rounded-lg bg-secondary/60 text-[11px] font-medium text-foreground mb-1.5 truncate">
-                      <span className="text-xs shrink-0">{node.agentAvatar || "🤖"}</span>
+                      <AgentAvatar avatar={node.agentAvatar} className="w-3.5 h-3.5 text-primary shrink-0" />
                       <span className="truncate">{node.agentName}</span>
                       <span className="text-[9px] text-muted-foreground ml-auto shrink-0 font-mono">
                         {node.agentRole}
@@ -2089,7 +2283,7 @@ export default function WorkflowsPage() {
                               updateNodeProps(selectedNode.id, {
                                 agentId: found.id,
                                 agentName: found.displayName || found.name,
-                                agentAvatar: found.avatar || "🤖",
+                                agentAvatar: found.avatar || "bot",
                                 agentRole: found.role || "specialist",
                                 model: found.model || "auto/fast",
                               });
@@ -2100,7 +2294,7 @@ export default function WorkflowsPage() {
                           <option value="">Select Agent from Fleet...</option>
                           {agents.map((a) => (
                             <option key={a.id} value={a.id}>
-                              {a.avatar} {a.displayName || a.name} ({a.role || "agent"})
+                              {a.displayName || a.name} ({a.role || "agent"})
                             </option>
                           ))}
                         </select>
@@ -2108,7 +2302,7 @@ export default function WorkflowsPage() {
                         {/* Agent Details Card */}
                         {selectedNode.agentName && (
                           <div className="flex items-center gap-2 pt-1 text-xs">
-                            <span className="text-xl">{selectedNode.agentAvatar || "🤖"}</span>
+                            <AgentAvatar avatar={selectedNode.agentAvatar} className="w-5 h-5 text-primary shrink-0" />
                             <div className="min-w-0 flex-1">
                               <p className="font-bold text-foreground truncate">
                                 {selectedNode.agentName}
@@ -2339,6 +2533,22 @@ export default function WorkflowsPage() {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
+  );
+}
+
+export default function WorkflowsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center bg-[var(--background)]">
+          <Loader2 className="w-6 h-6 animate-spin text-[var(--primary)]" />
+        </div>
+      }
+    >
+      <WorkflowsContent />
+    </Suspense>
   );
 }

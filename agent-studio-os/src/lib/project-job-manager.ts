@@ -8,6 +8,7 @@ export interface ProjectBuildJob {
   projectPath: string;
   prompt: string;
   targetFolder?: string;
+  persona?: string;
   status: "running" | "completed" | "failed";
   startedAt: number;
   completedAt?: number;
@@ -39,11 +40,12 @@ export function startProjectBuildJob(params: {
   currentFilePath?: string;
   currentCode?: string;
   model?: string;
+  persona?: string;
   engine?: "claude-code" | "cloud-architect" | "auto";
   history?: Array<{ role: "user" | "assistant"; content: string }>;
 }): { job: ProjectBuildJob; promise: Promise<ProjectBuildJob> } {
   const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const projectName = (params.projectName || "default-project").trim();
+  const projectName = (params.projectName || "workspace").trim();
   const projectBasePath = params.projectPath || `agent-workspace/${projectName}`;
 
   const job: ProjectBuildJob = {
@@ -53,6 +55,7 @@ export function startProjectBuildJob(params: {
     projectPath: projectBasePath,
     prompt: params.prompt,
     targetFolder: params.targetFolder,
+    persona: params.persona,
     status: "running",
     startedAt: Date.now(),
   };
@@ -70,6 +73,7 @@ export function startProjectBuildJob(params: {
         currentFilePath: params.currentFilePath,
         currentCode: params.currentCode,
         model: params.model,
+        persona: params.persona,
         engine: params.engine,
         history: params.history,
       });
@@ -78,11 +82,11 @@ export function startProjectBuildJob(params: {
       job.completedAt = Date.now();
       job.result = result;
       return job;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(`[ProjectJobManager] Job ${jobId} failed:`, err);
       job.status = "failed";
       job.completedAt = Date.now();
-      job.error = err.message || "Failed to generate project";
+      job.error = err instanceof Error ? err.message : "Failed to generate project";
       return job;
     }
   })();

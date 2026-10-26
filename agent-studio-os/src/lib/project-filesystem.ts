@@ -104,8 +104,8 @@ export async function createProjectFile(
     try {
       await fs.access(safePath);
       throw new Error(`File "${relativePath}" already exists and overwrite is set to false.`);
-    } catch (err: any) {
-      if (err.code !== "ENOENT") throw err;
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code !== "ENOENT") throw err;
     }
   }
 
@@ -177,6 +177,7 @@ export async function listProjectDirectory(
     ".vscode",
     "dist",
     "build",
+    ".project-chat.json",
   ]);
 
   try {
@@ -228,8 +229,9 @@ export async function listProjectDirectory(
       if (!a.isDirectory && b.isDirectory) return 1;
       return a.name.localeCompare(b.name);
     });
-  } catch (err: any) {
-    console.warn(`[Project Filesystem] Error reading directory "${safePath}":`, err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[Project Filesystem] Error reading directory "${safePath}":`, message);
     return [];
   }
 }
@@ -251,10 +253,9 @@ export async function listWorkspaceProjects(): Promise<WorkspaceProjectInfo[]> {
     const entries = await fs.readdir(WORKSPACE_ROOT, { withFileTypes: true });
     const projectDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("."));
 
-    // If no projects exist yet, create a starter project
+    // If no projects exist yet, return empty list
     if (projectDirs.length === 0) {
-      await createWorkspaceProject("default-project");
-      return listWorkspaceProjects();
+      return [];
     }
 
     const projects: WorkspaceProjectInfo[] = [];
@@ -342,8 +343,8 @@ export async function createWorkspaceProject(
   <header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-20">
     <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-lg shadow-lg shadow-indigo-500/20">
-          ⚡
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
         </div>
         <div>
           <h1 class="font-bold text-base tracking-tight text-white">${cleanName}</h1>
@@ -386,18 +387,24 @@ export async function createWorkspaceProject(
 
     <!-- Feature Grid -->
     <div id="features" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-indigo-500/30 transition-all space-y-2">
-        <div class="text-2xl">🎨</div>
+      <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-indigo-500/30 transition-all space-y-3">
+        <div class="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+        </div>
         <h3 class="font-semibold text-white text-sm">Tailwind CSS & Utility First</h3>
         <p class="text-xs text-slate-400 leading-relaxed">Instant visual styling with responsive utilities and curated dark mode palettes.</p>
       </div>
-      <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-indigo-500/30 transition-all space-y-2">
-        <div class="text-2xl">⚡</div>
+      <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-indigo-500/30 transition-all space-y-3">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+        </div>
         <h3 class="font-semibold text-white text-sm">Real-time Preview</h3>
         <p class="text-xs text-slate-400 leading-relaxed">Changes save instantly and compile into the live sandboxed viewport.</p>
       </div>
-      <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-indigo-500/30 transition-all space-y-2">
-        <div class="text-2xl">🤖</div>
+      <div class="p-6 rounded-2xl border border-slate-800/80 bg-slate-900/40 hover:border-indigo-500/30 transition-all space-y-3">
+        <div class="w-9 h-9 rounded-xl bg-violet-500/10 text-violet-400 flex items-center justify-center">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        </div>
         <h3 class="font-semibold text-white text-sm">AI Agent Augmented</h3>
         <p class="text-xs text-slate-400 leading-relaxed">Multi-file generation, automated bug fixes, and continuous workspace enhancements.</p>
       </div>
@@ -643,7 +650,7 @@ document.addEventListener("DOMContentLoaded", () => {
 </head>
 <body>
   <div class="card">
-    <h1>🚀 ${cleanName}</h1>
+    <h1>${cleanName}</h1>
     <p>Project initialized. Ask the AI Agent to build features or add new files!</p>
   </div>
 </body>
@@ -666,6 +673,74 @@ document.addEventListener("DOMContentLoaded", () => {
     message: `Project folder "${cleanName}" created successfully with template "${template}".`,
   };
 }
+
+/**
+ * Renames a user workspace project directory inside agent-workspace.
+ */
+export async function renameWorkspaceProject(
+  oldName: string,
+  newName: string
+): Promise<{
+  success: boolean;
+  oldName: string;
+  newName: string;
+  path: string;
+  message: string;
+}> {
+  const cleanOld = (oldName || "").trim();
+  const cleanNew = (newName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!cleanOld) throw new Error("Current project name is required");
+  if (!cleanNew) throw new Error("New project name cannot be empty");
+  if (cleanOld === cleanNew) {
+    return {
+      success: true,
+      oldName: cleanOld,
+      newName: cleanNew,
+      path: `agent-workspace/${cleanOld}`,
+      message: "Project name unchanged.",
+    };
+  }
+
+  const oldPath = `agent-workspace/${cleanOld}`;
+  const newPath = `agent-workspace/${cleanNew}`;
+
+  await renameProjectEntry(oldPath, newPath);
+
+  return {
+    success: true,
+    oldName: cleanOld,
+    newName: cleanNew,
+    path: newPath,
+    message: `Project "${cleanOld}" renamed to "${cleanNew}" successfully.`,
+  };
+}
+
+/**
+ * Deletes a user workspace project directory inside agent-workspace.
+ */
+export async function deleteWorkspaceProject(projectName: string): Promise<{
+  success: boolean;
+  name: string;
+  message: string;
+}> {
+  const cleanName = (projectName || "").trim();
+  if (!cleanName) throw new Error("Project name is required for deletion");
+
+  const relPath = `agent-workspace/${cleanName}`;
+  await deleteProjectEntry(relPath);
+
+  return {
+    success: true,
+    name: cleanName,
+    message: `Project "${cleanName}" deleted successfully.`,
+  };
+}
+
 
 /**
  * Writes multiple project files in one batch operation.
@@ -728,7 +803,24 @@ export async function renameProjectEntry(
   const parentDir = path.dirname(newSafe);
   await fs.mkdir(parentDir, { recursive: true });
 
-  await fs.rename(oldSafe, newSafe);
+  const maxAttempts = 5;
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    try {
+      await fs.rename(oldSafe, newSafe);
+      break;
+    } catch (err: unknown) {
+      attempts++;
+      const error = err as { code?: string; message?: string };
+      if ((error?.code === "EPERM" || error?.code === "EBUSY") && attempts < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempts * 60));
+        continue;
+      }
+      throw new Error(
+        `Failed to rename "${oldRel}" to "${newRel}" after ${attempts} attempt(s) [${error?.code || error?.message}]: File or directory may be locked by an external process.`
+      );
+    }
+  }
 
   return {
     success: true,
@@ -755,7 +847,25 @@ export async function deleteProjectEntry(
     throw new Error(`Cannot delete protected directory "${relativePath}"`);
   }
 
-  await fs.rm(safePath, { recursive: true, force: true });
+  const maxAttempts = 5;
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    try {
+      await fs.rm(safePath, { recursive: true, force: true });
+      break;
+    } catch (err: unknown) {
+      attempts++;
+      const error = err as { code?: string; message?: string };
+      if ((error?.code === "EPERM" || error?.code === "EBUSY") && attempts < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, attempts * 60));
+        continue;
+      }
+      throw new Error(
+        `Failed to delete "${relativePath}" after ${attempts} attempt(s) [${error?.code || error?.message}]: File or directory may be locked by an external process.`
+      );
+    }
+  }
+
   return {
     success: true,
     path: relativePath,

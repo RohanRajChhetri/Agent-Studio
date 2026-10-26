@@ -61,8 +61,23 @@ export default function RootLayout({
               </main>
               <Toaster
                 position="top-right"
+                closeButton
+                richColors={false}
+                expand={false}
+                gap={8}
                 toastOptions={{
-                  className: "border border-border bg-card text-foreground shadow-sm rounded-xl",
+                  classNames: {
+                    toast: "group toast bg-card border border-border text-foreground shadow-2xl rounded-xl p-3.5 font-sans text-xs sm:text-sm backdrop-blur-md",
+                    title: "font-semibold text-foreground text-xs sm:text-sm tracking-tight",
+                    description: "text-muted-foreground text-xs leading-relaxed mt-0.5",
+                    actionButton: "bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 rounded-lg hover:opacity-90 transition shadow-2xs cursor-pointer",
+                    cancelButton: "bg-secondary text-secondary-foreground text-xs px-2.5 py-1.5 rounded-lg border border-border hover:bg-muted transition cursor-pointer",
+                    closeButton: "bg-secondary border border-border text-muted-foreground hover:text-foreground transition cursor-pointer",
+                    success: "!border-emerald-500/30",
+                    error: "!border-rose-500/30",
+                    warning: "!border-amber-500/30",
+                    info: "!border-border",
+                  },
                 }}
               />
             </GlobalCockpitProvider>

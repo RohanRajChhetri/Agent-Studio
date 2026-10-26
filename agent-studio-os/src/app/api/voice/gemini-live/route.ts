@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     let systemInstruction =
       "You are an intelligent, ultra-low-latency conversational real-time voice AI assistant in Agent Studio OS. Keep responses concise (1 to 2 sentences), natural, clear, and proactive.";
     let agentName = "AI Voice Assistant";
-    let agentAvatar = "🎙️";
+    let agentAvatar = "mic";
 
     if (agentId) {
       try {
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
         });
         if (agent) {
           agentName = agent.displayName || agent.name;
-          agentAvatar = agent.avatar || "🤖";
+          agentAvatar = agent.avatar || "bot";
           systemInstruction = `You are ${agentName}, an autonomous real-time voice agent in Agent Studio OS.
 Role: ${agent.role || "Specialist"}
 Directives: ${agent.systemPrompt || "Be extremely concise, proactive, helpful, and speak with natural cadence."}

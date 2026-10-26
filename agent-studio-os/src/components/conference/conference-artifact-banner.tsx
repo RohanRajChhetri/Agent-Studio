@@ -44,16 +44,16 @@ export function ConferenceArtifactBanner({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="notion-card p-4 border-primary/30 bg-gradient-to-r from-primary/[0.04] via-blue-500/[0.03] to-emerald-500/[0.04] shadow-sm"
+      className="rounded-lg p-4 border border-border bg-card shadow-2xs"
     >
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div className="space-y-1.5 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Folder className="w-4 h-4 text-amber-500 shrink-0" />
-            <code className="text-xs font-mono px-2 py-0.5 rounded bg-secondary border border-border text-primary font-bold">
+            <code className="text-xs font-mono px-2 py-0.5 rounded-sm bg-secondary border border-border text-primary font-bold">
               {result.dedicatedFolder || "agent-workspace/conference/"}
             </code>
-            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+            <span className="text-xs font-semibold font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-sm border border-emerald-500/20">
               Consensus Fulfilled
             </span>
           </div>
@@ -96,7 +96,7 @@ export function ConferenceArtifactBanner({
             <a
               href={result.conferenceFile.fileUrl}
               download={result.conferenceFile.fileName}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition shadow-xs cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition shadow-2xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download</span>
@@ -106,7 +106,7 @@ export function ConferenceArtifactBanner({
           <button
             type="button"
             onClick={onPrint}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-2xs cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>PDF Briefing</span>
@@ -117,10 +117,10 @@ export function ConferenceArtifactBanner({
             type="button"
             onClick={onDispatchToKanban}
             disabled={isDispatchingKanban || dispatchedCount !== null}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition shadow-2xs cursor-pointer ${
               dispatchedCount !== null
                 ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                : "bg-primary hover:bg-primary/90 text-primary-foreground"
             }`}
           >
             {isDispatchingKanban ? (
@@ -139,7 +139,7 @@ export function ConferenceArtifactBanner({
 
           <Link
             href="/code"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card hover:bg-secondary transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border bg-card hover:bg-muted transition shadow-2xs cursor-pointer"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Open in Code</span>
@@ -148,7 +148,7 @@ export function ConferenceArtifactBanner({
           <button
             type="button"
             onClick={onCopyPath}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card hover:bg-secondary transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border bg-card hover:bg-muted transition shadow-2xs cursor-pointer"
           >
             {copiedFile ? (
               <Check className="w-3.5 h-3.5 text-emerald-500" />

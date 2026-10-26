@@ -197,7 +197,7 @@ export async function startWhatsAppBridge(agentId: string, agentName: string = "
     console.error(`[WhatsApp Bridge ${agentId} stderr]:`, d.toString("utf-8"));
   });
 
-  child.on("close", (code) => {
+  child.on("close", () => {
     state.bridgeRunning = false;
     activeBridgeProcesses.delete(agentId);
   });
@@ -251,9 +251,9 @@ export async function processWhatsAppMessage(
   if (!chatId || !rawText) return false;
 
   const userText = rawText
-    .replace(/^(⚕\s*\*.*?\*:\s*|\*.*?\*:\s*|\[.*?\]:\s*)/i, "")
+    .replace(/^([^\w\s]*\s*\*.*?\*:\s*|\*.*?\*:\s*|\[.*?\]:\s*)/i, "")
     .replace(/^[─\-_=]{3,}\s*/gm, "")
-    .replace(/^(⚕\s*\*.*?\*|\*.*?\*)\s*/i, "")
+    .replace(/^([^\w\s]*\s*\*.*?\*|\*.*?\*)\s*/i, "")
     .trim();
 
   if (!userText) return false;
@@ -415,7 +415,7 @@ export async function sendWhatsAppTestMessage(
     chatId = `${cleanNum}@s.whatsapp.net`;
   }
 
-  const message = testText || `🤖 *Agent Studio OS WhatsApp Test*\n\nYour WhatsApp integration is operational and connected.`;
+  const message = testText || `*Agent Studio OS WhatsApp Test*\n\nYour WhatsApp integration is operational and connected.`;
 
   try {
     const res = await fetch(`http://127.0.0.1:${port}/send`, {
@@ -443,13 +443,13 @@ export async function notifyWhatsAppUser(
   try {
     // Notify on all active connected sessions
     let notifiedAny = false;
-    for (const [agentId, state] of globalState.entries()) {
+    for (const state of globalState.values()) {
       if (state.bridgeRunning) {
-        const agentTag = details?.agentName ? `🤖 *Agent*: ${details.agentName}\n` : "";
-        const statusTag = details?.status ? `⚡ *Status*: ${details.status}\n` : "";
+        const agentTag = details?.agentName ? `*Agent*: ${details.agentName}\n` : "";
+        const statusTag = details?.status ? `*Status*: ${details.status}\n` : "";
         const cleanSummary = summary.length > 500 ? summary.slice(0, 500) + "..." : summary;
 
-        const message = `🔔 *Agent Studio OS Alert*\n\n📌 *${title}*\n${agentTag}${statusTag}\n${cleanSummary}\n\n_Agent Studio OS Autonomous Relay_`;
+        const message = `*Agent Studio OS Alert*\n\n*${title}*\n${agentTag}${statusTag}\n${cleanSummary}\n\n_Agent Studio OS Autonomous Relay_`;
         
         await sendWhatsAppTestMessage(undefined, message, state.bridgePort);
         notifiedAny = true;

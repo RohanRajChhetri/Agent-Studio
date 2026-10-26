@@ -27,6 +27,8 @@ import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { WebhookSimulator } from "@/components/routines/webhook-simulator";
+import { ConfirmModal } from "@/components/confirm-modal";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 
 interface RoutineItem {
   id: string;
@@ -79,6 +81,8 @@ export default function RoutinesPage() {
 
   // Cached deliverables from recent runs
   const [recentOutputs, setRecentOutputs] = useState<Record<string, string>>({});
+  const [routineToDelete, setRoutineToDelete] = useState<RoutineItem | null>(null);
+  const [isDeletingRoutine, setIsDeletingRoutine] = useState(false);
 
   const fetchRoutines = async () => {
     try {
@@ -225,16 +229,29 @@ export default function RoutinesPage() {
     }
   };
 
-  const handleDeleteRoutine = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this routine?")) return;
+  const handleDeleteRoutine = (id: string) => {
+    const target = routines.find((r) => r.id === id);
+    if (target) {
+      setRoutineToDelete(target);
+    }
+  };
+
+  const handleConfirmDeleteRoutine = async () => {
+    if (!routineToDelete) return;
+    setIsDeletingRoutine(true);
     try {
-      const res = await fetch(`/api/routines/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/routines/${routineToDelete.id}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("Routine deleted");
+        setRoutineToDelete(null);
         fetchRoutines();
+      } else {
+        toast.error("Failed to delete routine");
       }
     } catch {
       toast.error("Failed to delete routine");
+    } finally {
+      setIsDeletingRoutine(false);
     }
   };
 
@@ -263,7 +280,7 @@ export default function RoutinesPage() {
         setActiveDeliverable({
           routineTitle: routine.title,
           agentName: routine.agent?.displayName || "Agent",
-          agentAvatar: routine.agent?.avatar || "🤖",
+          agentAvatar: routine.agent?.avatar || "bot",
           timestamp: new Date().toLocaleTimeString(),
           deliverable: deliverableText,
           modelUsed: data.executionResult?.modelUsed,
@@ -286,7 +303,7 @@ export default function RoutinesPage() {
       setActiveDeliverable({
         routineTitle: routine.title,
         agentName: routine.agent?.displayName || "Agent",
-        agentAvatar: routine.agent?.avatar || "🤖",
+        agentAvatar: routine.agent?.avatar || "bot",
         timestamp: routine.lastRunAt ? new Date(routine.lastRunAt).toLocaleTimeString() : "Recent",
         deliverable: cached,
       });
@@ -301,15 +318,11 @@ export default function RoutinesPage() {
       {/* Sleek, Clean Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-5">
         <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#e6f3fe] border border-[#0075de]/20 text-[#0075de] text-xs font-medium">
-            <CalendarClock className="w-3.5 h-3.5 text-[#0075de]" />
-            <span>Autonomous Background Engine</span>
-          </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Automated Routines
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground max-w-xl">
-            Schedule recurring tasks that your AI agents execute autonomously on a timer. Outputs are auto-saved to your Obsidian Vault.
+            Schedule recurring tasks that your agents execute on a timer. Outputs are auto-saved to your Obsidian Vault.
           </p>
         </div>
 
@@ -368,8 +381,8 @@ export default function RoutinesPage() {
       ) : routines.length === 0 ? (
         /* Minimalist Clean Empty State */
         <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center space-y-4 max-w-md mx-auto">
-          <div className="w-10 h-10 rounded-lg bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/20 flex items-center justify-center mx-auto text-lg">
-            ⏰
+          <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary border border-primary/20 flex items-center justify-center mx-auto">
+            <Clock className="w-5 h-5 text-primary" />
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-semibold text-foreground">No automated routines set up</h3>
@@ -410,7 +423,7 @@ export default function RoutinesPage() {
 
                     {routine.agent && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground border border-border flex items-center gap-1">
-                        <span>{routine.agent.avatar}</span>
+                        <AgentAvatar avatar={routine.agent.avatar} className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span>{routine.agent.displayName}</span>
                       </span>
                     )}
@@ -514,7 +527,7 @@ export default function RoutinesPage() {
               {/* Header */}
               <div className="flex items-start justify-between border-b border-border pb-3 shrink-0">
                 <div className="flex items-center gap-3">
-                  <span className="text-3xl shrink-0">{activeDeliverable.agentAvatar}</span>
+                  <AgentAvatar avatar={activeDeliverable.agentAvatar} className="w-8 h-8 text-primary shrink-0" />
                   <div>
                     <h3 className="text-sm font-bold text-foreground">
                       {activeDeliverable.routineTitle}
@@ -638,7 +651,7 @@ export default function RoutinesPage() {
                             : "bg-secondary/40 border-border text-muted-foreground hover:text-foreground"
                         }`}
                       >
-                        <span className="text-lg shrink-0">{ag.avatar}</span>
+                        <AgentAvatar avatar={ag.avatar} className="w-4 h-4 text-primary shrink-0" />
                         <span className="text-xs truncate">{ag.displayName}</span>
                       </button>
                     ))}
@@ -654,24 +667,26 @@ export default function RoutinesPage() {
                     <button
                       type="button"
                       onClick={() => setFormType("daily")}
-                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                         formType === "daily"
                           ? "bg-primary/20 border-primary text-primary"
                           : "bg-secondary/40 border-border text-muted-foreground"
                       }`}
                     >
-                      ⏰ Every Day
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Every Day</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormType("one_time")}
-                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      className={`flex-1 py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                         formType === "one_time"
                           ? "bg-primary/20 border-primary text-primary"
                           : "bg-secondary/40 border-border text-muted-foreground"
                       }`}
                     >
-                      📅 Specific Date & Time
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Specific Date & Time</span>
                     </button>
                   </div>
 
@@ -719,6 +734,22 @@ export default function RoutinesPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Routine Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!routineToDelete}
+        onClose={() => {
+          if (!isDeletingRoutine) setRoutineToDelete(null);
+        }}
+        onConfirm={handleConfirmDeleteRoutine}
+        title="Delete Routine"
+        description="Are you sure you want to permanently delete this routine?"
+        itemTitle={routineToDelete?.title}
+        dangerDetails="This recurring task and its execution history will be removed. This action cannot be undone."
+        confirmText="Delete Routine"
+        variant="danger"
+        loading={isDeletingRoutine}
+      />
     </div>
   );
 }

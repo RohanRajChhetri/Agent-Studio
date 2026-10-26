@@ -186,6 +186,7 @@ export async function executeChatCompletion(params: {
   agentName?: string;
   useVaultRAG?: boolean;
   useEpisodicMemory?: boolean;
+  images?: import("./router-types").LLMImageAttachment[];
 }): Promise<LLMResponse> {
   const start = Date.now();
   const rawModel = normalizeModelName(params.model);
@@ -222,7 +223,12 @@ export async function executeChatCompletion(params: {
   }
 
   // 3. Prepare and trim context to prevent overflows
-  const rawMessages = prepareMessages(params.prompt, augmentedSystem || undefined, params.history);
+  const rawMessages = prepareMessages(
+    params.prompt,
+    augmentedSystem || undefined,
+    params.history,
+    params.images
+  );
   const messages = trimMessagesToContext(rawMessages);
 
   const formatCitations = () => {
@@ -405,7 +411,7 @@ export async function executeChatCompletion(params: {
   const latency = Date.now() - start;
   return {
     content:
-      `⚠️ **Agent Connection & Model Setup Notice**\n\n` +
+      `**Agent Connection & Model Setup Notice**\n\n` +
       `Your agent fleet is ready, but needs an active AI provider to generate live completions:\n\n` +
       `1. **Get Free Google Gemini Key (Zero Cost)**: Generate a free key in 30 seconds at [Google AI Studio](https://aistudio.google.com/app/apikey) and paste it into [Settings → Providers](/settings).\n` +
       `2. **Universal Gateways**: Or configure **OpenRouter** (300+ models with free-tier access), **Groq** (ultra-low latency), or **OpenAI** in [Settings](/settings).\n` +

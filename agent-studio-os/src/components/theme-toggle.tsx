@@ -22,27 +22,27 @@ export function ThemeToggle({ collapsed = false }: { collapsed?: boolean }) {
   if (!mounted) {
     if (collapsed) {
       return (
-        <div className="w-8 h-8 mx-auto rounded-lg flex items-center justify-center text-muted-foreground border border-transparent">
-          <Sun className="w-3.5 h-3.5 text-primary" />
+        <div className="w-10 h-10 mx-auto rounded-md flex items-center justify-center text-muted-foreground border border-transparent">
+          <Sun className="w-4 h-4 text-primary" />
         </div>
       );
     }
     return (
       <div className="w-full space-y-1.5">
-        <div className="flex items-center justify-between px-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="flex items-center justify-between px-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">
           <span>Appearance</span>
           <span className="font-mono text-[9px] text-muted-foreground capitalize">light</span>
         </div>
-        <div className="relative flex items-center p-0.5 rounded-lg bg-muted border border-border">
+        <div className="relative flex items-center p-0.5 rounded-md bg-muted border border-border">
           {options.map((opt) => (
             <div
               key={opt.id}
-              className={`relative flex-1 flex items-center justify-center gap-1.5 py-1 rounded-md text-xs font-medium ${
+              className={`relative flex-1 flex items-center justify-center gap-1.5 py-1 rounded-sm text-xs font-medium ${
                 opt.id === "light" ? "text-foreground font-semibold" : "text-muted-foreground"
               }`}
             >
               {opt.id === "light" && (
-                <div className="absolute inset-0 rounded-md bg-card border border-border -z-10" />
+                <div className="absolute inset-0 rounded-sm bg-card border border-border -z-10 shadow-2xs" />
               )}
               <opt.icon className={`w-3.5 h-3.5 ${opt.id === "light" ? "text-primary" : "text-muted-foreground"}`} />
               <span className="text-[11px]">{opt.label}</span>
@@ -61,7 +61,7 @@ export function ThemeToggle({ collapsed = false }: { collapsed?: boolean }) {
       <button
         onClick={toggleTheme}
         title={`Theme: ${activeOption.label} — click to cycle`}
-        className="w-10 h-10 mx-auto flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer border border-transparent hover:border-border"
+        className="w-10 h-10 mx-auto flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer border border-transparent hover:border-border"
       >
         <Icon
           className={`w-4 h-4 transition-colors ${
@@ -79,14 +79,14 @@ export function ThemeToggle({ collapsed = false }: { collapsed?: boolean }) {
   // Expanded sidebar: full three-option pill selector
   return (
     <div className="w-full space-y-1.5">
-      <div className="flex items-center justify-between px-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+      <div className="flex items-center justify-between px-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider font-mono">
         <span>Appearance</span>
         <span className="font-mono text-[9px] text-muted-foreground capitalize">
           {resolvedTheme}
         </span>
       </div>
 
-      <div className="relative flex items-center p-0.5 rounded-lg bg-muted border border-border">
+      <div className="relative flex items-center p-0.5 rounded-md bg-muted border border-border">
         {options.map((opt) => {
           const isActive = theme === opt.id;
           const Icon = opt.icon;
@@ -95,7 +95,7 @@ export function ThemeToggle({ collapsed = false }: { collapsed?: boolean }) {
             <button
               key={opt.id}
               onClick={() => setTheme(opt.id)}
-              className={`relative flex-1 flex items-center justify-center gap-1.5 py-1 rounded-md text-xs font-medium transition-colors z-10 cursor-pointer ${
+              className={`relative flex-1 flex items-center justify-center gap-1.5 py-1 rounded-sm text-xs font-medium transition-colors z-10 cursor-pointer ${
                 isActive
                   ? "text-foreground font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -106,7 +106,7 @@ export function ThemeToggle({ collapsed = false }: { collapsed?: boolean }) {
                 <motion.div
                   layoutId="active-theme-pill"
                   transition={{ type: "spring", stiffness: 450, damping: 35 }}
-                  className="absolute inset-0 rounded-md bg-card border border-border -z-10"
+                  className="absolute inset-0 rounded-sm bg-card border border-border -z-10 shadow-2xs"
                 />
               )}
 

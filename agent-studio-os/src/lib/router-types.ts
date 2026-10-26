@@ -1,6 +1,13 @@
+export interface LLMImageAttachment {
+  mimeType: string;
+  data: string;
+  name?: string;
+}
+
 export interface LLMMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  images?: LLMImageAttachment[];
 }
 
 export interface LLMResponse {

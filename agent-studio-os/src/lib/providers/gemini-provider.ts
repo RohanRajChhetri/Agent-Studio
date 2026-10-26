@@ -81,12 +81,12 @@ export class GeminiProvider extends BaseLLMProvider {
     const primaryModel = this.normalizeGeminiModel(model);
     const candidateModels = [
       primaryModel,
+      "gemini-flash-latest",
       "gemini-3.6-flash",
       "gemini-3.5-flash-lite",
       "gemini-3.1-flash-lite",
       "gemini-flash-lite-latest",
       "gemini-3.8-flash",
-      "gemini-flash-latest",
     ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
     // Extract system instructions and conversation contents
@@ -109,16 +109,32 @@ export class GeminiProvider extends BaseLLMProvider {
         const result = await this.executeWithTimeout(async (signal) => {
           // 1. High-speed Google native generateContent endpoint (preferred)
           try {
-            const contents = formattedMessages.map((m) => ({
-              role: m.role === "assistant" ? "model" : "user",
-              parts: [{ text: m.content }],
-            }));
+            const contents = formattedMessages.map((m) => {
+              const parts: any[] = [{ text: m.content }];
+              if (m.images && m.images.length > 0) {
+                for (const img of m.images) {
+                  const base64Data = img.data.includes(";base64,")
+                    ? img.data.split(";base64,")[1]
+                    : img.data;
+                  parts.unshift({
+                    inlineData: {
+                      mimeType: img.mimeType || "image/png",
+                      data: base64Data,
+                    },
+                  });
+                }
+              }
+              return {
+                role: m.role === "assistant" ? "model" : "user",
+                parts,
+              };
+            });
 
             const requestBody: Record<string, unknown> = {
               contents,
               generationConfig: {
                 temperature: 0.7,
-                maxOutputTokens: 4096,
+                maxOutputTokens: 8192,
               },
             };
 
@@ -163,7 +179,25 @@ export class GeminiProvider extends BaseLLMProvider {
               ...(effectiveSystemPrompt
                 ? [{ role: "system", content: effectiveSystemPrompt }]
                 : []),
-              ...formattedMessages,
+              ...formattedMessages.map((m) => {
+                if (m.images && m.images.length > 0) {
+                  return {
+                    role: m.role,
+                    content: [
+                      { type: "text", text: m.content },
+                      ...m.images.map((img) => ({
+                        type: "image_url",
+                        image_url: {
+                          url: img.data.startsWith("data:")
+                            ? img.data
+                            : `data:${img.mimeType || "image/png"};base64,${img.data}`,
+                        },
+                      })),
+                    ],
+                  };
+                }
+                return { role: m.role, content: m.content };
+              }),
             ];
 
             const res = await fetch(

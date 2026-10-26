@@ -198,7 +198,7 @@ export async function POST(request: Request) {
     const success =
       result.source !== "fallback" &&
       result.content.trim().length > 0 &&
-      !result.content.includes("⚠️");
+      !result.content.includes("Model Setup Notice");
 
     return NextResponse.json({
       success,

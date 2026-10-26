@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterAll } from "vitest";
+import fs from "fs/promises";
+import path from "path";
 import {
   parseToolCalls,
   parseFunctionArguments,
@@ -10,6 +12,36 @@ import {
 vi.mock("../llm-router", () => ({
   executeChatCompletion: vi.fn(),
 }));
+
+// Mock filesystem and document generator to prevent polluting disk during test runs
+vi.mock("../project-filesystem", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../project-filesystem")>();
+  return {
+    ...actual,
+    createProjectFile: vi.fn(async (targetPath: string, content: string) => ({
+      success: true,
+      path: targetPath,
+      fullPath: `/mocked/${targetPath}`,
+      size: Buffer.byteLength(content, "utf-8"),
+      message: `File "${targetPath}" created successfully.`,
+    })),
+  };
+});
+
+vi.mock("../document-generator", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../document-generator")>();
+  return {
+    ...actual,
+    saveDocumentFile: vi.fn(async (fileName: string, content: string) => ({
+      fileName,
+      fileUrl: `/downloads/${encodeURIComponent(fileName)}`,
+      size: Buffer.byteLength(content, "utf-8"),
+    })),
+    listDownloadedFiles: vi.fn(async () => [
+      { fileName: "sample.txt", fileUrl: "/downloads/sample.txt", size: 1024, createdAt: new Date().toISOString() },
+    ]),
+  };
+});
 
 import { executeChatCompletion } from "../llm-router";
 
@@ -48,6 +80,34 @@ describe("Agentic Tool Loop Parser", () => {
     expect(parsed[0].args.path).toBe("Darwin Jobs October 2026.doc");
     expect(parsed[0].args.content).toContain("# Darwin Jobs");
     expect(parsed[0].args.content).toContain("Coordinates (Lat, Lon)");
+  });
+
+  it("parses XML tag attributes format (e.g. <desktopaction actiontype='launch' target='https://www.youtube.com'/> and <desktop_screenshot/>)", () => {
+    const raw = `<desktopaction actiontype="launch" target="https://www.youtube.com"/>\n\n<desktop_screenshot/>`;
+    const parsed = parseToolCalls(raw);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].name).toBe("desktop_action");
+    expect(parsed[0].args.action_type).toBe("launch");
+    expect(parsed[0].args.target).toBe("https://www.youtube.com");
+    expect(parsed[1].name).toBe("desktop_screenshot");
+  });
+
+  it("parses multiple sequential tool calls in content", () => {
+    const raw = `I will launch YouTube and capture the desktop screen:\ndesktop_action(action_type="launch", target="https://youtube.com")\ndesktop_screenshot()`;
+    const parsed = parseToolCalls(raw);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].name).toBe("desktop_action");
+    expect(parsed[0].args.target).toBe("https://youtube.com");
+    expect(parsed[1].name).toBe("desktop_screenshot");
+  });
+
+  it("parses nested XML tags", () => {
+    const raw = `<desktop_action><action_type>launch</action_type><target>https://youtube.com</target></desktop_action>`;
+    const parsed = parseToolCalls(raw);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].name).toBe("desktop_action");
+    expect(parsed[0].args.action_type).toBe("launch");
+    expect(parsed[0].args.target).toBe("https://youtube.com");
   });
 
   it("safely handles text without tool calls", () => {
@@ -167,5 +227,23 @@ describe("runAgenticLoop multi-step execution", () => {
     expect(result.outputs.some((o) => o.type === "data_deliverable")).toBe(true);
     expect(result.outputs.some((o) => o.content.includes("test_essays.pdf"))).toBe(true);
   });
+
+  afterAll(async () => {
+    const root = process.cwd();
+    const filesToDelete = [
+      path.join(root, "test_essays.pdf"),
+      path.join(root, "agent-workspace", "test_essays.pdf"),
+      path.join(root, "public", "downloads", "test_essays.pdf"),
+      path.join(root, "public", "downloads", "test_fouls.csv"),
+      path.join(root, "public", "downloads", "give_me_those_essay_in.pdf"),
+      path.join(root, "public", "downloads", "give_me_data_about_world.csv"),
+    ];
+    for (const f of filesToDelete) {
+      try {
+        await fs.unlink(f);
+      } catch {}
+    }
+  });
 });
+
 

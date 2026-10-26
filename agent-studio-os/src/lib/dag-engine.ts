@@ -12,6 +12,7 @@ import { executeCUAAction } from "@/lib/cua-driver";
 import { executeCodeSandbox } from "@/lib/tools-engine";
 import fs from "fs/promises";
 import path from "path";
+import { getScreenshotsOutputDir } from "@/lib/storage-config";
 
 /**
  * Validates DAG for acyclicity and dangling references.
@@ -210,10 +211,10 @@ async function executeNode(
         selectors,
       });
 
-      let output = `### 🕷️ Scrapling Web Extraction: ${scrapeRes.title || targetUrl}\n\n`;
+      let output = `### Scrapling Web Extraction: ${scrapeRes.title || targetUrl}\n\n`;
       output += `- **Source URL**: \`${targetUrl}\`\n`;
       output += `- **Engine**: Scrapling Stealth Anti-Bot • **Latency**: ${scrapeRes.latency}ms\n`;
-      output += `- **Status**: ${scrapeRes.success ? "✅ Successfully Extracted" : "❌ Extraction Failed"}\n\n`;
+      output += `- **Status**: ${scrapeRes.success ? "Successfully Extracted" : "Extraction Failed"}\n\n`;
       if (scrapeRes.extractedData) {
         output += `**Structured Data Fields:**\n\`\`\`json\n${JSON.stringify(scrapeRes.extractedData, null, 2)}\n\`\`\`\n\n`;
       }
@@ -221,7 +222,7 @@ async function executeNode(
       return { output, latencyMs: Date.now() - start };
     } catch (err: any) {
       return {
-        output: `### 🕷️ Scrapling Web Extraction (Fallback)\n\nCould not scrape \`${targetUrl}\`: ${err?.message || String(err)}.\n\nProviding synthesized upstream context:\n${finalPrompt}`,
+        output: `### Scrapling Web Extraction (Fallback)\n\nCould not scrape \`${targetUrl}\`: ${err?.message || String(err)}.\n\nProviding synthesized upstream context:\n${finalPrompt}`,
         latencyMs: Date.now() - start,
       };
     }
@@ -239,8 +240,8 @@ async function executeNode(
         key: node.config?.key,
       });
 
-      let output = `### 🖥️ Desktop Automation (CUA Driver): \`${actionType.toUpperCase()}\`\n\n`;
-      output += `- **Status**: ${cuaRes.success ? "✅ Executed" : "❌ Failed"}\n`;
+      let output = `### Desktop Automation (CUA Driver): \`${actionType.toUpperCase()}\`\n\n`;
+      output += `- **Status**: ${cuaRes.success ? "Executed" : "Failed"}\n`;
       output += `- **Latency**: ${cuaRes.latency}ms\n\n`;
       output += `${cuaRes.output || "Desktop action executed successfully."}\n`;
 
@@ -250,14 +251,23 @@ async function executeNode(
           await fs.mkdir(downloadDir, { recursive: true });
           const fileName = `workflow-screenshot-${Date.now()}.png`;
           const filePath = path.join(downloadDir, fileName);
-          await fs.writeFile(filePath, Buffer.from(cuaRes.screenshot, "base64"));
+          const buf = Buffer.from(cuaRes.screenshot, "base64");
+          await fs.writeFile(filePath, buf);
+
+          // Also persist directly to configured screenshots directory
+          try {
+            const screensDir = getScreenshotsOutputDir();
+            await fs.mkdir(screensDir, { recursive: true });
+            await fs.writeFile(path.join(screensDir, fileName), buf);
+          } catch {}
+
           output += `\n\n![Desktop Screenshot](/downloads/${fileName})\n\n*[Captured screenshot saved to \`${fileName}\`]*`;
         } catch {}
       }
       return { output, latencyMs: Date.now() - start };
     } catch (err: any) {
       return {
-        output: `### 🖥️ Desktop Automation (CUA Driver)\n\nAction \`${actionType}\` failed: ${err?.message || String(err)}.\n\nUpstream Context:\n${finalPrompt}`,
+        output: `### Desktop Automation (CUA Driver)\n\nAction \`${actionType}\` failed: ${err?.message || String(err)}.\n\nUpstream Context:\n${finalPrompt}`,
         latencyMs: Date.now() - start,
       };
     }
@@ -272,8 +282,8 @@ async function executeNode(
 
     try {
       const execRes = await executeCodeSandbox(rawCode, lang);
-      let output = `### 💻 Code Sandbox Execution (${lang.toUpperCase()})\n\n`;
-      output += `- **Status**: ${execRes.success ? "✅ Success" : "❌ Error"}\n`;
+      let output = `### Code Sandbox Execution (${lang.toUpperCase()})\n\n`;
+      output += `- **Status**: ${execRes.success ? "Success" : "Error"}\n`;
       output += `- **Execution Time**: ${execRes.executionTime}ms\n\n`;
       output += `\`\`\`${lang}\n${rawCode.slice(0, 1500)}\n\`\`\`\n\n`;
       output += `**Console Output:**\n\`\`\`\n${execRes.stdout || "(No stdout)"}`;
@@ -284,7 +294,7 @@ async function executeNode(
       return { output, latencyMs: Date.now() - start };
     } catch (err: any) {
       return {
-        output: `### 💻 Code Sandbox Execution Failed\n\nError: ${err?.message || String(err)}\n\nCode snippet:\n\`\`\`\n${rawCode}\n\`\`\``,
+        output: `### Code Sandbox Execution Failed\n\nError: ${err?.message || String(err)}\n\nCode snippet:\n\`\`\`\n${rawCode}\n\`\`\``,
         latencyMs: Date.now() - start,
       };
     }
@@ -310,12 +320,12 @@ REASON: [Brief 1-sentence reason]`,
 
       const isPass = !evalCompletion.content?.includes("STATUS: FAIL");
       return {
-        output: `### 🔀 Conditional Branch Evaluator\n\n- **Condition**: \`${evalCondition}\`\n- **Branch Activated**: ${isPass ? "🟢 Primary Path (PASS)" : "🔴 Alternative Path (FAIL)"}\n\n${evalCompletion.content}`,
+        output: `### Conditional Branch Evaluator\n\n- **Condition**: \`${evalCondition}\`\n- **Branch Activated**: ${isPass ? "Primary Path (PASS)" : "Alternative Path (FAIL)"}\n\n${evalCompletion.content}`,
         latencyMs: Date.now() - start,
       };
     } catch {
       return {
-        output: `### 🔀 Conditional Branch Evaluator\n\n- **Condition**: \`${evalCondition}\`\n- **Result**: 🟢 Auto-Passed (Default Branch)`,
+        output: `### Conditional Branch Evaluator\n\n- **Condition**: \`${evalCondition}\`\n- **Result**: Auto-Passed (Default Branch)`,
         latencyMs: Date.now() - start,
       };
     }
@@ -359,7 +369,7 @@ Focus precisely on your assigned scope without generic placeholders.`,
         agentName: node.agentName,
       });
       outputText = completion.content || "";
-    } catch (err: any) {
+    } catch (_err: any) {
       // Graceful fallback with deterministic simulation if offline or API key missing
       outputText = `### Output from ${node.agentName || node.title}\n\n**Processed Objective:**\n${finalPrompt.slice(0, 180)}...\n\n**Specialist Analysis:**\n- Completed tactical execution for ${node.title}.\n- Generated production-grade specifications and verified edge conditions.\n\n*Status: Verified by ${node.agentName || "Agent Studio"}*`;
     }

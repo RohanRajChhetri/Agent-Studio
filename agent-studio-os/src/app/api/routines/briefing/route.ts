@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { writeVaultFile, readVaultFile } from "@/lib/vault";
 import { executeChatCompletion, getActiveApiKeys } from "@/lib/llm-router";
 import { isOmnirouteOnline } from "@/lib/omniroute";
-
 import { getUserScopedWhere, getAuthUserId, PRIMARY_LEGACY_USER_ID } from "@/lib/user-auth";
 
 function getTodayKey(): string {
@@ -25,7 +24,7 @@ function getBriefingRelPath(userId: string | null, today: string): { primaryPath
   return { primaryPath: userScopedPath };
 }
 
-interface KanbanTelemetry {
+export interface KanbanTelemetry {
   total: number;
   backlog: number;
   inProgress: number;
@@ -44,13 +43,60 @@ interface KanbanTelemetry {
   latestTaskUpdate: number;
 }
 
-async function fetchKanbanTelemetry(): Promise<{
-  telemetry: KanbanTelemetry;
+export interface FleetTelemetry {
+  total: number;
+  online: number;
+  busy: number;
+  idle: number;
+  offline: number;
+  agents: Array<{
+    id: string;
+    displayName: string;
+    role: string;
+    department: string;
+    status: string;
+    avatar: string;
+  }>;
+}
+
+export interface RoutineTelemetry {
+  total: number;
+  enabled: number;
+  daily: number;
+  items: Array<{
+    id: string;
+    title: string;
+    type: string;
+    time: string | null;
+    enabled: boolean;
+    agentName: string | null;
+  }>;
+}
+
+export interface ComprehensiveTelemetry {
+  kanban: KanbanTelemetry;
+  fleet: FleetTelemetry;
+  routines: RoutineTelemetry;
+  activity: {
+    recentCount: number;
+    items: Array<{
+      id: string;
+      type: string;
+      message: string;
+      createdAt: string;
+    }>;
+  };
+}
+
+async function fetchComprehensiveTelemetry(): Promise<{
+  telemetry: ComprehensiveTelemetry;
   tasks: any[];
   agents: any[];
+  routines: any[];
+  recentLogs: any[];
 }> {
   const scopedWhere = await getUserScopedWhere();
-  const [tasks, agents] = await Promise.all([
+  const [tasks, agents, routines, recentLogs] = await Promise.all([
     prisma.task.findMany({
       where: scopedWhere,
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
@@ -59,9 +105,19 @@ async function fetchKanbanTelemetry(): Promise<{
     prisma.agent.findMany({
       where: scopedWhere,
     }),
+    prisma.routine.findMany({
+      where: scopedWhere,
+      include: { agent: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.activityLog.findMany({
+      where: scopedWhere,
+      take: 12,
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
-  const backlog = tasks.filter((t) => t.status === "backlog").length;
+  const backlog = tasks.filter((t) => t.status === "backlog" || t.status === "todo").length;
   const inProgress = tasks.filter((t) => t.status === "in_progress").length;
   const review = tasks.filter((t) => t.status === "review").length;
   const done = tasks.filter((t) => t.status === "done").length;
@@ -72,186 +128,176 @@ async function fetchKanbanTelemetry(): Promise<{
     return time > max ? time : max;
   }, 0);
 
-  const telemetry: KanbanTelemetry = {
-    total: tasks.length,
-    backlog,
-    inProgress,
-    review,
-    done,
-    highPriority,
-    hasTasks: tasks.length > 0,
-    tasks: tasks.slice(0, 15).map((t) => ({
-      id: t.id,
-      title: t.title,
-      status: t.status,
-      priority: t.priority,
-      agentName: t.agent?.displayName || null,
-      agentAvatar: t.agent?.avatar || null,
-    })),
-    latestTaskUpdate,
+  const onlineAgents = agents.filter((a) => a.status === "online").length;
+  const busyAgents = agents.filter((a) => a.status === "busy").length;
+  const idleAgents = agents.filter((a) => a.status === "idle").length;
+  const offlineAgents = agents.filter((a) => a.status === "offline" || !a.status).length;
+
+  // Prioritize tasks for the client: Review first, then In Progress, then Urgent/High Backlog, then others
+  const prioritizedTasks = [
+    ...tasks.filter((t) => t.status === "review"),
+    ...tasks.filter((t) => t.status === "in_progress"),
+    ...tasks.filter((t) => (t.status === "backlog" || t.status === "todo") && (t.priority === "urgent" || t.priority === "high")),
+    ...tasks.filter((t) => (t.status === "backlog" || t.status === "todo") && t.priority !== "urgent" && t.priority !== "high"),
+    ...tasks.filter((t) => t.status === "done"),
+  ];
+
+  const telemetry: ComprehensiveTelemetry = {
+    kanban: {
+      total: tasks.length,
+      backlog,
+      inProgress,
+      review,
+      done,
+      highPriority,
+      hasTasks: tasks.length > 0,
+      // Pass all active tasks (up to 100) so frontend has 100% complete review and queue data
+      tasks: prioritizedTasks.slice(0, 100).map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        agentName: t.agent?.displayName || null,
+        agentAvatar: t.agent?.avatar || null,
+      })),
+      latestTaskUpdate,
+    },
+    fleet: {
+      total: agents.length,
+      online: onlineAgents,
+      busy: busyAgents,
+      idle: idleAgents,
+      offline: offlineAgents,
+      agents: agents.slice(0, 16).map((a) => ({
+        id: a.id,
+        displayName: a.displayName,
+        role: a.role,
+        department: a.department,
+        status: a.status,
+        avatar: a.avatar,
+      })),
+    },
+    routines: {
+      total: routines.length,
+      enabled: routines.filter((r) => r.enabled).length,
+      daily: routines.filter((r) => r.type === "daily").length,
+      items: routines.slice(0, 8).map((r) => ({
+        id: r.id,
+        title: r.title,
+        type: r.type,
+        time: r.time,
+        enabled: r.enabled,
+        agentName: r.agent?.displayName || null,
+      })),
+    },
+    activity: {
+      recentCount: recentLogs.length,
+      items: recentLogs.map((l) => ({
+        id: l.id,
+        type: l.type,
+        message: l.message,
+        createdAt: l.createdAt.toISOString(),
+      })),
+    },
   };
 
-  return { telemetry, tasks, agents };
-}
-
-function formatStatusBadge(status: string): string {
-  switch (status) {
-    case "in_progress":
-      return "⚡ In Progress";
-    case "review":
-      return "🔍 In Review";
-    case "backlog":
-      return "⏳ Backlog";
-    case "done":
-      return "✅ Done";
-    default:
-      return status;
-  }
+  return { telemetry, tasks, agents, routines, recentLogs };
 }
 
 function buildTruthfulBriefing(params: {
   todayFormatted: string;
   tasks: any[];
   agents: any[];
-  telemetry: KanbanTelemetry;
+  routines: any[];
+  recentLogs: any[];
+  telemetry: ComprehensiveTelemetry;
 }): string {
-  const { todayFormatted, tasks, agents, telemetry } = params;
+  const { todayFormatted, tasks, agents, routines, telemetry } = params;
 
-  const backlogTasks = tasks.filter((t) => t.status === "backlog");
+  const backlogTasks = tasks.filter((t) => t.status === "backlog" || t.status === "todo");
   const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
   const reviewTasks = tasks.filter((t) => t.status === "review");
   const doneTasks = tasks.filter((t) => t.status === "done");
-  const activeTasks = tasks.filter((t) => t.status !== "done");
+  const total = tasks.length || 1;
 
-  const quotes = [
-    `"Focus is a muscle: say no to the non-essential so your highest goals can compound." — Marcus Aurelius`,
-    `"Simplicity boils down to two steps: Identify the essential. Eliminate the rest." — Leo Babauta`,
-    `"Action is the foundational key to all success." — Pablo Picasso`,
-    `"Decide what to do, and more importantly, decide what NOT to do." — Steve Jobs`,
-  ];
-  const quote = quotes[new Date().getDay() % quotes.length];
+  const reviewPct = Math.round((reviewTasks.length / total) * 100);
+  const backlogPct = Math.round((backlogTasks.length / total) * 100);
+  const inProgressPct = Math.round((inProgressTasks.length / total) * 100);
+  const donePct = Math.round((doneTasks.length / total) * 100);
 
-  if (!telemetry.hasTasks) {
-    // 0 tasks scenario — 100% accurate, no hallucinations
-    return `# 🌅 Daily Executive Briefing — ${todayFormatted}
-
-> *${quote}*
-
-## 📊 Live Kanban Telemetry Matrix
-| 📥 Backlog | ⚡ In Progress | 🔍 Under Review | ✅ Completed | 🎯 Total Active |
-| :---: | :---: | :---: | :---: | :---: |
-| **0** | **0** | **0** | **0** | **0** |
-
-## 🎯 Strategic Priorities For Today
-1. **Define Core Operational Focus**: Your Kanban board is currently at a clean slate. Capture today's top 1-3 critical milestones.
-2. **Mobilize Specialist Fleet**: Delegate key research, coding, or analysis initiatives to your ${agents.length} available agents.
-3. **Capture Strategic Insights**: Utilize **Voice Brain Dump** or **+ New Task** on the Kanban board to seed priority objectives.
-
-## 📋 Task Battlefield & Execution Roster
-✨ **Kanban Board is completely clear!** No active, in-progress, or queued tickets found.
-
-*Ready for new mission intake. Click **Open Kanban** or create a task from the dashboard to initialize autonomous agent workflows.*
-
-## 🏆 Recent Wins & Velocity
-- 🌟 All systems primed and freshly initialized.
-- ⚡ Autonomous agent workforce (${agents.length} specialists) standing by for immediate task intake.
-
-## 🤖 Autonomous Workforce Directive
-${
-  agents.length > 0
-    ? agents.slice(0, 4).map((a) => `- **${a.avatar} ${a.displayName}** (${a.role} | ${a.department}): Ready for task assignments.`).join("\n")
-    : "- No specialist agents deployed yet. Head to **Agents** or deploy an agent pack to build your autonomous fleet."
-}
-
-## 💡 Chief of Staff Proactive Recommendation
-Your task queue is clear. Take 5 minutes to define your highest-leverage goal for this week and initialize tickets in Kanban to empower background agent swarms.`;
-  }
-
-  // Active tasks scenario — strictly grounded in real DB data
-  const strategicPriorities: string[] = [];
-  if (reviewTasks.length > 0) {
-    strategicPriorities.push(
-      `**Clear Review Gate (${reviewTasks.length} Deliverables)**: Review and sign off on completed items such as *"${reviewTasks[0].title}"*.`
-    );
-  }
-  if (inProgressTasks.length > 0) {
-    strategicPriorities.push(
-      `**Monitor Active Specialists**: Drive momentum on active tickets (*"${inProgressTasks[0].title}"*).`
-    );
-  }
-  if (backlogTasks.length > 0) {
-    strategicPriorities.push(
-      `**Triage Backlog Priorities**: Assign specialists to queued items in the backlog (${backlogTasks.length} pending).`
-    );
-  }
-  if (strategicPriorities.length < 3) {
-    strategicPriorities.push(
-      `**Knowledge Vault Synthesis**: Synchronize notes and task outcomes into your local Obsidian Knowledge Vault.`
-    );
-  }
-
-  const battlefieldRows = tasks.map((t) => {
-    const agentLabel = t.agent ? `${t.agent.avatar} ${t.agent.displayName}` : "⚡ Unassigned";
-    const statusLabel = formatStatusBadge(t.status);
-    const priorityLabel = t.priority ? t.priority.toUpperCase() : "MEDIUM";
-    return `| **${priorityLabel}** | ${statusLabel} | **${t.title}** | ${agentLabel} |`;
+  const reviewRows = reviewTasks.map((t) => {
+    const specialist = t.agent?.displayName || "Autonomous Swarm";
+    const priority = (t.priority || "medium").toUpperCase();
+    return `| **${priority}** | ${specialist} | **${t.title}** | Awaiting Executive Sign-Off |`;
   });
 
-  return `# 🌅 Daily Executive Briefing — ${todayFormatted}
+  return `# DAILY EXECUTIVE INTELLIGENCE MEMORANDUM
+**Date:** ${todayFormatted} | **Classification:** Operations Executive Digest
 
-> *${quote}*
+---
 
-## 📊 Live Kanban Telemetry Matrix
-| 📥 Backlog | ⚡ In Progress | 🔍 Under Review | ✅ Completed | 🎯 Total Tracked |
-| :---: | :---: | :---: | :---: | :---: |
-| **${backlogTasks.length}** | **${inProgressTasks.length}** | **${reviewTasks.length}** | **${doneTasks.length}** | **${tasks.length}** |
-
-## 🎯 Strategic Priorities For Today
-${strategicPriorities.slice(0, 3).map((p, idx) => `${idx + 1}. ${p}`).join("\n")}
-
-## 📋 Task Battlefield & Execution Roster
-| Priority | Status | Task Description | Assigned Specialist |
-| :--- | :--- | :--- | :--- |
-${battlefieldRows.join("\n")}
-
+### 1. Executive Summary & Critical Bottleneck
 ${
   reviewTasks.length > 0
-    ? `## 🔍 Immediate Executive Review Gate (${reviewTasks.length} Tickets Awaiting Sign-Off)
-The following deliverables have been completed by specialists and require executive sign-off:
-${reviewTasks.map((t) => `- **${t.title}** (${t.priority.toUpperCase()}) — Specialist: *${t.agent?.displayName || "Agent Swarm"}*`).join("\n")}\n\n`
-    : ""
-}## 🏆 Recent Wins & Velocity
-${
-  doneTasks.length > 0
-    ? doneTasks.map((t) => `- ✅ **${t.title}** — Completed by *${t.agent?.displayName || "Autonomous Swarm"}*`).join("\n")
-    : "- Active sprint underway. Focus on advancing tickets from In Progress and Review."
+    ? `Review Gate clearance is currently the primary operational priority. **${reviewTasks.length} completed deliverables await executive sign-off**, holding back active sprint cycle times. The autonomous workforce of **${telemetry.fleet.online} specialist agents** is fully online and ready for deployment.`
+    : inProgressTasks.length > 0
+    ? `Workforce is actively executing **${inProgressTasks.length} in-flight initiatives**. Autonomous specialists are unblocked and driving milestones toward the Review Gate.`
+    : `Operational board is clear with **${backlogTasks.length} staged backlog initiatives**. Specialist fleet is primed for new mission intake.`
 }
 
-## 🤖 Autonomous Workforce Directive
+---
+
+### 2. Immediate Decision Gate: Deliverables Requiring Sign-Off
+${
+  reviewTasks.length > 0
+    ? `*The following deliverables have been produced by autonomous specialists and require executive review:*
+
+| Priority | Specialist | Deliverable Title | Status |
+| :--- | :--- | :--- | :--- |
+${reviewRows.join("\n")}`
+    : "*Review Gate is clean. No deliverables are currently awaiting sign-off.*"
+}
+
+---
+
+### 3. Pipeline Flow & Workload Distribution
+| Operational Stage | Count | Distribution | Status Indicator |
+| :--- | :---: | :---: | :--- |
+| **Backlog & Staged** | ${backlogTasks.length} | ${backlogPct}% | Staged for intake |
+| **In Progress** | ${inProgressTasks.length} | ${inProgressPct}% | ${inProgressTasks.length > 0 ? "Active Swarm Runs" : "Idle (Swarm Ready)"} |
+| **Awaiting Review** | ${reviewTasks.length} | ${reviewPct}% | ${reviewTasks.length > 0 ? "**Action Required**" : "Cleared"} |
+| **Completed Wins** | ${doneTasks.length} | ${donePct}% | Verified & Archived |
+| **Total Tracked** | **${tasks.length}** | **100%** | Full Operational Pipeline |
+
+---
+
+### 4. Strategic Priorities For Today
+1. **Clear Review Gate Deliverables**: Review and approve the ${reviewTasks.length} completed specialist deliverables in Kanban to finalize results and free agent queues.
+2. **Backlog Allocation & Sprint Seeding**: Mobilize available specialists to intake high-priority backlog tickets (${backlogTasks.length} tickets staged).
+3. **Background Automation Maintenance**: Verify automated routines (${telemetry.routines.enabled} active) and agent triggers are monitoring workflows.
+
+---
+
+### 5. Autonomous Fleet Deployment
+- **Fleet Capacity**: **${agents.length} specialists registered** (${telemetry.fleet.online} Online, ${telemetry.fleet.busy} Busy)
 ${
   agents.length > 0
     ? agents
-        .slice(0, 5)
+        .slice(0, 6)
         .map((a) => {
-          const assignedCount = tasks.filter((t) => t.agentId === a.id && t.status !== "done").length;
-          return `- **${a.avatar} ${a.displayName}** (${a.role} | ${a.department}): ${
-            assignedCount > 0
-              ? `Actively driving ${assignedCount} assigned Kanban ticket${assignedCount > 1 ? "s" : ""}.`
-              : "Standing by for autonomous delegation."
+          const count = tasks.filter((t) => t.agentId === a.id && t.status !== "done").length;
+          return `- **${a.displayName}** (${a.role} | ${a.department}): ${
+            count > 0 ? `${count} active assigned ticket${count > 1 ? "s" : ""}.` : "Ready for mission allocation."
           }`;
         })
         .join("\n")
-    : "- No specialist agents deployed yet. Head to **Agents** or deploy an agent pack to build your autonomous fleet."
+    : "- No specialist agents deployed."
 }
 
-## 💡 Chief of Staff Proactive Recommendation
-${
-  reviewTasks.length > 0
-    ? `You have **${reviewTasks.length} deliverable${reviewTasks.length > 1 ? "s" : ""} in Review**. Conduct a rapid sign-off pass in the Kanban board to approve and close out finished work.`
-    : inProgressTasks.length > 0
-    ? `Your specialist agents are actively executing in the background. Keep focus on high-impact strategic tasks while the swarm progresses on deliverables.`
-    : "Your pipeline is clear for today. Use the Kanban board to outline next week's key growth drivers."
-}`;
+---
+
+### 6. Chief of Staff Action Directive
+Begin the day with a focused clearance sweep on the Review Gate deliverables in the Kanban board. Approving these completed tasks unlocks immediate capacity for your specialist workforce.`;
 }
 
 export async function GET() {
@@ -260,8 +306,7 @@ export async function GET() {
     const today = getTodayKey();
     const { primaryPath, fallbackPath } = getBriefingRelPath(userId, today);
 
-    // Fetch real-time Kanban telemetry scoped to current user
-    const { telemetry } = await fetchKanbanTelemetry();
+    const { telemetry } = await fetchComprehensiveTelemetry();
 
     try {
       let file: { content: string; modifiedAt: string } | null = null;
@@ -282,13 +327,14 @@ export async function GET() {
           exists: false,
           date: today,
           path: primaryPath,
-          kanbanStats: telemetry,
+          telemetry,
+          kanbanStats: telemetry.kanban,
           isOutOfSync: false,
         });
       }
 
       const fileModifiedTime = new Date(file.modifiedAt).getTime();
-      const isOutOfSync = telemetry.latestTaskUpdate > fileModifiedTime;
+      const isOutOfSync = telemetry.kanban.latestTaskUpdate > fileModifiedTime;
 
       return NextResponse.json({
         exists: true,
@@ -296,7 +342,8 @@ export async function GET() {
         path: activePath,
         content: file.content,
         modifiedAt: file.modifiedAt,
-        kanbanStats: telemetry,
+        telemetry,
+        kanbanStats: telemetry.kanban,
         isOutOfSync,
       });
     } catch {
@@ -304,7 +351,8 @@ export async function GET() {
         exists: false,
         date: today,
         path: primaryPath,
-        kanbanStats: telemetry,
+        telemetry,
+        kanbanStats: telemetry.kanban,
         isOutOfSync: false,
       });
     }
@@ -329,79 +377,129 @@ export async function POST(request: Request) {
       day: "numeric",
     });
 
-    const scopedWhere = await getUserScopedWhere();
+    const { telemetry, tasks, agents, routines, recentLogs } = await fetchComprehensiveTelemetry();
 
-    // Gather live contextual workspace telemetry scoped to current user
-    const [{ telemetry, tasks, agents }, recentLogs, omnirouteOnline] = await Promise.all([
-      fetchKanbanTelemetry(),
-      prisma.activityLog.findMany({
-        where: scopedWhere,
-        take: 15,
-        orderBy: { createdAt: "desc" },
-      }),
-      isOmnirouteOnline().catch(() => false),
-    ]);
-
-    const activeTasks = tasks.filter((t) => t.status !== "done");
     const reviewTasks = tasks.filter((t) => t.status === "review");
-    const doneTasks = tasks.filter((t) => t.status === "done");
 
-    // Generate accurate fallback briefing first
     const deterministicBriefing = buildTruthfulBriefing({
       todayFormatted,
       tasks,
       agents,
+      routines,
+      recentLogs,
       telemetry,
     });
 
     let briefingContent = "";
 
-    // Attempt fast LLM synthesis with strict grounding and timeout
     try {
       const activeKeys = await getActiveApiKeys();
       const hasKey = Object.values(activeKeys).some((k) => k && k.trim().length > 0);
 
       if (hasKey) {
-        const prompt = `You are the Executive Chief of Staff for an elite business leader.
-Write a powerful, inspiring, and strictly accurate **Daily Executive Morning Briefing** for ${todayFormatted}.
+        const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
+        const backlogTasks = tasks.filter((t) => t.status === "backlog" || t.status === "todo");
 
-CRITICAL TRUTH & GROUNDING CONSTRAINTS:
-1. You MUST ONLY reference the actual tasks from the KANBAN TELEMETRY below.
-2. DO NOT invent, hallucinate, or fabricate any tasks, titles, or numbers that are not listed.
-3. If the Kanban board has 0 tasks, state clearly that the board is clean/empty with 0 tasks.
-4. Accurately reflect statuses: tasks in 'review' are awaiting executive approval; tasks in 'done' are completed wins.
+        const prompt = `You are the elite Executive Chief of Staff for an AI-native high-performance organization.
+Write a powerful, dense, factual, and strictly accurate **Daily Executive Intelligence Memorandum** for ${todayFormatted}.
 
-LIVE KANBAN TELEMETRY:
-- Total Tasks: ${tasks.length} (Backlog: ${telemetry.backlog}, In Progress: ${telemetry.inProgress}, Review: ${telemetry.review}, Done: ${telemetry.done})
-- Tasks in Board:
+CRITICAL CONSTRAINTS:
+1. NO greetings of any kind (do NOT say 'Good morning', 'Hello', etc.).
+2. NO quotes or motivational sayings.
+3. NO git or code commit references.
+4. Strictly ground on actual tasks, agents, and routines provided below.
+5. NEVER invent placeholder names like 'Review Queue Item', 'Pending Triage', 'Task 1', etc. Use the EXACT deliverable titles provided below.
+6. Format as an elite executive memorandum with clean markdown headers and tables.
+7. NEVER use emojis anywhere in the output. Rely strictly on formal executive typography, clean headers, and concise bullet points.
+
+ACTUAL WORKSPACE TELEMETRY:
+- Tasks Total: ${tasks.length} (Backlog/Todo: ${telemetry.kanban.backlog}, In Progress: ${telemetry.kanban.inProgress}, Review: ${telemetry.kanban.review}, Done: ${telemetry.kanban.done})
+
+- DELIVERABLES REQUIRING SIGN-OFF (REVIEW GATE):
 ${
-  tasks.length > 0
-    ? tasks.map((t) => `  * [${t.priority.toUpperCase()}] "${t.title}" — Status: ${t.status} | Agent: ${t.agent?.displayName || "Unassigned"}`).join("\n")
-    : "  * (Kanban Board is completely empty)"
+  reviewTasks.length > 0
+    ? reviewTasks
+        .map(
+          (t) =>
+            `  * [${(t.priority || "high").toUpperCase()}] "${t.title}" | Produced by: ${
+              t.agent?.displayName || "Autonomous Swarm"
+            }`
+        )
+        .join("\n")
+    : "  * (No deliverables currently awaiting review)"
 }
 
-AGENT SPECIALIST READINESS:
-${agents.map((a) => `  * ${a.avatar} ${a.displayName} (${a.role} | ${a.department})`).join("\n")}
+- IN-FLIGHT SWARM INITIATIVES (IN PROGRESS):
+${
+  inProgressTasks.length > 0
+    ? inProgressTasks
+        .map(
+          (t) =>
+            `  * [${(t.priority || "medium").toUpperCase()}] "${t.title}" | Specialist: ${
+              t.agent?.displayName || "Autonomous Swarm"
+            }`
+        )
+        .join("\n")
+    : "  * (No tasks currently in progress — swarm is ready for assignment)"
+}
 
-FORMAT:
-Output crisp Markdown starting with "# 🌅 Daily Executive Briefing — ${todayFormatted}".
-Include:
-- Inspiring focus quote
-- Live Kanban Telemetry Matrix table
-- Strategic Priorities For Today
-- Task Battlefield & Execution Roster (listing real tasks only)
-${reviewTasks.length > 0 ? "- Executive Review Gate (highlighting tickets needing sign-off)" : ""}
-- Recent Wins & Velocity
-- Autonomous Workforce Directive
-- Chief of Staff Proactive Recommendation`;
+- HIGH PRIORITY BACKLOG INITIATIVES:
+${
+  backlogTasks.slice(0, 10)
+    .map(
+      (t) =>
+        `  * [${(t.priority || "medium").toUpperCase()}] "${t.title}" | Specialist: ${
+          t.agent?.displayName || "Unassigned"
+        }`
+    )
+    .join("\n")
+}
 
-        // Run with a 10s promise timeout to guarantee rapid response
+- Specialist Fleet: ${agents.length} specialists (${telemetry.fleet.online} Online, ${telemetry.fleet.busy} Busy)
+${agents.slice(0, 10).map((a) => `  * ${a.displayName} (${a.role} | ${a.department}) — Status: ${a.status}`).join("\n")}
+- Scheduled Routines: ${routines.length} configured (${telemetry.routines.enabled} active)
+
+FORMAT STRUCTURE:
+# DAILY EXECUTIVE INTELLIGENCE MEMORANDUM
+**Date:** ${todayFormatted} | **Classification:** Operations Executive Digest
+
+---
+
+### 1. Executive Summary & Critical Bottleneck
+[2-3 dense sentences focusing on the immediate operational bottleneck, e.g. the ${reviewTasks.length} review deliverables]
+
+---
+
+### 2. Immediate Decision Gate: Deliverables Requiring Sign-Off
+[Markdown table: Priority | Specialist | Deliverable Title | Status. MUST USE REAL DELIVERABLE TITLES. If none, write: "*Review Gate is clean. No deliverables are currently awaiting sign-off.*"]
+
+---
+
+### 3. Pipeline Flow & Workload Distribution
+[Markdown table showing Backlog, In Progress, Review, Completed distribution]
+
+---
+
+### 4. Strategic Priorities For Today
+[Top 3 numbered action priorities strictly based on current tasks]
+
+---
+
+### 5. Autonomous Fleet Deployment
+[Summary of specialist fleet capacity and allocations]
+
+---
+
+### 6. Chief of Staff Action Directive
+[Direct, high-impact concluding recommendation]`;
+
         const completionPromise = executeChatCompletion({
           prompt,
           model: "auto/smart",
-          systemPrompt: "You are an elite Chief of Staff. You produce strictly truthful, crisp executive briefings.",
+          systemPrompt:
+            "You are an elite Executive Chief of Staff. You produce strictly truthful, crisp, dense executive memorandums. You never use greetings, quotes, or conversational filler.",
           agentName: "Chief of Staff",
-          useVaultRAG: false, // Avoid slow RAG retrieval on daily briefing
+          useVaultRAG: false,
         });
 
         const timeoutPromise = new Promise<null>((_, reject) =>
@@ -414,27 +512,26 @@ ${reviewTasks.length > 0 ? "- Executive Review Gate (highlighting tickets needin
         }
       }
     } catch (llmErr) {
-      console.warn("LLM briefing generation timed out or failed, using pristine deterministic briefing:", llmErr);
+      console.warn("LLM briefing generation timed out or failed, using structured deterministic briefing:", llmErr);
     }
 
     if (!briefingContent) {
       briefingContent = deterministicBriefing;
     }
 
-    // Persist to Obsidian Markdown Vault
     await writeVaultFile(briefingRelPath, briefingContent);
 
-    // Record activity log scoped to user
     await prisma.activityLog.create({
       data: {
         userId,
         type: "briefing_generated",
-        message: `Executive Morning Briefing generated for ${today} (${telemetry.total} Kanban tasks tracked)`,
+        message: `Executive Daily Briefing generated for ${today} (${telemetry.kanban.total} tasks tracked, ${telemetry.fleet.online} agents online)`,
         metadata: JSON.stringify({
           date: today,
           path: briefingRelPath,
-          kanbanTasks: telemetry.total,
-          reviewCount: telemetry.review,
+          kanbanTasks: telemetry.kanban.total,
+          reviewCount: telemetry.kanban.review,
+          fleetOnline: telemetry.fleet.online,
         }),
       },
     });
@@ -444,7 +541,8 @@ ${reviewTasks.length > 0 ? "- Executive Review Gate (highlighting tickets needin
       date: today,
       path: briefingRelPath,
       content: briefingContent,
-      kanbanStats: telemetry,
+      telemetry,
+      kanbanStats: telemetry.kanban,
       createdAt: new Date().toISOString(),
     });
   } catch (error) {

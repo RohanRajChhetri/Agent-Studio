@@ -90,7 +90,7 @@ export function DiagnosticsTab({ onRefreshData, omnirouteOnline }: DiagnosticsTa
             <Activity className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-foreground">System Concurrency & Health Telemetry</h3>
+            <h3 className="text-base font-bold text-foreground">System Health Telemetry</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               Runtime database concurrency, memory caching, and fleet communication pipeline status
             </p>
@@ -155,7 +155,7 @@ export function DiagnosticsTab({ onRefreshData, omnirouteOnline }: DiagnosticsTa
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-secondary hover:bg-secondary/80 text-xs font-medium text-foreground transition cursor-pointer disabled:opacity-50"
           >
             {refreshingCache ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            <span>{refreshingCache ? "Purging..." : "Purge Session Cache & Refresh"}</span>
+            <span>{refreshingCache ? "Purging..." : "Purge Cache and Refresh"}</span>
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import path from "path";
-import { saveDocumentFile, generateSimplePdf } from "./document-generator";
+import { saveDocumentFile } from "./document-generator";
 
 export interface FileDeliverableResult {
   hasDeliverable: boolean;
@@ -25,7 +25,6 @@ export function detectFileDeliverableIntent(
   detectedCodeType: "pdf" | "doc" | "csv" | "json" | null;
 } {
   const pLower = (userPrompt || "").toLowerCase();
-  const cLower = (assistantContent || "").toLowerCase();
 
   // 1. Detect user prompt intent
   let requestedType: "pdf" | "doc" | "csv" | "json" | "md" | "txt" | "html" | "code" | null = null;
@@ -244,7 +243,7 @@ export async function compileAndDeliverFile(options: {
 
   const sizeKb = (saved.size / 1024).toFixed(1);
 
-  const downloadCardMarkdown = `\n\n### 📄 Deliverable Ready for Download\n\n- **File**: \`${saved.fileName}\`\n- **Format**: **${formatName}** (${sizeKb} KB)\n- **Direct Download**: [Download ${saved.fileName}](${saved.fileUrl})\n\n> The file has been compiled and saved to your workspace download vault. Click above to view or download it directly.`;
+  const downloadCardMarkdown = `\n\n### Deliverable Ready for Download\n\n- **File**: \`${saved.fileName}\`\n- **Format**: **${formatName}** (${sizeKb} KB)\n- **Direct Download**: [Download ${saved.fileName}](${saved.fileUrl})\n\n> The file has been compiled and saved to your workspace download vault. Click above to view or download it directly.`;
 
   // If the assistant output was ONLY python code to generate the file, clean it up
   let cleanedContent = assistantContent;

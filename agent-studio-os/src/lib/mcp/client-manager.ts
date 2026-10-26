@@ -79,7 +79,7 @@ class MCPManager {
         name: "CUA Desktop Driver",
         description: "Desktop automation — inspect and operate native apps, click UI elements, type text, take screenshots, and chain multi-app workflows",
         transport: "stdio",
-        command: "cua",
+        command: "cua-driver",
         args: ["mcp"],
         enabled: true,
         status: "connected",

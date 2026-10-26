@@ -24,6 +24,7 @@ import {
   Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmModal } from "@/components/confirm-modal";
 import type {
   ExternalSkill,
   ExternalSkillParameter,
@@ -82,8 +83,28 @@ export function SkillsTab({
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState<ExternalSkillExecutionResult | null>(null);
 
+  // Delete modal state
+  const [skillToDelete, setSkillToDelete] = useState<ExternalSkill | null>(null);
+  const [isDeletingSkill, setIsDeletingSkill] = useState(false);
+
+  const handleConfirmDeleteSkill = async () => {
+    if (!skillToDelete) return;
+    setIsDeletingSkill(true);
+    try {
+      const ok = await onDeleteSkill(skillToDelete.id);
+      if (ok) {
+        toast.success(`Deleted skill "${skillToDelete.displayName}"`);
+        setSkillToDelete(null);
+      }
+    } catch {
+      toast.error("Failed to delete skill");
+    } finally {
+      setIsDeletingSkill(false);
+    }
+  };
+
   // Categories list
-  const categories = ["All", "Finance", "Data & Web", "Developer", "Productivity", "Utility", "Communication"];
+  const categories = ["All", "Finance", "Data and Web", "Developer", "Productivity", "Utility", "Communication"];
 
   const openCreateModal = () => {
     setEditingSkill(null);
@@ -267,44 +288,25 @@ export function SkillsTab({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Telemetry Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 rounded-2xl bg-card border border-border/80 shadow-xs relative overflow-hidden">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
-              <BookOpen className="w-4 h-4" />
-            </span>
-            <h2 className="text-lg font-bold text-foreground tracking-tight">
-              External Skills Directory
-            </h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-semibold border border-emerald-500/20">
-              Live Fleet Grounding
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
-            Configure external REST APIs, custom sandboxed scripts, and tool instructions. All active skills are automatically grounded in the multi-step agent reasoning loop and callable by <strong>all agents</strong> across Agent Studio.
-          </p>
-        </div>
+      {/* Action Strip */}
+      <div className="flex items-center justify-end gap-2.5">
+        <button
+          onClick={() => onRefresh()}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-card hover:bg-secondary text-xs font-medium text-foreground transition cursor-pointer disabled:opacity-50"
+          title="Refresh skills"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-primary" : ""}`} />
+          <span>Refresh</span>
+        </button>
 
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-          <button
-            onClick={() => onRefresh()}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-secondary/40 hover:bg-secondary text-xs font-medium text-foreground transition cursor-pointer disabled:opacity-50"
-            title="Refresh skills"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-primary" : ""}`} />
-            <span>Refresh</span>
-          </button>
-
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-primary-foreground hover:opacity-90 text-xs font-semibold shadow-xs transition cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add External Skill</span>
-          </button>
-        </div>
+        <button
+          onClick={openCreateModal}
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-primary-foreground hover:opacity-90 text-xs font-semibold shadow-xs transition cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Add Skill</span>
+        </button>
       </div>
 
       {/* Metrics Row */}
@@ -621,12 +623,7 @@ export function SkillsTab({
 
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (confirm(`Are you sure you want to delete "${skill.displayName}"?`)) {
-                          const ok = await onDeleteSkill(skill.id);
-                          if (ok) toast.success(`Deleted skill "${skill.displayName}"`);
-                        }
-                      }}
+                      onClick={() => setSkillToDelete(skill)}
                       className="p-1.5 rounded-lg border border-border text-rose-500 hover:bg-rose-500/10 transition cursor-pointer"
                       title="Delete skill"
                     >
@@ -748,7 +745,7 @@ export function SkillsTab({
                       className="w-full bg-secondary/50 border border-border px-3 py-2 rounded-xl text-xs text-foreground outline-none"
                     >
                       <option value="Finance">Finance</option>
-                      <option value="Data & Web">Data & Web</option>
+                      <option value="Data and Web">Data and Web</option>
                       <option value="Developer">Developer</option>
                       <option value="Productivity">Productivity</option>
                       <option value="Utility">Utility</option>
@@ -803,7 +800,7 @@ export function SkillsTab({
                   <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-3">
                     <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
                       <Globe className="w-3.5 h-3.5 text-blue-500" />
-                      <span>REST API & Webhook Configuration</span>
+                      <span>REST API and Webhook Configuration</span>
                     </div>
 
                     <div className="grid grid-cols-4 gap-2">
@@ -1148,6 +1145,22 @@ export function SkillsTab({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Delete Skill Confirm Modal */}
+      <ConfirmModal
+        isOpen={!!skillToDelete}
+        onClose={() => {
+          if (!isDeletingSkill) setSkillToDelete(null);
+        }}
+        onConfirm={handleConfirmDeleteSkill}
+        title="Delete Skill"
+        description="Are you sure you want to permanently delete this tool skill?"
+        itemTitle={skillToDelete?.displayName}
+        dangerDetails="Agents assigned to this skill will no longer be able to execute its logic or call its parameters."
+        confirmText="Delete Skill"
+        variant="danger"
+        loading={isDeletingSkill}
+      />
     </div>
   );
 }

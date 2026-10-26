@@ -39,9 +39,9 @@ export async function getAuthUserId(): Promise<string | null> {
  *   - In local dev (default), allows guest fallback to primary workspace for seamless self-hosting.
  *   - In production or when ALLOW_LOCAL_GUEST_FALLBACK="false", strictly returns '__unauthenticated__' to protect user data.
  */
-export async function getUserScopedWhere<T extends Record<string, any>>(
+export async function getUserScopedWhere<T extends Record<string, unknown>>(
   baseWhere: T = {} as T
-): Promise<any> {
+): Promise<Record<string, unknown>> {
   const userId = await getAuthUserId();
   const isLocalDev = process.env.NODE_ENV !== "production";
   const allowGuestFallback =

@@ -50,7 +50,7 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
         const mapped: AgentSimple[] = raw.map((a: any) => ({
           id: a.id,
           displayName: a.displayName,
-          avatar: a.avatar || "🤖",
+          avatar: a.avatar || "bot",
         }));
         if (mapped.length > 0) {
           setAgents(mapped);
@@ -385,7 +385,7 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
             </span>
           </div>
           <h2 className="text-base font-bold text-foreground">
-            Devices &amp; Communication Channels
+            Messaging Channels
           </h2>
           <p className="text-xs text-muted-foreground">
             Connect external chat apps, messaging bots, and inbound webhooks directly to your autonomous agents.
@@ -403,7 +403,7 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
             >
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.avatar || "🤖"} {a.displayName}
+                  {a.displayName}
                 </option>
               ))}
             </select>
@@ -632,6 +632,15 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                   <div className="relative mt-1.5">
                     <input
                       type={showTokens.telegram ? "text" : "password"}
+                      name="telegram_channel_bot_token"
+                      id="telegram_channel_bot_token"
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
                       value={channelConfigs.telegram?.botToken || ""}
                       onChange={(e) => handleConfigChange("telegram", "botToken", e.target.value)}
                       placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
@@ -652,11 +661,20 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground flex items-center justify-between">
                     <span>Telegram Chat ID / Channel</span>
-                    <span className="text-[10px] text-muted-foreground">Required for briefings & proactive alerts</span>
+                    <span className="text-[10px] text-muted-foreground">Required for briefings and proactive alerts</span>
                   </label>
                   <div className="flex gap-2 mt-1.5">
                     <input
                       type="text"
+                      name="telegram_channel_chat_id"
+                      id="telegram_channel_chat_id"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
                       value={channelConfigs.telegram?.chatId || ""}
                       onChange={(e) => handleConfigChange("telegram", "chatId", e.target.value)}
                       placeholder="e.g. 123456789 or click Auto-Detect"
@@ -716,7 +734,7 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                     disabled={savingPlatform === "telegram" || !channelConfigs.telegram?.botToken}
                     className="flex-1 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl text-xs font-bold shadow-md shadow-primary/20 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    {savingPlatform === "telegram" ? "Saving..." : "Save & Start Poller"}
+                    {savingPlatform === "telegram" ? "Saving..." : "Save and Start Poller"}
                   </button>
                 </div>
               </div>
@@ -750,7 +768,7 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Connect server guilds &amp; private DMs
+                      Connect server guilds and private DMs
                     </p>
                   </div>
                 </div>
@@ -783,6 +801,15 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                   <div className="relative mt-1.5">
                     <input
                       type={showTokens.discord ? "text" : "password"}
+                      name="discord_channel_bot_token"
+                      id="discord_channel_bot_token"
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
                       value={channelConfigs.discord?.botToken || ""}
                       onChange={(e) => handleConfigChange("discord", "botToken", e.target.value)}
                       placeholder="Discord Bot Token from application settings"
@@ -853,7 +880,7 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Workspace app with slash commands &amp; mentions
+                      Workspace app with slash commands and mentions
                     </p>
                   </div>
                 </div>
@@ -886,6 +913,15 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                   <div className="relative mt-1.5">
                     <input
                       type={showTokens.slack ? "text" : "password"}
+                      name="slack_channel_bot_token"
+                      id="slack_channel_bot_token"
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
                       value={channelConfigs.slack?.botToken || ""}
                       onChange={(e) => handleConfigChange("slack", "botToken", e.target.value)}
                       placeholder="xoxb-your-slack-bot-token"
@@ -1001,6 +1037,15 @@ export function DevicesTab({ agents: initialAgents = [] }: { agents?: AgentSimpl
                   <div className="relative mt-1">
                     <input
                       type={showTokens.whatsapp_cloud ? "text" : "password"}
+                      name="whatsapp_channel_access_token"
+                      id="whatsapp_channel_access_token"
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
                       value={channelConfigs.whatsapp_cloud?.accessToken || ""}
                       onChange={(e) => handleConfigChange("whatsapp_cloud", "accessToken", e.target.value)}
                       placeholder="EAAG... Meta Graph API System User Token"

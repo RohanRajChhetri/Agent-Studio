@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Terminal, Globe } from "lucide-react";
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 
 interface AgentSpecsModalProps {
   isOpen: boolean;
@@ -41,7 +42,7 @@ export function AgentSpecsModal({
                   backgroundColor: `${agent.themeColor || "#6366f1"}15`,
                 }}
               >
-                {agent.avatar}
+                <AgentAvatar avatar={agent.avatar} className="w-6 h-6 text-primary" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">

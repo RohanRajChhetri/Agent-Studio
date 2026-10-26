@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText,
@@ -15,7 +15,6 @@ import {
   Loader2,
   RefreshCw,
   Search,
-  Brain,
   X,
   Sparkles,
   ExternalLink,
@@ -29,6 +28,9 @@ import {
   AlertTriangle,
   FolderTree,
   Share2,
+  CheckSquare,
+  Square,
+  ListChecks,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { VaultFile } from "@/types";
@@ -36,6 +38,18 @@ import type { GalaxyData } from "@/lib/vault";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { ObsidianGraph } from "@/components/memory/obsidian-graph";
 import { useTheme } from "@/components/theme-provider";
+import {
+  VaultBatchDeleteModal,
+  type BatchItem,
+} from "@/components/memory/vault-batch-delete-modal";
+import { MarkdownFormattingToolbar } from "@/components/memory/markdown-formatting-toolbar";
+import { NoteMetadataBar } from "@/components/memory/note-metadata-bar";
+import { MemoryEmptyDashboard } from "@/components/memory/memory-empty-dashboard";
+import {
+  playClickSound,
+  playWarningSound,
+  playTaskCompletedSound,
+} from "@/lib/sound-effects";
 
 interface FileTreeNodeProps {
   file: VaultFile;
@@ -46,6 +60,10 @@ interface FileTreeNodeProps {
   onCreateNoteInFolder: (folderPath: string) => void;
   onRename: (path: string, isFolder: boolean, currentName: string) => void;
   onDelete: (path: string, isFolder: boolean, name: string) => void;
+  isSelectMode?: boolean;
+  selectedItemPaths?: Set<string>;
+  onToggleSelect?: (item: BatchItem) => void;
+  forceExpand?: boolean;
 }
 
 function FileTreeNode({
@@ -57,9 +75,15 @@ function FileTreeNode({
   onCreateNoteInFolder,
   onRename,
   onDelete,
+  isSelectMode = false,
+  selectedItemPaths,
+  onToggleSelect,
+  forceExpand = false,
 }: FileTreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const isSelected = selectedPath === file.relativePath;
+  const isChecked = selectedItemPaths?.has(file.relativePath) ?? false;
+  const isEffectivelyExpanded = forceExpand ? true : expanded;
 
   if (file.isDirectory) {
     const childCount = file.children?.length ?? 0;
@@ -68,18 +92,62 @@ function FileTreeNode({
       <div className="group/dir">
         <div
           className={`flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-xs hover:bg-secondary/50 transition-colors cursor-pointer select-none ${
-            expanded ? "text-foreground" : "text-muted-foreground"
+            isChecked
+              ? "bg-primary/10 text-foreground font-medium border border-primary/20"
+              : isEffectivelyExpanded
+              ? "text-foreground"
+              : "text-muted-foreground"
           }`}
           style={{ paddingLeft: `${depth * 14 + 8}px` }}
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => {
+            if (isSelectMode && onToggleSelect) {
+              onToggleSelect({
+                path: file.relativePath,
+                isFolder: true,
+                name: file.name,
+              });
+            } else {
+              setExpanded(!expanded);
+            }
+          }}
         >
           <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
-            {expanded ? (
-              <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />
+            {isSelectMode ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect?.({
+                    path: file.relativePath,
+                    isFolder: true,
+                    name: file.name,
+                  });
+                }}
+                className="p-0.5 hover:scale-110 transition-transform cursor-pointer shrink-0"
+              >
+                {isChecked ? (
+                  <CheckSquare className="w-3.5 h-3.5 text-primary" />
+                ) : (
+                  <Square className="w-3.5 h-3.5 text-muted-foreground/60" />
+                )}
+              </button>
             ) : (
-              <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded(!expanded);
+                }}
+                className="p-0.5 hover:text-foreground text-muted-foreground shrink-0 cursor-pointer"
+              >
+                {isEffectivelyExpanded ? (
+                  <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />
+                )}
+              </button>
             )}
-            {expanded ? (
+            {isEffectivelyExpanded ? (
               <FolderOpen className="w-3.5 h-3.5 text-foreground shrink-0" />
             ) : (
               <Folder className="w-3.5 h-3.5 text-foreground/80 shrink-0" />
@@ -91,42 +159,44 @@ function FileTreeNode({
           </div>
 
           {/* Folder Action Buttons on Hover */}
-          <div
-            className="flex items-center gap-0.5 opacity-0 group-hover/dir:opacity-100 transition-opacity ml-1 shrink-0"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => onCreateSubfolder(file.relativePath)}
-              title="New subfolder"
-              className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+          {!isSelectMode && (
+            <div
+              className="flex items-center gap-0.5 opacity-0 group-hover/dir:opacity-100 transition-opacity ml-1 shrink-0"
+              onClick={(e) => e.stopPropagation()}
             >
-              <FolderPlus className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => onCreateNoteInFolder(file.relativePath)}
-              title="New note in folder"
-              className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-emerald-300 transition-colors"
-            >
-              <FilePlus className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => onRename(file.relativePath, true, file.name)}
-              title="Rename folder"
-              className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-amber-300 transition-colors"
-            >
-              <Pencil className="w-3 h-3" />
-            </button>
-            <button
-              onClick={() => onDelete(file.relativePath, true, file.name)}
-              title="Delete folder"
-              className="p-1 rounded hover:bg-red-500/15 text-muted-foreground hover:text-red-400 transition-colors"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
-          </div>
+              <button
+                onClick={() => onCreateSubfolder(file.relativePath)}
+                title="New subfolder"
+                className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                <FolderPlus className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => onCreateNoteInFolder(file.relativePath)}
+                title="New note in folder"
+                className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-emerald-300 transition-colors cursor-pointer"
+              >
+                <FilePlus className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => onRename(file.relativePath, true, file.name)}
+                title="Rename folder"
+                className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-amber-300 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => onDelete(file.relativePath, true, file.name)}
+                title="Delete folder"
+                className="p-1 rounded hover:bg-red-500/15 text-muted-foreground hover:text-red-400 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
 
-        {expanded && file.children && (
+        {isEffectivelyExpanded && file.children && (
           <div>
             {file.children.map((child) => (
               <FileTreeNode
@@ -139,6 +209,10 @@ function FileTreeNode({
                 onCreateNoteInFolder={onCreateNoteInFolder}
                 onRename={onRename}
                 onDelete={onDelete}
+                isSelectMode={isSelectMode}
+                selectedItemPaths={selectedItemPaths}
+                onToggleSelect={onToggleSelect}
+                forceExpand={forceExpand}
               />
             ))}
           </div>
@@ -149,39 +223,74 @@ function FileTreeNode({
 
   return (
     <div
-      onClick={() => onSelect(file.relativePath)}
+      onClick={() => {
+        if (isSelectMode && onToggleSelect) {
+          onToggleSelect({
+            path: file.relativePath,
+            isFolder: false,
+            name: file.name,
+          });
+        } else {
+          onSelect(file.relativePath);
+        }
+      }}
       className={`group/file flex items-center justify-between w-full px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer select-none ${
-        isSelected
+        isChecked
+          ? "bg-primary/15 text-primary font-medium border border-primary/30"
+          : isSelected
           ? "bg-primary/15 text-primary font-medium border border-border"
           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
       }`}
       style={{ paddingLeft: `${depth * 14 + 8}px` }}
     >
       <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
-        <FileText className="w-3.5 h-3.5 shrink-0 text-muted-foreground group-hover/file:text-muted-foreground" />
+        {isSelectMode ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.({
+                path: file.relativePath,
+                isFolder: false,
+                name: file.name,
+              });
+            }}
+            className="p-0.5 hover:scale-110 transition-transform cursor-pointer shrink-0"
+          >
+            {isChecked ? (
+              <CheckSquare className="w-3.5 h-3.5 text-primary" />
+            ) : (
+              <Square className="w-3.5 h-3.5 text-muted-foreground/60" />
+            )}
+          </button>
+        ) : (
+          <FileText className="w-3.5 h-3.5 shrink-0 text-muted-foreground group-hover/file:text-muted-foreground" />
+        )}
         <span className="truncate">{file.name}</span>
       </div>
 
       {/* Note Action Buttons on Hover */}
-      <div
-        className="flex items-center gap-0.5 opacity-0 group-hover/file:opacity-100 transition-opacity ml-1 shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={() => onRename(file.relativePath, false, file.name)}
-          title="Rename note"
-          className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-amber-300 transition-colors"
+      {!isSelectMode && (
+        <div
+          className="flex items-center gap-0.5 opacity-0 group-hover/file:opacity-100 transition-opacity ml-1 shrink-0"
+          onClick={(e) => e.stopPropagation()}
         >
-          <Pencil className="w-3 h-3" />
-        </button>
-        <button
-          onClick={() => onDelete(file.relativePath, false, file.name)}
-          title="Delete note"
-          className="p-1 rounded hover:bg-red-500/15 text-muted-foreground hover:text-red-400 transition-colors"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
-      </div>
+          <button
+            onClick={() => onRename(file.relativePath, false, file.name)}
+            title="Rename note"
+            className="p-1 rounded hover:bg-secondary/50 text-muted-foreground hover:text-amber-300 transition-colors cursor-pointer"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+          <button
+            onClick={() => onDelete(file.relativePath, false, file.name)}
+            title="Delete note"
+            className="p-1 rounded hover:bg-red-500/15 text-muted-foreground hover:text-red-400 transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -197,6 +306,22 @@ export default function MemoryPage() {
   const [viewMode, setViewMode] = useState<"workspace" | "graph">("graph");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Batch multi-select state
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedBatchItems, setSelectedBatchItems] = useState<BatchItem[]>([]);
+  const [showBatchDeleteModal, setShowBatchDeleteModal] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+
+  // Search filter query
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Note modification timestamp & initial load guard
+  const [modifiedAt, setModifiedAt] = useState<string | undefined>(undefined);
+  const [hasInitialLoaded, setHasInitialLoaded] = useState(false);
+
+  // Textarea ref for markdown formatting toolbar
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // New note modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -252,9 +377,10 @@ export default function MemoryPage() {
         if (gData && Array.isArray(gData.nodes)) {
           setGalaxyData(gData);
 
-          // Auto select first file if none selected
-          if (!selectedPath && gData.nodes.length > 0) {
+          // Auto select first file on initial load if none selected
+          if (!hasInitialLoaded && !selectedPath && gData.nodes.length > 0) {
             loadFile(gData.nodes[0].path);
+            setHasInitialLoaded(true);
           }
         }
       }
@@ -263,7 +389,7 @@ export default function MemoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPath]);
+  }, [selectedPath, hasInitialLoaded]);
 
   useEffect(() => {
     fetchData();
@@ -279,9 +405,137 @@ export default function MemoryPage() {
         const data = await res.json();
         setContent(data.content);
         setEditedContent(data.content);
+        setModifiedAt(data.modifiedAt);
       }
     } catch {
       toast.error("Failed to read note");
+    }
+  };
+
+  const selectedItemPaths = useMemo(() => {
+    return new Set(selectedBatchItems.map((i) => i.path));
+  }, [selectedBatchItems]);
+
+  const handleToggleBatchItem = useCallback((item: BatchItem) => {
+    playClickSound();
+    setSelectedBatchItems((prev) => {
+      const exists = prev.some((i) => i.path === item.path);
+      if (exists) {
+        return prev.filter((i) => i.path !== item.path);
+      } else {
+        return [...prev, item];
+      }
+    });
+  }, []);
+
+  // Filter vault files recursively by name or path
+  const filteredFiles = useMemo(() => {
+    if (!searchQuery.trim()) return files;
+    const q = searchQuery.toLowerCase().trim();
+
+    const filterNode = (node: VaultFile): VaultFile | null => {
+      const nameMatches =
+        node.name.toLowerCase().includes(q) ||
+        node.relativePath.toLowerCase().includes(q);
+
+      if (node.isDirectory) {
+        const filteredChildren = (node.children || [])
+          .map(filterNode)
+          .filter((child): child is VaultFile => child !== null);
+
+        if (nameMatches || filteredChildren.length > 0) {
+          return {
+            ...node,
+            children: filteredChildren,
+          };
+        }
+        return null;
+      }
+
+      return nameMatches ? node : null;
+    };
+
+    return files
+      .map(filterNode)
+      .filter((n): n is VaultFile => n !== null);
+  }, [files, searchQuery]);
+
+  // Extract all visible batch items from current tree
+  const visibleBatchItems = useMemo(() => {
+    const items: BatchItem[] = [];
+    const traverse = (list: VaultFile[]) => {
+      for (const node of list) {
+        items.push({
+          path: node.relativePath,
+          isFolder: !!node.isDirectory,
+          name: node.name,
+        });
+        if (node.children) traverse(node.children);
+      }
+    };
+    traverse(filteredFiles);
+    return items;
+  }, [filteredFiles]);
+
+  const isAllSelected =
+    visibleBatchItems.length > 0 &&
+    visibleBatchItems.every((item) => selectedItemPaths.has(item.path));
+
+  const handleToggleSelectAll = () => {
+    playClickSound();
+    if (isAllSelected) {
+      setSelectedBatchItems([]);
+    } else {
+      setSelectedBatchItems(visibleBatchItems);
+    }
+  };
+
+  const handleConfirmBatchDelete = async () => {
+    if (selectedBatchItems.length === 0) return;
+    setBatchDeleting(true);
+    try {
+      const res = await fetch("/api/vault", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: selectedBatchItems.map((i) => ({
+            path: i.path,
+            isFolder: i.isFolder,
+          })),
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const count = data.deletedCount || selectedBatchItems.length;
+        playTaskCompletedSound();
+        toast.success(`Successfully deleted ${count} ${count === 1 ? "item" : "items"}`);
+
+        // Check if currently open note was inside deleted set
+        const wasActiveDeleted = selectedBatchItems.some(
+          (item) =>
+            selectedPath === item.path ||
+            (item.isFolder && selectedPath.startsWith(item.path + "/"))
+        );
+
+        if (wasActiveDeleted) {
+          setSelectedPath("");
+          setContent("");
+          setEditedContent("");
+          setModifiedAt(undefined);
+        }
+
+        setSelectedBatchItems([]);
+        setIsSelectMode(false);
+        setShowBatchDeleteModal(false);
+        await fetchData();
+      } else {
+        toast.error(data.error || "Failed to batch delete selected items");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Network error deleting items");
+    } finally {
+      setBatchDeleting(false);
     }
   };
 
@@ -550,17 +804,11 @@ Start writing notes, research findings, or agent context here. You can cross-ref
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-medium text-[#0075de] bg-[#e6f3fe] px-2.5 py-0.5 rounded-full border border-[#0075de]/20 inline-flex items-center gap-1.5">
-              <Brain className="w-3 h-3 text-[#0075de]" />
-              Obsidian Knowledge Base
-            </span>
-          </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Shared Memory & Knowledge Galaxy
+            Memory
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Single shared Obsidian vault synchronized across all autonomous agents
+            Shared knowledge base and interactive graph synchronized with Obsidian
           </p>
         </div>
 
@@ -666,6 +914,25 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                 </span>
               </div>
               <div className="flex items-center gap-1">
+                {/* Select Mode Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    setIsSelectMode(!isSelectMode);
+                    if (isSelectMode) setSelectedBatchItems([]);
+                  }}
+                  title={isSelectMode ? "Exit select mode" : "Select multiple items to batch delete"}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                    isSelectMode
+                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                      : "hover:bg-secondary/50 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  <span>{isSelectMode ? "Done" : "Select"}</span>
+                </button>
+
                 <button
                   onClick={() => {
                     setFolderModalParent("");
@@ -673,7 +940,7 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                     setShowFolderModal(true);
                   }}
                   title="Create folder in root"
-                  className="p-1 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+                  className="p-1 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   <FolderPlus className="w-3.5 h-3.5" />
                 </button>
@@ -683,27 +950,105 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                     setShowNewModal(true);
                   }}
                   title="Create new note"
-                  className="p-1 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+                  className="p-1 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   <FilePlus className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={fetchData}
                   title="Refresh files"
-                  className="p-1 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+                  className="p-1 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
+            {/* Instant Search / Filter Bar */}
+            <div className="relative mb-2 shrink-0">
+              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filter notes & folders..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 rounded-lg border border-border bg-secondary/30 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Multi-Select Batch Action Bar */}
+            <AnimatePresence>
+              {isSelectMode && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-2 p-2.5 rounded-xl bg-primary/10 border border-primary/20 space-y-2 shrink-0 overflow-hidden"
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <button
+                      type="button"
+                      onClick={handleToggleSelectAll}
+                      className="flex items-center gap-1.5 font-medium text-foreground hover:text-primary transition-colors cursor-pointer"
+                    >
+                      {isAllSelected ? (
+                        <CheckSquare className="w-3.5 h-3.5 text-primary" />
+                      ) : (
+                        <Square className="w-3.5 h-3.5 text-muted-foreground" />
+                      )}
+                      <span>{isAllSelected ? "Deselect All" : "Select All"}</span>
+                    </button>
+                    <span className="text-[11px] font-mono font-medium text-primary bg-primary/15 px-2 py-0.5 rounded-full border border-primary/20">
+                      {selectedBatchItems.length} selected
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-1.5 border-t border-primary/20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playWarningSound();
+                        setShowBatchDeleteModal(true);
+                      }}
+                      disabled={selectedBatchItems.length === 0}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs font-semibold disabled:opacity-40 transition-all cursor-pointer shadow-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete ({selectedBatchItems.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        setIsSelectMode(false);
+                        setSelectedBatchItems([]);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-secondary text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Scrollable File List */}
             <div className="flex-1 overflow-y-auto space-y-0.5 pr-1">
-              {files.length === 0 ? (
+              {filteredFiles.length === 0 ? (
                 <div className="text-center py-10 text-muted-foreground text-xs">
-                  No notes found in vault
+                  {searchQuery ? `No matching notes or folders found` : `No notes found in vault`}
                 </div>
               ) : (
-                files.map((file) => (
+                filteredFiles.map((file) => (
                   <FileTreeNode
                     key={file.relativePath}
                     file={file}
@@ -728,6 +1073,10 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                       setDeleteTarget({ path, isFolder, name });
                       setShowDeleteModal(true);
                     }}
+                    isSelectMode={isSelectMode}
+                    selectedItemPaths={selectedItemPaths}
+                    onToggleSelect={handleToggleBatchItem}
+                    forceExpand={Boolean(searchQuery.trim())}
                   />
                 ))
               )}
@@ -738,101 +1087,43 @@ Start writing notes, research findings, or agent context here. You can cross-ref
           <div className="md:col-span-8 lg:col-span-9 rounded-xl border border-border bg-card flex flex-col overflow-hidden">
             {selectedPath ? (
               <>
-                {/* Header with Preview / Edit / Raw Tabs */}
-                <div className="px-4 py-2.5 border-b border-border bg-card flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-4 h-4 text-foreground shrink-0" />
-                    <span className="font-mono text-xs font-semibold text-foreground truncate">
-                      {selectedPath}
-                    </span>
-                  </div>
+                {/* Note Metadata Bar */}
+                <NoteMetadataBar
+                  selectedPath={selectedPath}
+                  content={editorTab === "edit" ? editedContent : content}
+                  modifiedAt={modifiedAt}
+                  editorTab={editorTab}
+                  onTabChange={(tab) => {
+                    setEditorTab(tab);
+                    if (tab === "edit") {
+                      setEditedContent(content);
+                    }
+                  }}
+                  onSave={handleSave}
+                  saving={saving}
+                  onRename={() => {
+                    const parts = selectedPath.split("/");
+                    const name = parts[parts.length - 1];
+                    setRenameTarget({ path: selectedPath, isFolder: false, name });
+                    setRenameNewName(name);
+                    setShowRenameModal(true);
+                  }}
+                  onDelete={() => {
+                    const parts = selectedPath.split("/");
+                    const name = parts[parts.length - 1];
+                    setDeleteTarget({ path: selectedPath, isFolder: false, name });
+                    setShowDeleteModal(true);
+                  }}
+                />
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    {/* View mode tabs: Preview, Edit, Raw */}
-                    <div className="flex items-center gap-1 p-1 rounded-xl bg-secondary/90 border border-border">
-                      <button
-                        onClick={() => setEditorTab("preview")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          editorTab === "preview"
-                            ? "bg-primary text-primary-foreground shadow-xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <BookOpen className="w-3.5 h-3.5" />
-                        <span>Preview</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setEditedContent(content);
-                          setEditorTab("edit");
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          editorTab === "edit"
-                            ? "bg-primary text-primary-foreground shadow-xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Edit</span>
-                      </button>
-
-                      <button
-                        onClick={() => setEditorTab("raw")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          editorTab === "raw"
-                            ? "bg-primary text-primary-foreground shadow-xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <Code className="w-3.5 h-3.5" />
-                        <span>Raw</span>
-                      </button>
-                    </div>
-
-                    {editorTab === "edit" && (
-                      <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50 transition-all shadow-md shadow-indigo-600/20"
-                      >
-                        {saving ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Save className="w-3.5 h-3.5" />
-                        )}
-                        <span>Save</span>
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => {
-                        const parts = selectedPath.split("/");
-                        const name = parts[parts.length - 1];
-                        setRenameTarget({ path: selectedPath, isFolder: false, name });
-                        setRenameNewName(name);
-                        setShowRenameModal(true);
-                      }}
-                      title="Rename file"
-                      className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-amber-300 hover:bg-secondary/50 transition-colors"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        const parts = selectedPath.split("/");
-                        const name = parts[parts.length - 1];
-                        setDeleteTarget({ path: selectedPath, isFolder: false, name });
-                        setShowDeleteModal(true);
-                      }}
-                      title="Delete note"
-                      className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
+                {/* Markdown Formatting Toolbar in Edit mode */}
+                {editorTab === "edit" && (
+                  <MarkdownFormattingToolbar
+                    textareaRef={textareaRef}
+                    content={editedContent}
+                    onChange={setEditedContent}
+                  />
+                )}
 
                 {/* Content Area: Preview vs Edit vs Raw */}
                 <div className="flex-1 p-6 overflow-y-auto">
@@ -842,6 +1133,7 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                     </div>
                   ) : editorTab === "edit" ? (
                     <textarea
+                      ref={textareaRef}
                       value={editedContent}
                       onChange={(e) => setEditedContent(e.target.value)}
                       className="w-full h-full bg-transparent font-mono text-xs text-foreground outline-none resize-none leading-relaxed p-2"
@@ -856,10 +1148,22 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                 </div>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground gap-2">
-                <FileText className="w-8 h-8 opacity-30" />
-                <p className="text-xs">Select a file from the vault to read or edit</p>
-              </div>
+              <MemoryEmptyDashboard
+                files={files}
+                galaxyData={galaxyData}
+                onSelectNote={loadFile}
+                onNewNote={() => {
+                  setNewNoteFolder("research");
+                  setShowNewModal(true);
+                }}
+                onNewFolder={() => {
+                  setFolderModalParent("");
+                  setNewFolderName("");
+                  setShowFolderModal(true);
+                }}
+                onSync={() => setShowSyncModal(true)}
+                onOpenObsidian={handleOpenObsidian}
+              />
             )}
           </div>
         </div>
@@ -1046,8 +1350,9 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                   {deleteTarget.path}
                 </div>
                 {deleteTarget.isFolder && (
-                  <p className="text-muted-foreground text-[11px]">
-                    ⚠️ All files and subdirectories inside this folder will also be deleted.
+                  <p className="flex items-center gap-1.5 text-amber-400 text-[11px]">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>All files and subdirectories inside this folder will also be deleted.</span>
                   </p>
                 )}
               </div>
@@ -1287,6 +1592,15 @@ Start writing notes, research findings, or agent context here. You can cross-ref
             </motion.div>
           </div>
         )}
+
+        {/* Vault Batch Delete Confirmation Modal */}
+        <VaultBatchDeleteModal
+          isOpen={showBatchDeleteModal}
+          onClose={() => setShowBatchDeleteModal(false)}
+          onConfirm={handleConfirmBatchDelete}
+          isDeleting={batchDeleting}
+          selectedItems={selectedBatchItems}
+        />
       </AnimatePresence>
     </div>
   );

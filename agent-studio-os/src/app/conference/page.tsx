@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
   Crown,
-  Users,
   Zap,
   ArrowRight,
   Loader2,
@@ -56,6 +55,8 @@ import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
 import type { A2AHierarchyExecutionResult, A2AHierarchyNodeExecution } from "@/types/a2a";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
+
 import {
   playTaskStartedSound,
   playTaskCompletedSound,
@@ -117,7 +118,7 @@ const DEFAULT_CONFERENCE_AGENTS: ConferenceAgent[] = [
     id: "default-atlas",
     name: "atlas",
     displayName: "Atlas",
-    avatar: "👑",
+    avatar: "crown",
     role: "orchestrator",
     department: "Executive",
     model: "claude-3-5-sonnet",
@@ -128,7 +129,7 @@ const DEFAULT_CONFERENCE_AGENTS: ConferenceAgent[] = [
     id: "default-justitia",
     name: "justitia",
     displayName: "Justitia",
-    avatar: "⚖️",
+    avatar: "scale",
     role: "orchestrator",
     department: "Legal Counsel",
     model: "claude-3-5-sonnet",
@@ -139,7 +140,7 @@ const DEFAULT_CONFERENCE_AGENTS: ConferenceAgent[] = [
     id: "default-sentinel",
     name: "sentinel",
     displayName: "Sentinel",
-    avatar: "🛡️",
+    avatar: "shield",
     role: "orchestrator",
     department: "SRE & Infrastructure",
     model: "claude-3-5-sonnet",
@@ -150,7 +151,7 @@ const DEFAULT_CONFERENCE_AGENTS: ConferenceAgent[] = [
     id: "default-devcore",
     name: "devcore",
     displayName: "DevCore",
-    avatar: "💻",
+    avatar: "code",
     role: "specialist",
     department: "Engineering",
     model: "claude-3-5-sonnet",
@@ -161,7 +162,7 @@ const DEFAULT_CONFERENCE_AGENTS: ConferenceAgent[] = [
     id: "default-nova",
     name: "nova",
     displayName: "Nova",
-    avatar: "⚡",
+    avatar: "zap",
     role: "specialist",
     department: "Growth",
     model: "gpt-4o",
@@ -172,7 +173,7 @@ const DEFAULT_CONFERENCE_AGENTS: ConferenceAgent[] = [
     id: "default-ledger",
     name: "ledger",
     displayName: "Ledger",
-    avatar: "📊",
+    avatar: "chart",
     role: "worker",
     department: "Operations",
     model: "claude-3-5-haiku",
@@ -185,43 +186,43 @@ const DEFAULT_CONFERENCE_AGENTS: ConferenceAgent[] = [
 
 const QUICK_MISSIONS = [
   {
-    icon: "🔐",
+    icon: "lock",
     label: "JWT Auth System",
     prompt: "Design and implement a production-grade JWT authentication system with refresh tokens, RBAC, and session management",
   },
   {
-    icon: "🚀",
+    icon: "rocket",
     label: "CI/CD Pipeline",
     prompt: "Design a complete CI/CD pipeline for a microservices app with automated testing, Docker builds, and blue-green deployments",
   },
   {
-    icon: "📊",
+    icon: "chart",
     label: "Analytics Dashboard",
     prompt: "Build a real-time analytics dashboard with charts, KPIs, data filtering, and CSV export for an e-commerce platform",
   },
   {
-    icon: "⚡",
+    icon: "zap",
     label: "Rate Limiter",
     prompt: "Implement a distributed API rate limiter using Redis with sliding window algorithm and per-user quotas",
   },
   {
-    icon: "🧠",
+    icon: "brain",
     label: "ML Pipeline",
     prompt: "Build a machine learning pipeline for sentiment analysis with data preprocessing, model training, and REST API deployment",
   },
   {
-    icon: "📱",
+    icon: "smartphone",
     label: "Mobile Onboarding",
     prompt: "Design a mobile app onboarding flow with biometric login, multi-step registration, and social auth",
   },
 ];
 
 const PHASE_STEPS = [
-  { key: "init", label: "Analyzing", icon: "🔬" },
-  { key: "delegate", label: "Delegating", icon: "📤" },
-  { key: "execute", label: "Executing", icon: "⚡" },
-  { key: "synthesize", label: "Synthesizing", icon: "🧠" },
-  { key: "done", label: "Complete", icon: "✅" },
+  { key: "init", label: "Analyzing", icon: "microscope" },
+  { key: "delegate", label: "Delegating", icon: "rocket" },
+  { key: "execute", label: "Executing", icon: "zap" },
+  { key: "synthesize", label: "Synthesizing", icon: "brain" },
+  { key: "done", label: "Complete", icon: "check" },
 ];
 
 const DEPARTMENT_FILTERS = [
@@ -506,8 +507,8 @@ export default function ConferencePage() {
     addEvent({
       type: "phase",
       fromAgent: "A2A Protocol Engine",
-      fromAvatar: "⚙️",
-      message: `Conference session convened under chair ${orchestrator.displayName} (${orchestrator.department || "Executive"}). Protocol v2.4 initialized.`,
+      fromAvatar: "settings",
+      message: `Conference session convened under chair ${orchestrator.displayName} (${orchestrator.department || "Executive"}). Council session initialized.`,
     });
     addEvent({
       type: "speaking",
@@ -707,9 +708,7 @@ export default function ConferencePage() {
     const parts = agents
       .map(
         (a) =>
-          `<span style="display:inline-block;padding:4px 10px;margin:3px 4px;border-radius:6px;background:#f8fafc;font-size:12px;font-weight:600;border:1px solid #cbd5e1;color:#1e293b;">${
-            a.avatar || "🤖"
-          } ${a.displayName} (${a.department || a.role || "specialist"})</span>`
+          `<span style="display:inline-block;padding:4px 10px;margin:3px 4px;border-radius:6px;background:#f8fafc;font-size:12px;font-weight:600;border:1px solid #cbd5e1;color:#1e293b;">${a.displayName} (${a.department || a.role || "specialist"})</span>`
       )
       .join(" ");
     const esc = (result.finalDeliverable || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -783,13 +782,10 @@ export default function ConferencePage() {
       {/* ═══ HEADER BAR ═══ */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="space-y-0.5">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-            <Users className="w-3.5 h-3.5 text-primary" />
-            <span>A2A Conference Hall</span>
-            <span className="opacity-40">•</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/80 border border-border">
-              Protocol v2.4
-            </span>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
+              Agent Conference
+            </h1>
             {isExecuting && (
               <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 animate-pulse">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
@@ -797,9 +793,6 @@ export default function ConferencePage() {
               </span>
             )}
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
-            Autonomous Agent Conference
-          </h1>
           <p className="text-xs text-muted-foreground">
             Multi-agent hierarchy execution with real-time council deliberation & steerability
           </p>
@@ -879,9 +872,9 @@ export default function ConferencePage() {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="notion-card p-4 border border-border/80 shadow-md">
+            <div className="rounded-lg p-4 border border-border bg-card shadow-2xs">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 font-mono">
                   <History className="w-3.5 h-3.5 text-primary" /> Past Conference Missions
                 </h3>
                 <button
@@ -907,10 +900,10 @@ export default function ConferencePage() {
                       inputRef.current?.focus();
                       toast.info("Topic loaded into mission prompt");
                     }}
-                    className="flex items-center gap-3 p-2.5 rounded-lg border border-border bg-card hover:bg-secondary/40 transition cursor-pointer text-left group"
+                    className="flex items-center gap-3 p-2.5 rounded-md border border-border bg-card hover:bg-muted transition cursor-pointer text-left group shadow-2xs"
                   >
                     <span
-                      className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] shrink-0 ${
+                      className={`w-6 h-6 rounded-sm flex items-center justify-center text-[10px] shrink-0 ${
                         entry.success
                           ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                           : "bg-red-500/10 text-red-500"
@@ -935,7 +928,7 @@ export default function ConferencePage() {
       </AnimatePresence>
 
       {/* ═══ AGENT WAR ROOM & COUNCIL CHAMBER ═══ */}
-      <div className="notion-card relative overflow-hidden border border-border/80 shadow-sm">
+      <div className="rounded-lg relative overflow-hidden border border-border bg-card shadow-2xs">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.03] via-transparent to-amber-500/[0.03]" />
 
         <div className="relative p-5 space-y-4">
@@ -943,10 +936,10 @@ export default function ConferencePage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/50 pb-3">
             <div className="flex items-center gap-2.5 flex-wrap">
               <Crown className="w-4 h-4 text-amber-500" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground font-mono">
                 Conference Council
               </h3>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary border border-border font-mono text-muted-foreground">
+              <span className="text-[11px] px-2 py-0.5 rounded-sm bg-secondary border border-border font-mono text-muted-foreground">
                 {agents.length} Agents Online
               </span>
               <span className="text-[11px] text-muted-foreground hidden md:inline">
@@ -990,13 +983,13 @@ export default function ConferencePage() {
                     <motion.span
                       animate={speakingAgentId === orchestrator.id ? { scale: [1, 1.08, 1] } : {}}
                       transition={{ duration: 1.5, repeat: Infinity }}
-                      className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl border-2 shadow-md ${
+                      className={`w-16 h-16 rounded-2xl flex items-center justify-center border-2 shadow-md ${
                         speakingAgentId === orchestrator.id
                           ? "border-primary/50 bg-primary/10"
                           : "border-amber-500/30 bg-amber-500/10"
                       }`}
                     >
-                      {orchestrator.avatar}
+                      <AgentAvatar avatar={orchestrator.avatar} className="w-8 h-8 text-amber-500" />
                     </motion.span>
                     {speakingAgentId === orchestrator.id && (
                       <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-card animate-pulse" />
@@ -1043,7 +1036,7 @@ export default function ConferencePage() {
                     >
                       {orchestrators.map((orc) => (
                         <option key={orc.id} value={orc.id}>
-                          {orc.avatar} {orc.displayName} ({orc.department || "Orchestrator"})
+                          {orc.displayName} ({orc.department || "Orchestrator"})
                         </option>
                       ))}
                     </select>
@@ -1111,13 +1104,13 @@ export default function ConferencePage() {
                     >
                       <div className="relative shrink-0">
                         <span
-                          className={`w-9 h-9 rounded-lg flex items-center justify-center text-base border transition ${
+                          className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
                             speaking
                               ? "border-primary/40 bg-primary/10"
                               : "border-border bg-secondary group-hover:scale-105"
                           }`}
                         >
-                          {agent.avatar}
+                          <AgentAvatar avatar={agent.avatar} className="w-4 h-4 text-primary" />
                         </span>
                         {speaking && (
                           <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-card animate-pulse" />
@@ -1171,11 +1164,11 @@ export default function ConferencePage() {
       />
 
       {/* ═══ MISSION COMMAND CENTER ═══ */}
-      <div className="notion-card p-5 space-y-3.5 border border-border/80 shadow-sm">
+      <div className="rounded-lg p-5 space-y-3.5 border border-border bg-card shadow-2xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-primary" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground font-mono">
               Direct Council Mission
             </h3>
           </div>
@@ -1183,15 +1176,15 @@ export default function ConferencePage() {
           <div className="flex items-center gap-3">
             {/* Deliberation depth selector */}
             {!isExecuting && (
-              <div className="hidden sm:flex items-center gap-1 text-[11px] font-medium bg-secondary/60 p-0.5 rounded-lg border border-border">
+              <div className="hidden sm:flex items-center gap-1 text-[11px] font-medium bg-secondary/60 p-0.5 rounded-md border border-border">
                 {(["rapid", "standard", "deep"] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     onClick={() => setDeliberationDepth(mode)}
-                    className={`px-2 py-0.5 rounded-md capitalize transition cursor-pointer ${
+                    className={`px-2 py-0.5 rounded-sm capitalize transition cursor-pointer ${
                       deliberationDepth === mode
-                        ? "bg-card text-foreground font-semibold shadow-xs"
+                        ? "bg-card text-foreground font-semibold shadow-2xs"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -1225,12 +1218,12 @@ export default function ConferencePage() {
             onChange={(e) => setMissionInput(e.target.value)}
             placeholder="Describe the mission for your agent team (e.g. Design production JWT auth system with RBAC)..."
             disabled={isExecuting}
-            className="flex-1 bg-secondary/50 border border-border px-4 py-3 rounded-xl text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition shadow-xs"
+            className="flex-1 bg-secondary/40 border border-input px-3.5 py-2.5 rounded-md text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-ring transition shadow-2xs"
           />
           <button
             type="submit"
             disabled={isExecuting || !missionInput.trim()}
-            className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 disabled:opacity-40 transition cursor-pointer shadow-sm shrink-0"
+            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-md bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 disabled:opacity-40 transition cursor-pointer shadow-2xs shrink-0"
           >
             {isExecuting ? (
               <>
@@ -1257,7 +1250,7 @@ export default function ConferencePage() {
                   setMissionInput(m.prompt);
                   inputRef.current?.focus();
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-border bg-card hover:bg-secondary/60 hover:border-primary/30 text-muted-foreground hover:text-foreground transition cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition cursor-pointer shadow-2xs"
               >
                 <span>{m.icon}</span>
                 <span>{m.label}</span>
@@ -1282,9 +1275,9 @@ export default function ConferencePage() {
                   return (
                     <div key={step.key} className="flex items-center gap-1 flex-1">
                       <div
-                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs font-semibold transition-all ${
                           isActive
-                            ? "bg-primary/10 text-primary border border-primary/30 shadow-xs"
+                            ? "bg-primary/10 text-primary border border-primary/30 shadow-2xs"
                             : isDone
                             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                             : "bg-secondary/50 text-muted-foreground opacity-40"
@@ -1341,7 +1334,7 @@ export default function ConferencePage() {
         />
 
         {/* ── Master Deliverable & Tree Panel ── */}
-        <div className="notion-card p-5 flex flex-col min-h-0 border border-border/80 shadow-sm">
+        <div className="rounded-lg p-5 flex flex-col min-h-0 border border-border bg-card shadow-2xs">
           <div className="flex items-center justify-between mb-3 border-b border-border/50 pb-2.5">
             {result ? (
               <div className="flex items-center gap-1">
@@ -1479,7 +1472,7 @@ export default function ConferencePage() {
                             className="w-full px-3 py-2.5 flex items-center justify-between hover:bg-secondary/40 transition cursor-pointer text-left"
                           >
                             <div className="flex items-center gap-2 text-xs min-w-0">
-                              <span>{sub.avatar}</span>
+                              <AgentAvatar avatar={sub.avatar} className="w-4 h-4 text-primary shrink-0" />
                               <span className="font-bold text-foreground">{sub.agentName}</span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground shrink-0">
                                 {sub.agentRole}
@@ -1528,7 +1521,9 @@ export default function ConferencePage() {
             <div className="flex-1 max-h-[520px] overflow-y-auto scrollbar-thin space-y-2 pr-1">
               {/* Root */}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/30">
-                <span className="text-xl">{result.executionTree.avatar}</span>
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                  <AgentAvatar avatar={result.executionTree.avatar} className="w-5 h-5 text-amber-500" />
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold text-foreground">
@@ -1550,7 +1545,7 @@ export default function ConferencePage() {
               {result.executionTree.subordinates?.map((sub, i) => (
                 <div key={i} className="ml-5 pl-4 border-l-2 border-border/80 space-y-1">
                   <div className="flex items-center gap-2.5 p-2 rounded-lg bg-card/60 border border-border/60 hover:bg-secondary/30 transition">
-                    <span className="text-base">{sub.avatar}</span>
+                    <AgentAvatar avatar={sub.avatar} className="w-4 h-4 text-primary shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-bold text-foreground">{sub.agentName}</span>
@@ -1570,7 +1565,7 @@ export default function ConferencePage() {
                   {sub.subordinates?.map((w, j) => (
                     <div key={j} className="ml-5 pl-3 border-l-2 border-border/40">
                       <div className="flex items-center gap-2 p-1.5 rounded-lg bg-secondary/20 hover:bg-secondary/40 transition">
-                        <span className="text-sm">{w.avatar}</span>
+                        <AgentAvatar avatar={w.avatar} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         <div className="flex-1 min-w-0">
                           <span className="text-[11px] font-semibold text-foreground">
                             {w.agentName}
@@ -1646,7 +1641,7 @@ export default function ConferencePage() {
                         <div key={i} className="p-2.5 rounded-lg border border-border bg-card/60">
                           <div className="flex items-center justify-between mb-1.5">
                             <div className="flex items-center gap-2 text-xs">
-                              <span>{sub.avatar}</span>
+                              <AgentAvatar avatar={sub.avatar} className="w-4 h-4 text-primary shrink-0" />
                               <span className="font-bold text-foreground">{sub.agentName}</span>
                             </div>
                             <span className="text-[10px] font-mono text-muted-foreground">
@@ -1697,17 +1692,17 @@ export default function ConferencePage() {
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="notion-card p-5 space-y-3.5 border border-border/80 shadow-sm"
+          className="rounded-lg p-5 space-y-3.5 border border-border bg-card shadow-2xs"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/20 flex items-center justify-center text-sm shadow-xs">
-                💬
+              <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
+                <MessageSquare className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2 font-mono">
                   Interactive Conference Floor
-                  <span className="text-[10px] font-semibold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <span className="text-[10px] font-semibold font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-sm border border-emerald-500/20">
                     Active Steerability
                   </span>
                 </h3>
@@ -1717,7 +1712,7 @@ export default function ConferencePage() {
               </div>
             </div>
             {qaMessages.length > 0 && (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-secondary border border-border font-mono text-muted-foreground">
+              <span className="text-[11px] px-2.5 py-0.5 rounded-sm bg-secondary border border-border font-mono text-muted-foreground">
                 {qaMessages.length} msgs
               </span>
             )}
@@ -1759,8 +1754,8 @@ export default function ConferencePage() {
                     className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
                   >
                     {!isUser && (
-                      <span className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-xs shrink-0 mt-0.5 shadow-xs">
-                        👑
+                      <span className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 mt-0.5 shadow-xs">
+                        <Crown className="w-3.5 h-3.5" />
                       </span>
                     )}
                     <div className={`space-y-1 ${isUser ? "max-w-[85%]" : "max-w-[90%]"}`}>

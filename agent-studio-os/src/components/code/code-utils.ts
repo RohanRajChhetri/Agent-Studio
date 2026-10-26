@@ -7,17 +7,17 @@ export interface LanguageMeta {
 }
 
 export const LANGUAGES: LanguageMeta[] = [
-  { id: "typescript", label: "TypeScript", ext: "ts", icon: "🔷", color: "text-blue-400" },
-  { id: "javascript", label: "JavaScript", ext: "js", icon: "🟨", color: "text-amber-400" },
-  { id: "html", label: "HTML", ext: "html", icon: "🌐", color: "text-orange-400" },
-  { id: "css", label: "CSS", ext: "css", icon: "🎨", color: "text-pink-400" },
-  { id: "python", label: "Python", ext: "py", icon: "🐍", color: "text-emerald-400" },
-  { id: "json", label: "JSON", ext: "json", icon: "📦", color: "text-yellow-400" },
-  { id: "markdown", label: "Markdown", ext: "md", icon: "📝", color: "text-cyan-400" },
-  { id: "sql", label: "SQL", ext: "sql", icon: "🗃️", color: "text-violet-400" },
-  { id: "bash", label: "Bash", ext: "sh", icon: "🖥️", color: "text-emerald-400" },
-  { id: "rust", label: "Rust", ext: "rs", icon: "🦀", color: "text-orange-500" },
-  { id: "go", label: "Go", ext: "go", icon: "🐹", color: "text-sky-400" },
+  { id: "typescript", label: "TypeScript", ext: "ts", icon: "file-code", color: "text-blue-400" },
+  { id: "javascript", label: "JavaScript", ext: "js", icon: "file-code", color: "text-amber-400" },
+  { id: "html", label: "HTML", ext: "html", icon: "globe", color: "text-orange-400" },
+  { id: "css", label: "CSS", ext: "css", icon: "palette", color: "text-pink-400" },
+  { id: "python", label: "Python", ext: "py", icon: "terminal", color: "text-emerald-400" },
+  { id: "json", label: "JSON", ext: "json", icon: "file-json", color: "text-yellow-400" },
+  { id: "markdown", label: "Markdown", ext: "md", icon: "file-text", color: "text-cyan-400" },
+  { id: "sql", label: "SQL", ext: "sql", icon: "database", color: "text-violet-400" },
+  { id: "bash", label: "Bash", ext: "sh", icon: "terminal", color: "text-emerald-400" },
+  { id: "rust", label: "Rust", ext: "rs", icon: "file-code", color: "text-orange-500" },
+  { id: "go", label: "Go", ext: "go", icon: "file-code", color: "text-sky-400" },
 ];
 
 export function getLanguageForFile(filePath: string): LanguageMeta {

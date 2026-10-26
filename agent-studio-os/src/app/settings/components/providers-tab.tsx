@@ -376,6 +376,15 @@ export function ProvidersTab({
                   <div className="relative flex-1">
                     <input
                       type={showKeys[p.envVar] ? "text" : "password"}
+                      name={`provider_key_${p.provider}`}
+                      id={`provider_key_${p.provider}`}
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
                       placeholder={
                         p.isSet
                           ? "Enter new key to replace existing..."

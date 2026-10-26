@@ -45,7 +45,7 @@ export async function GET(
 </head>
 <body>
   <div class="container">
-    <h1>⚡ Webhook Sandbox <span class="badge">ACTIVE</span></h1>
+    <h1>Webhook Sandbox <span class="badge">ACTIVE</span></h1>
     <p style="color: #94a3b8; font-size: 14px;">This webhook token is ready to receive automated triggers, custom cURL events, or IoT device dispatches.</p>
     
     <div>
@@ -57,7 +57,7 @@ export async function GET(
       <label>Test Message / Prompt</label>
       <textarea id="promptInput" rows="3" placeholder="Enter instructions for the agent...">Hello Agent, what is your status and what can you do?</textarea>
       
-      <button type="submit" id="submitBtn">🚀 Send Test Event</button>
+      <button type="submit" id="submitBtn">Send Test Event</button>
     </form>
 
     <div id="response"></div>
@@ -90,7 +90,7 @@ export async function GET(
         resBox.innerText = 'Error: ' + err.message;
       } finally {
         btn.disabled = false;
-        btn.innerText = '🚀 Send Test Event';
+        btn.innerText = 'Send Test Event';
       }
     }
   </script>

@@ -162,8 +162,10 @@ export function generateSimplePdf(title: string, markdownContent: string): Buffe
   return Buffer.from(pdf, "utf-8");
 }
 
+import { getFilesOutputDir } from "./storage-config";
+
 /**
- * Saves a document file (PDF, DOC, MD, CSV, TXT) into public/downloads/
+ * Saves a document file (PDF, DOC, MD, CSV, TXT) into public/downloads/ and configured files output directory
  */
 export async function saveDocumentFile(
   rawFileName: string,
@@ -172,12 +174,18 @@ export async function saveDocumentFile(
   const downloadDir = path.join(process.cwd(), "public", "downloads");
   await fs.mkdir(downloadDir, { recursive: true });
 
+  const filesOutputDir = getFilesOutputDir();
+  try {
+    await fs.mkdir(filesOutputDir, { recursive: true });
+  } catch {}
+
   let safeName = path.basename(rawFileName || "document.doc").replace(/[<>:"/\\|?*]+/g, "_");
   if (!path.extname(safeName)) {
     safeName += ".doc";
   }
 
   const targetPath = path.join(downloadDir, safeName);
+  const configuredPath = path.join(filesOutputDir, safeName);
   let fileBuffer: Buffer;
 
   if (safeName.toLowerCase().endsWith(".pdf")) {
@@ -217,6 +225,9 @@ ${content
   }
 
   await fs.writeFile(targetPath, fileBuffer);
+  try {
+    await fs.writeFile(configuredPath, fileBuffer);
+  } catch {}
 
   return {
     fileName: safeName,

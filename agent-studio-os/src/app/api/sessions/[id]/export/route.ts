@@ -72,7 +72,7 @@ export async function POST(
       for (const msg of session.messages) {
         const roleHeader =
           msg.role === "user"
-            ? "### 👤 User"
+            ? "### User"
             : `### ${session.agent.avatar} ${session.agent.displayName}`;
         const timeBadge = new Date(msg.createdAt).toLocaleTimeString([], {
           hour: "2-digit",

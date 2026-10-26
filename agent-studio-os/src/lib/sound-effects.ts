@@ -5,7 +5,7 @@
  */
 
 let audioCtx: AudioContext | null = null;
-let soundMuted = false;
+let soundMuted = true;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;

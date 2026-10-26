@@ -58,8 +58,12 @@ export function GlobalAgentTaskTracker() {
   const isCodePage = pathname === "/code";
 
   const handleNavigateToCode = () => {
-    const targetProject = buildingProject || latestResult?.projectName || "default-project";
-    router.push(`/code?project=${encodeURIComponent(targetProject)}`);
+    const targetProject = buildingProject || latestResult?.projectName;
+    if (targetProject) {
+      router.push(`/code?project=${encodeURIComponent(targetProject)}`);
+    } else {
+      router.push("/code");
+    }
   };
 
   const handleDismiss = () => {

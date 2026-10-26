@@ -85,4 +85,26 @@ console.log(greeting);
     expect(html).toContain("Deliverable Ready for Download");
     expect(html).toContain("/downloads/Darwin_Jobs_October_2026.doc");
   });
+
+  it("should not contain <div> descendants inside paragraphs when rendering download links", () => {
+    const rawParagraphWithDownload = `Click here to get your report: [Download Report](/downloads/report.pdf)`;
+    const html = renderToStaticMarkup(React.createElement(MarkdownRenderer, { content: rawParagraphWithDownload }));
+
+    // Verify <p> does not contain nested <div>
+    const paragraphMatch = html.match(/<p[^>]*>([\s\S]*?)<\/p>/);
+    expect(paragraphMatch).not.toBeNull();
+    if (paragraphMatch) {
+      expect(paragraphMatch[1]).not.toContain("<div");
+    }
+  });
+
+  it("should render user messages with text-foreground without forcing invisible text-white", () => {
+    const userMessage = `# Goal\nPlease execute **task 1** with \`code\` and *italic* note:\n- Item A\n- Item B`;
+    const html = renderToStaticMarkup(React.createElement(MarkdownRenderer, { content: userMessage, isUser: true }));
+
+    // Must use text-foreground so it is visible in light mode (black) and dark mode (white)
+    expect(html).toContain("text-foreground");
+    expect(html).not.toContain("text-white");
+    expect(html).not.toContain("divide-white");
+  });
 });

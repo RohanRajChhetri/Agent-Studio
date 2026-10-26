@@ -47,7 +47,29 @@ export class AnthropicProvider extends BaseLLMProvider {
       return await this.executeWithTimeout(async (signal) => {
         const anthropicMsgs = messages
           .filter((m) => m.role !== "system")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+          .map((m) => {
+            if (m.images && m.images.length > 0) {
+              const contentParts: any[] = [];
+              for (const img of m.images) {
+                const base64Data = img.data.includes(";base64,")
+                  ? img.data.split(";base64,")[1]
+                  : img.data;
+                contentParts.push({
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: img.mimeType || "image/png",
+                    data: base64Data,
+                  },
+                });
+              }
+              if (m.content) {
+                contentParts.push({ type: "text", text: m.content });
+              }
+              return { role: m.role as "user" | "assistant", content: contentParts };
+            }
+            return { role: m.role as "user" | "assistant", content: m.content };
+          });
 
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -60,7 +82,7 @@ export class AnthropicProvider extends BaseLLMProvider {
             model: cleanModel,
             system: systemPrompt || undefined,
             messages: anthropicMsgs,
-            max_tokens: 2048,
+            max_tokens: 8192,
           }),
           signal,
         });

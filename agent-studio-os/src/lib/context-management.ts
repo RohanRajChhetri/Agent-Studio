@@ -1,4 +1,4 @@
-import type { LLMMessage, PromptIntent } from "./router-types";
+import type { LLMMessage, LLMImageAttachment, PromptIntent } from "./router-types";
 
 /** Pre-defined role directives dictionary */
 const ROLE_DIRECTIVES: Record<string, string> = {
@@ -88,6 +88,16 @@ CRITICAL DIRECTIVE: When the user asks for a file, document, PDF, spreadsheet, d
 - Instead, invoke the file tool: create_file(path="filename.pdf", content="...") with complete, thorough, beautifully formatted content.
 - The system will immediately compile your content into an authentic, downloadable binary file (.pdf, .doc, .csv) and present a direct download card to the user!`;
 
+const SYSTEM_CONTROL_DIRECTIVE = `[SYSTEM CONTROL & WORKSPACE DIRECTIVES]
+You have FULL OPERATIONAL CONTROL over Agent Studio OS, the project workspace, and the native operating system:
+- Kanban Board: Call create_kanban_task(title="...", description="...", status="backlog"|"todo"|"in_progress"|"review", priority="low"|"medium"|"high"|"urgent", agent="...") to create cards on the Kanban board.
+- Routines: Call create_routine(title="...", prompt="...", type="daily"|"one_time", time="09:00", priority="...", agent="...") to schedule recurring automated tasks visible on the Routines page.
+- Workflows: Call create_workflow(name="...", description="...", category="...") to build visual DAG multi-agent pipelines visible on the Workflows page.
+- Native Desktop Automation: Call desktop_action(action_type="launch"|"click"|"type"|"key"|"wait"|"scroll", target="...", text="...", key="...", duration=ms) or desktop_screenshot() to interact directly with native desktop software, browsers, and operating system windows.
+- Files & Downloads: Call create_file(path="document_name.pdf", content="...") to produce real files.
+
+CRITICAL DIRECTIVE: When the user asks you to create a Kanban task, make a routine, build a workflow, or interact with their desktop, execute the corresponding tool immediately. You have full system privileges.`;
+
 /** Build an elite, role-tailored system prompt */
 export function buildDefaultSystemPrompt(params: {
   agentName?: string;
@@ -101,13 +111,13 @@ export function buildDefaultSystemPrompt(params: {
   const excellenceCore = getExcellenceCore(agentName, role);
 
   if (custom && custom.length > 50) {
-    return `${excellenceCore}\n\n[SPECIALIST DIRECTIVES & PERSONA]\n${custom}\n\n${FILE_DELIVERABLE_DIRECTIVE}`;
+    return `${excellenceCore}\n\n[SPECIALIST DIRECTIVES & PERSONA]\n${custom}\n\n${FILE_DELIVERABLE_DIRECTIVE}\n\n${SYSTEM_CONTROL_DIRECTIVE}`;
   }
 
   const roleDirective = getRoleDirective(agentName, role);
   return `${excellenceCore}\n\n[SPECIALIST DIRECTIVES]\n${roleDirective}${
     custom ? `\n\nAdditional Guidance: ${custom}` : ""
-  }\n\n${FILE_DELIVERABLE_DIRECTIVE}`;
+  }\n\n${FILE_DELIVERABLE_DIRECTIVE}\n\n${SYSTEM_CONTROL_DIRECTIVE}`;
 }
 
 /** Pre-compiled intent detection regex patterns */
@@ -215,7 +225,12 @@ export function trimMessagesToContext(
 }
 
 /** Prepare messages helper */
-export function prepareMessages(prompt: string, systemPrompt?: string, history?: LLMMessage[]): LLMMessage[] {
+export function prepareMessages(
+  prompt: string,
+  systemPrompt?: string,
+  history?: LLMMessage[],
+  images?: LLMImageAttachment[]
+): LLMMessage[] {
   const messages: LLMMessage[] = [];
   if (systemPrompt) {
     messages.push({ role: "system", content: systemPrompt });
@@ -223,10 +238,10 @@ export function prepareMessages(prompt: string, systemPrompt?: string, history?:
   if (history && history.length > 0) {
     for (const h of history) {
       if (h.content && h.content.trim()) {
-        messages.push({ role: h.role, content: h.content });
+        messages.push({ role: h.role, content: h.content, images: h.images });
       }
     }
   }
-  messages.push({ role: "user", content: prompt });
+  messages.push({ role: "user", content: prompt, images });
   return messages;
 }

@@ -15,17 +15,19 @@ import {
   ChevronRight,
   Sparkles,
   Mic,
-  Coins,
   Code,
   Users,
   Menu,
   X,
   Workflow,
+  Bell,
+  LogIn,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SignInButton, SignUpButton, Show, UserButton } from "@clerk/nextjs";
+import { getStoredNotifications } from "@/lib/notification-store";
 
 const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -55,40 +57,60 @@ function SidebarContent({
   setMobileOpen,
   setCollapsed,
 }: SidebarContentProps) {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const updateCount = () => {
+      try {
+        const notifs = getStoredNotifications();
+        setUnreadCount(notifs.filter((n) => !n.read).length);
+      } catch {}
+    };
+    updateCount();
+    window.addEventListener("agent-notifications-updated", updateCount);
+    return () => window.removeEventListener("agent-notifications-updated", updateCount);
+  }, []);
+
   return (
     <>
       {/* Logo Brand Header */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-border shrink-0">
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-primary-foreground font-bold text-xs shrink-0">
+      <div className={cn(
+        "flex items-center h-14 border-b border-sidebar-border shrink-0 transition-all",
+        collapsed && !isMobile ? "justify-center px-0" : "gap-3 px-3.5"
+      )}>
+        <div className="flex items-center justify-center w-8 h-8 rounded-md bg-foreground text-background font-bold text-xs shrink-0 shadow-xs">
           <Sparkles className="w-4 h-4" />
         </div>
         {(!collapsed || isMobile) && (
           <motion.div
-            initial={{ opacity: 0, x: -8 }}
+            initial={{ opacity: 0, x: -6 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -8 }}
-            className="overflow-hidden"
+            exit={{ opacity: 0, x: -6 }}
+            className="overflow-hidden min-w-0"
           >
-            <h1 className="font-semibold text-sm text-foreground tracking-tight whitespace-nowrap">
-              Agent Studio
+            <h1 className="font-semibold text-xs tracking-tight text-sidebar-foreground truncate">
+              Agent Studio OS
             </h1>
-            <p className="text-[10px] text-muted-foreground font-mono whitespace-nowrap">
-              Autonomous OS
+            <p className="text-[10px] text-muted-foreground font-mono truncate">
+              Control Plane
             </p>
           </motion.div>
         )}
         {isMobile && (
           <button
             onClick={() => setMobileOpen(false)}
-            className="ml-auto p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+            className="ml-auto p-1.5 rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground transition cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         )}
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 py-3 px-2.5 space-y-1 overflow-y-auto">
+      <nav className={cn(
+        "flex-1 py-2.5 space-y-1 overflow-y-auto overflow-x-hidden",
+        collapsed && !isMobile ? "px-0 flex flex-col items-center" : "px-2"
+      )}>
         {navItems.map((item) => {
           const isActive =
             item.href === "/"
@@ -96,19 +118,27 @@ function SidebarContent({
               : pathname.startsWith(item.href);
 
           return (
-            <Link key={item.href} href={item.href}>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(collapsed && !isMobile && "flex justify-center w-full")}
+              title={collapsed && !isMobile ? item.label : undefined}
+            >
               <div
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors relative group cursor-pointer",
+                  "flex items-center text-xs font-medium transition-all relative group cursor-pointer",
+                  collapsed && !isMobile
+                    ? "w-9 h-9 justify-center rounded-md"
+                    : "gap-2.5 px-2.5 py-1.5 rounded-md",
                   isActive
-                    ? "text-primary bg-secondary border border-primary/20 font-semibold"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    ? "text-sidebar-foreground bg-sidebar-accent font-semibold shadow-2xs border border-sidebar-border"
+                    : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
                 )}
               >
                 <item.icon
                   className={cn(
-                    "w-4 h-4 shrink-0 transition-transform",
-                    isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                    "w-4 h-4 shrink-0 transition-transform group-hover:scale-105",
+                    isActive ? "text-sidebar-foreground" : "text-muted-foreground group-hover:text-sidebar-foreground"
                   )}
                 />
                 {(!collapsed || isMobile) && (
@@ -125,84 +155,165 @@ function SidebarContent({
         })}
       </nav>
 
-      {/* Quick Cockpit Tools: Voice Orb, Command Palette, Cost Tracker */}
-      <div className="px-2.5 py-2 border-t border-border space-y-1">
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent("open-voice-cockpit"))}
-          className="flex items-center gap-2.5 px-3 py-1.5 w-full rounded-lg text-xs font-semibold text-foreground bg-[#e6f3fe] dark:bg-primary/10 border border-[#0075de]/30 text-[#0075de] dark:text-primary hover:bg-[#e6f3fe]/80 transition cursor-pointer"
-          title="Launch Gemini Live Voice Cockpit (Alt+V)"
-        >
-          <Mic className="w-4 h-4 shrink-0 text-primary" />
-          {(!collapsed || isMobile) && <span className="truncate">Live Voice</span>}
-        </button>
-
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent("open-cost-tracker"))}
-          className="flex items-center gap-2.5 px-3 py-1.5 w-full rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition cursor-pointer"
-          title="Token & Cost Telemetry"
-        >
-          <Coins className="w-4 h-4 shrink-0" />
-          {(!collapsed || isMobile) && <span className="truncate">Cost & Usage</span>}
-        </button>
-      </div>
-
-      {/* Auth Controls */}
-      <div className="px-2.5 py-2.5 border-t border-border">
-        <Show when="signed-out">
-          <div className={cn("flex gap-2", collapsed && !isMobile ? "flex-col items-center" : "items-center")}>
-            <SignInButton mode="modal">
-              <button className={cn(
-                "w-full text-xs font-medium py-1.5 px-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition text-center cursor-pointer shadow-sm",
-                collapsed && !isMobile && "text-[10px] px-1"
-              )}>
-                Sign In
-              </button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <button className={cn(
-                "w-full text-xs font-medium py-1.5 px-2.5 rounded-lg border border-border bg-secondary hover:bg-muted text-foreground transition text-center cursor-pointer",
-                collapsed && !isMobile && "hidden"
-              )}>
-                Sign Up
-              </button>
-            </SignUpButton>
-          </div>
-        </Show>
-        <Show when="signed-in">
-          <div className={cn("flex items-center gap-2.5", collapsed && !isMobile ? "justify-center" : "px-1")}>
-            <UserButton
-              showName={!collapsed || isMobile}
-              appearance={{
-                elements: {
-                  userButtonAvatarBox: "w-7 h-7",
-                  userButtonOuterIdentifier: "text-xs font-medium text-foreground truncate max-w-[130px]",
-                  userButtonBox: "flex-row-reverse gap-2",
-                },
-              }}
-            />
-          </div>
-        </Show>
-      </div>
-
-      {/* Color Theme Switcher */}
-      <div className="px-3 py-3 border-t border-border">
-        <ThemeToggle collapsed={collapsed && !isMobile} />
-      </div>
-
-      {/* Collapse toggle (desktop only) */}
-      {!isMobile && (
-        <div className="px-3 py-2.5 border-t border-border">
+      {/* Unified Bottom Footer */}
+      {collapsed && !isMobile ? (
+        <div className="border-t border-sidebar-border py-2 px-0 flex flex-col items-center gap-1.5 bg-sidebar shrink-0 w-full">
+          {/* Notifications */}
           <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="flex items-center justify-center w-full py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => window.dispatchEvent(new CustomEvent("open-notifications"))}
+            className="w-9 h-9 rounded-md flex items-center justify-center text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all cursor-pointer relative group"
+            title="Notification Center (Alt+N)"
           >
-            {collapsed ? (
-              <ChevronRight className="w-4 h-4" />
-            ) : (
-              <ChevronLeft className="w-4 h-4" />
+            <Bell className="w-4 h-4 text-muted-foreground group-hover:text-sidebar-foreground transition-colors" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary ring-2 ring-sidebar" />
             )}
           </button>
+
+          {/* Live Voice */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-voice-cockpit"))}
+            className="w-9 h-9 rounded-md flex items-center justify-center text-primary bg-primary/10 hover:bg-primary/20 border border-primary/25 transition-all cursor-pointer relative group"
+            title="Launch Gemini Live Voice Cockpit (Alt+V)"
+          >
+            <Mic className="w-4 h-4 text-primary group-hover:scale-105 transition-transform" />
+            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+          </button>
+
+          {/* Subtle Hairline Divider */}
+          <div className="w-6 h-px bg-sidebar-border my-0.5" />
+
+          {/* Auth Controls */}
+          <Show when="signed-out">
+            <SignInButton mode="modal">
+              <button
+                className="w-9 h-9 rounded-md flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent border border-sidebar-border transition-all cursor-pointer"
+                title="Sign In"
+              >
+                <LogIn className="w-4 h-4" />
+              </button>
+            </SignInButton>
+          </Show>
+          <Show when="signed-in">
+            <div
+              className="w-9 h-9 rounded-md flex items-center justify-center hover:bg-sidebar-accent transition-all cursor-pointer"
+              title="User Account"
+            >
+              <div className="relative rounded-full p-0.5 ring-1 ring-sidebar-border bg-sidebar flex items-center justify-center">
+                <UserButton
+                  showName={false}
+                  appearance={{
+                    elements: {
+                      userButtonAvatarBox: "w-6 h-6 rounded-full",
+                      userButtonPopoverCard: "shadow-xl border border-border bg-card",
+                    },
+                  }}
+                />
+              </div>
+            </div>
+          </Show>
+
+          {/* Theme Switcher */}
+          <ThemeToggle collapsed={true} />
+
+          {/* Collapse toggle */}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="w-9 h-9 rounded-md flex items-center justify-center text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all cursor-pointer group"
+            title="Expand sidebar"
+          >
+            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        </div>
+      ) : (
+        <div className="border-t border-sidebar-border p-2.5 space-y-2 bg-sidebar shrink-0">
+          {/* Quick Cockpit Actions (Alerts & Live Voice) */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("open-notifications"))}
+              className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-sidebar-foreground bg-sidebar-accent/50 hover:bg-sidebar-accent border border-sidebar-border transition-all cursor-pointer relative group"
+              title="Notification Center (Alt+N)"
+            >
+              <div className="relative shrink-0">
+                <Bell className="w-3.5 h-3.5 text-muted-foreground group-hover:text-sidebar-foreground transition-colors" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary ring-2 ring-sidebar" />
+                )}
+              </div>
+              <span className="truncate text-[11px]">Alerts</span>
+              {unreadCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-sm text-[9px] font-mono font-semibold bg-primary text-primary-foreground">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("open-voice-cockpit"))}
+              className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/25 transition-all cursor-pointer group"
+              title="Launch Gemini Live Voice Cockpit (Alt+V)"
+            >
+              <Mic className="w-3.5 h-3.5 shrink-0 text-primary group-hover:scale-105 transition-transform" />
+              <span className="truncate text-[11px]">Live Voice</span>
+            </button>
+          </div>
+
+          {/* Auth Controls */}
+          <Show when="signed-out">
+            <div className="flex items-center gap-2">
+              <SignInButton mode="modal">
+                <button className="flex-1 text-xs font-medium py-1.5 px-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition text-center cursor-pointer shadow-xs">
+                  Sign In
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className="flex-1 text-xs font-medium py-1.5 px-3 rounded-md border border-sidebar-border bg-sidebar hover:bg-sidebar-accent text-sidebar-foreground transition text-center cursor-pointer">
+                  Sign Up
+                </button>
+              </SignUpButton>
+            </div>
+          </Show>
+          <Show when="signed-in">
+            <div className="p-2 rounded-md bg-sidebar-accent/50 border border-sidebar-border flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="shrink-0 rounded-full p-0.5 ring-1 ring-sidebar-border bg-sidebar flex items-center justify-center">
+                  <UserButton
+                    appearance={{
+                      elements: {
+                        userButtonAvatarBox: "w-6 h-6 rounded-full",
+                        userButtonOuterIdentifier: "text-xs font-medium text-sidebar-foreground truncate max-w-[110px]",
+                        userButtonBox: "flex-row-reverse gap-2",
+                      },
+                    }}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span className="text-xs font-medium text-sidebar-foreground truncate">Operator</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate">Autonomous System</p>
+                </div>
+              </div>
+            </div>
+          </Show>
+
+          {/* Color Theme Switcher */}
+          <ThemeToggle collapsed={false} />
+
+          {/* Collapse toggle (desktop only) */}
+          {!isMobile && (
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all cursor-pointer group"
+              title="Collapse sidebar"
+            >
+              <span className="text-[11px] font-medium">Collapse Sidebar</span>
+              <div className="w-5 h-5 rounded-md flex items-center justify-center bg-sidebar-accent group-hover:bg-sidebar-accent/80 text-muted-foreground group-hover:text-sidebar-foreground transition-all">
+                <ChevronLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+              </div>
+            </button>
+          )}
         </div>
       )}
     </>
@@ -243,10 +354,19 @@ export function Sidebar() {
       {/* Mobile hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed top-3 left-3 z-[60] p-2 rounded-xl bg-card border border-border shadow-lg lg:hidden cursor-pointer hover:bg-secondary transition"
+        className="fixed top-3 left-3 z-[60] p-2 rounded-md bg-card border border-border shadow-md lg:hidden cursor-pointer hover:bg-secondary transition"
         title="Open menu"
       >
         <Menu className="w-5 h-5 text-foreground" />
+      </button>
+
+      {/* Mobile notifications button */}
+      <button
+        onClick={() => window.dispatchEvent(new CustomEvent("open-notifications"))}
+        className="fixed top-3 right-3 z-[60] p-2 rounded-md bg-card border border-border shadow-md lg:hidden cursor-pointer hover:bg-secondary transition"
+        title="Open notifications"
+      >
+        <Bell className="w-5 h-5 text-foreground" />
       </button>
 
       {/* Mobile Overlay */}
@@ -257,7 +377,7 @@ export function Sidebar() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[55] bg-black/50 backdrop-blur-sm lg:hidden"
+              className="fixed inset-0 z-[55] bg-black/60 backdrop-blur-xs lg:hidden"
               onClick={() => setMobileOpen(false)}
             />
             <motion.aside
@@ -265,7 +385,7 @@ export function Sidebar() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed left-0 top-0 bottom-0 z-[60] w-[280px] flex flex-col bg-card border-r border-border lg:hidden shadow-2xl"
+              className="fixed left-0 top-0 bottom-0 z-[60] w-[280px] flex flex-col bg-sidebar border-r border-sidebar-border lg:hidden shadow-2xl"
             >
               <SidebarContent
                 isMobile
@@ -283,8 +403,8 @@ export function Sidebar() {
       <motion.aside
         initial={false}
         animate={{ width: collapsed ? 72 : 240 }}
-        transition={{ duration: 0.2, ease: "easeInOut" }}
-        className="fixed left-0 top-0 bottom-0 z-50 hidden lg:flex flex-col bg-card border-r border-border"
+        transition={{ duration: 0.15, ease: "easeInOut" }}
+        className="fixed left-0 top-0 bottom-0 z-50 hidden lg:flex flex-col bg-sidebar border-r border-sidebar-border"
       >
         <SidebarContent
           collapsed={collapsed}

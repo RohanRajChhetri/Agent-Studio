@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 
 interface VoiceOption {
   id: string;
@@ -628,8 +629,8 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
           {/* Header Bar */}
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-secondary/30 shrink-0">
             <div className="flex items-center gap-2.5">
-              <div className="relative">
-                <span className="text-xl">{currentAgent?.avatar || "🎙️"}</span>
+              <div className="relative flex items-center justify-center">
+                <AgentAvatar avatar={currentAgent?.avatar} fallbackIcon={Mic} className="w-5 h-5 text-primary" />
                 <span
                   className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${
                     isSpeaking
@@ -722,8 +723,8 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
                     : "bg-secondary/80 hover:bg-secondary border-border"
                 }`}
               >
-                <div className="text-3xl mb-1">
-                  {currentAgent?.avatar || "🤖"}
+                <div className="mb-2">
+                  <AgentAvatar avatar={currentAgent?.avatar} fallbackIcon={Mic} className="w-10 h-10 text-primary" />
                 </div>
                 <div className="flex items-center gap-1 text-[11px] font-semibold text-foreground/90">
                   {isSpeaking ? (
@@ -803,7 +804,7 @@ export function GeminiLiveOrb({ isOpen, onClose, initialAgentId }: GeminiLiveOrb
               >
                 {agents.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.avatar} {a.displayName || a.name}
+                    {a.displayName || a.name}
                   </option>
                 ))}
               </select>

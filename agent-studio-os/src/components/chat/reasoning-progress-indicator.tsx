@@ -88,72 +88,72 @@ export function ReasoningProgressIndicator({
     },
   ];
 
-  // Completed State: Sleek collapsed pill with expand option
+  // Completed State: Sleek collapsed pill with expand option (Pure Monochrome)
   if (!state.isStreaming && state.phase === "completed") {
     return (
       <div className="my-2 select-none">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/80 bg-secondary/40 hover:bg-secondary/70 hover:border-border text-muted-foreground hover:text-foreground text-[11px] font-medium transition-all shadow-xs cursor-pointer"
+          className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-white/10 bg-zinc-950/80 hover:bg-zinc-900 hover:border-white/20 text-zinc-300 hover:text-white text-[11px] font-medium transition-all shadow-xs cursor-pointer"
         >
-          <div className="flex items-center gap-1.5 text-primary">
+          <div className="flex items-center gap-1.5 text-zinc-300">
             <Brain className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-            <span className="font-semibold text-foreground">Thought for {elapsedSec}s</span>
+            <span className="font-semibold text-zinc-100">Thought for {elapsedSec}s</span>
           </div>
 
-          <span className="text-border">|</span>
+          <span className="text-zinc-700">|</span>
 
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[10px] text-zinc-400">
             {state.totalIterations || 3} iterations
           </span>
 
           {state.tokenCount > 0 && (
             <>
-              <span className="text-border">|</span>
-              <span className="text-[10px] text-muted-foreground font-mono">
+              <span className="text-zinc-700">|</span>
+              <span className="text-[10px] text-zinc-400 font-mono">
                 {state.tokenCount} tokens
               </span>
             </>
           )}
 
           <ChevronDown
-            className={`w-3 h-3 text-muted-foreground transition-transform duration-200 ${
+            className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${
               isExpanded ? "rotate-180" : ""
             }`}
           />
         </button>
 
         {isExpanded && (
-          <div className="mt-2 p-3 rounded-xl border border-border bg-card/80 backdrop-blur-md text-xs space-y-2.5 animate-in fade-in-50 duration-200">
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground pb-2 border-b border-border">
-              <span className="flex items-center gap-1 font-semibold text-foreground">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                Reasoning Loop Execution Summary
+          <div className="mt-2 p-3.5 rounded-2xl border border-white/10 bg-zinc-950/90 backdrop-blur-xl text-xs space-y-3 animate-in fade-in-50 duration-200">
+            <div className="flex items-center justify-between text-[11px] text-zinc-400 pb-2 border-b border-white/10">
+              <span className="flex items-center gap-1.5 font-semibold text-zinc-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                Reasoning Loop Execution Trace
               </span>
-              <span className="font-mono text-[10px] text-primary">
+              <span className="font-mono text-[10px] text-zinc-400">
                 {state.model || "Autonomous Specialist"}
               </span>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              <div className="p-2 rounded-lg bg-secondary/50 border border-border/50">
-                <span className="text-[10px] text-muted-foreground block">Thinking Time</span>
-                <span className="font-mono font-semibold text-foreground">{elapsedSec}s</span>
+              <div className="p-2.5 rounded-xl bg-zinc-900/60 border border-white/5">
+                <span className="text-[10px] text-zinc-400 block">Thinking Time</span>
+                <span className="font-mono font-semibold text-zinc-100">{elapsedSec}s</span>
               </div>
-              <div className="p-2 rounded-lg bg-secondary/50 border border-border/50">
-                <span className="text-[10px] text-muted-foreground block">Tokens Generated</span>
-                <span className="font-mono font-semibold text-foreground">{state.tokenCount}</span>
+              <div className="p-2.5 rounded-xl bg-zinc-900/60 border border-white/5">
+                <span className="text-[10px] text-zinc-400 block">Tokens Generated</span>
+                <span className="font-mono font-semibold text-zinc-100">{state.tokenCount}</span>
               </div>
-              <div className="p-2 rounded-lg bg-secondary/50 border border-border/50">
-                <span className="text-[10px] text-muted-foreground block">Average Speed</span>
-                <span className="font-mono font-semibold text-foreground">{tokSpeed} tok/s</span>
+              <div className="p-2.5 rounded-xl bg-zinc-900/60 border border-white/5">
+                <span className="text-[10px] text-zinc-400 block">Generation Speed</span>
+                <span className="font-mono font-semibold text-zinc-100">{tokSpeed} tok/s</span>
               </div>
             </div>
 
             {state.thoughtText && (
               <div className="space-y-1">
-                <span className="text-[10.5px] font-semibold text-muted-foreground">Reasoning Trace</span>
-                <div className="p-2.5 rounded-lg bg-secondary/70 border border-border font-mono text-[11px] text-muted-foreground max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap">
+                <span className="text-[10.5px] font-semibold text-zinc-400">Reasoning Internal Monologue</span>
+                <div className="p-3 rounded-xl bg-zinc-900/80 border border-white/5 font-mono text-[11px] text-zinc-300 max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap">
                   {state.thoughtText}
                 </div>
               </div>
@@ -164,29 +164,29 @@ export function ReasoningProgressIndicator({
     );
   }
 
-  // Active Live Streaming Readout
+  // Active Live Streaming Readout (Monochrome OLED)
   return (
-    <div className="my-2.5 rounded-xl border border-primary/20 bg-gradient-to-r from-primary/5 via-secondary/60 to-cyan-500/5 backdrop-blur-md p-3.5 shadow-md shadow-primary/5 transition-all text-xs animate-in fade-in duration-200">
+    <div className="my-2.5 rounded-2xl border border-white/15 bg-zinc-950/90 backdrop-blur-xl p-3.5 shadow-xl transition-all text-xs animate-in fade-in duration-200">
       {/* Top Telemetry Bar */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          {/* Pulsing Live Halo */}
+          {/* Pulsing Live Beacon */}
           <div className="relative flex items-center justify-center shrink-0">
-            <span className="animate-ping absolute inline-flex h-4 w-4 rounded-full bg-primary/40 opacity-75" />
-            <div className="relative w-6 h-6 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center text-primary">
+            <span className="animate-ping absolute inline-flex h-4 w-4 rounded-full bg-white/20 opacity-75" />
+            <div className="relative w-6 h-6 rounded-lg bg-zinc-900 border border-white/20 flex items-center justify-center text-white">
               <Brain className="w-3.5 h-3.5 animate-pulse" />
             </div>
           </div>
 
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-semibold text-foreground tracking-tight text-[11.5px]">
+              <span className="font-semibold text-zinc-100 tracking-tight text-[11.5px]">
                 Reasoning Loop
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-primary font-mono font-bold">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-zinc-900 border border-white/10 text-zinc-300 font-mono font-bold">
                 Iteration {state.iteration} / {state.totalIterations}
               </span>
-              <span className="text-[11px] text-muted-foreground truncate hidden sm:inline">
+              <span className="text-[11px] text-zinc-400 truncate hidden sm:inline">
                 • {state.phaseLabel}
               </span>
             </div>
@@ -196,14 +196,14 @@ export function ReasoningProgressIndicator({
         {/* Live Counters */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Live Stopwatch */}
-          <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary/80 border border-border font-mono text-[11px] text-foreground font-semibold">
-            <Clock className="w-3 h-3 text-primary animate-spin" style={{ animationDuration: "3s" }} />
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-900 border border-white/10 font-mono text-[11px] text-zinc-200 font-semibold">
+            <Clock className="w-3 h-3 text-zinc-400 animate-spin" style={{ animationDuration: "3s" }} />
             <span>{elapsedSec}s</span>
           </div>
 
           {/* Live Receiving Stream Status */}
-          <div className="hidden xs:flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-mono text-[10.5px] font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <div className="hidden xs:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-zinc-900 border border-white/10 text-emerald-400 font-mono text-[10.5px] font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>Streaming</span>
             {state.tokenCount > 0 && <span>({state.tokenCount} tok)</span>}
           </div>
@@ -211,7 +211,7 @@ export function ReasoningProgressIndicator({
           {/* Toggle details */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors cursor-pointer"
+            className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors cursor-pointer"
             title={isExpanded ? "Collapse telemetry" : "Expand telemetry"}
           >
             <ChevronDown
@@ -224,16 +224,16 @@ export function ReasoningProgressIndicator({
       </div>
 
       {/* Progress Iteration Pipeline */}
-      <div className="grid grid-cols-3 gap-2 mt-3 pt-2.5 border-t border-border/50">
+      <div className="grid grid-cols-3 gap-2 mt-3 pt-2.5 border-t border-white/10">
         {iterations.map((step) => (
           <div
             key={step.num}
-            className={`p-2 rounded-lg border transition-all ${
+            className={`p-2 rounded-xl border transition-all ${
               step.active
-                ? "border-primary/40 bg-primary/10 shadow-xs"
+                ? "border-white/30 bg-zinc-900 text-white shadow-xs"
                 : step.completed
-                ? "border-border/60 bg-secondary/40 text-muted-foreground"
-                : "border-border/30 bg-transparent opacity-50"
+                ? "border-white/10 bg-zinc-950 text-zinc-400"
+                : "border-white/5 bg-transparent opacity-40"
             }`}
           >
             <div className="flex items-center justify-between mb-0.5">
@@ -241,17 +241,17 @@ export function ReasoningProgressIndicator({
                 Step {step.num}
               </span>
               {step.completed ? (
-                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
               ) : step.active ? (
-                <Loader2 className="w-3 h-3 text-primary animate-spin" />
+                <Loader2 className="w-3 h-3 text-white animate-spin" />
               ) : (
-                <div className="w-2.5 h-2.5 rounded-full border border-border" />
+                <div className="w-2.5 h-2.5 rounded-full border border-zinc-700" />
               )}
             </div>
-            <div className="font-medium text-[11px] truncate text-foreground">
+            <div className="font-medium text-[11px] truncate text-zinc-200">
               {step.title}
             </div>
-            <div className="text-[9.5px] text-muted-foreground truncate hidden md:block">
+            <div className="text-[9.5px] text-zinc-500 truncate hidden md:block">
               {step.desc}
             </div>
           </div>
@@ -260,24 +260,24 @@ export function ReasoningProgressIndicator({
 
       {/* Expanded Live Telemetry & Thoughts */}
       {isExpanded && (
-        <div className="mt-3 pt-3 border-t border-border/50 space-y-2.5 animate-in fade-in-50 duration-200">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <div className="mt-3 pt-3 border-t border-white/10 space-y-2.5 animate-in fade-in-50 duration-200">
+          <div className="flex items-center justify-between text-[11px] text-zinc-400">
             <span className="flex items-center gap-1.5">
-              <Radio className="w-3 h-3 text-emerald-500 animate-pulse" />
+              <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
               <span>Receiving chunk stream via SSE</span>
             </span>
-            <span className="font-mono text-[10px]">
+            <span className="font-mono text-[10px] text-zinc-300">
               {tokSpeed > 0 ? `${tokSpeed} tok/s` : "Receiving tokens..."}
             </span>
           </div>
 
           {state.thoughtText && (
             <div className="space-y-1">
-              <div className="flex items-center justify-between text-[10.5px] font-semibold text-muted-foreground">
+              <div className="flex items-center justify-between text-[10.5px] font-semibold text-zinc-400">
                 <span>Model Internal Thought Stream</span>
-                <span className="text-[9.5px] font-mono font-normal">Live</span>
+                <span className="text-[9.5px] font-mono font-normal text-zinc-500">Live</span>
               </div>
-              <div className="p-2.5 rounded-lg bg-card/90 border border-primary/20 font-mono text-[11px] text-foreground/80 max-h-36 overflow-y-auto leading-relaxed whitespace-pre-wrap shadow-inner">
+              <div className="p-3 rounded-xl bg-zinc-900 border border-white/10 font-mono text-[11px] text-zinc-300 max-h-36 overflow-y-auto leading-relaxed whitespace-pre-wrap">
                 {state.thoughtText}
               </div>
             </div>

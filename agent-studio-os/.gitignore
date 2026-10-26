@@ -56,6 +56,12 @@ prisma/*.db-shm
 # local scratch and test artifacts
 scratch/
 .system_generated/
+/public/downloads/*
+!/public/downloads/.gitkeep
+/agent-workspace/*
+!/agent-workspace/.gitkeep
+test_essays.pdf
+/*.pdf
 
 # IDE/editor configs
 .vscode/

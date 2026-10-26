@@ -10,6 +10,7 @@ export interface StreamCompletionOptions {
   agentName?: string;
   prompt?: string;
   history?: LLMMessage[];
+  images?: Array<{ mimeType: string; data: string; name?: string }>;
 }
 
 export interface StreamCompletionResult {
@@ -148,6 +149,74 @@ async function streamAnthropicSSE(
 }
 
 /**
+ * Stream Google Gemini native generateContent SSE endpoint
+ */
+async function streamGeminiNativeSSE(
+  response: Response,
+  onChunk: (chunk: string) => void | Promise<void>,
+  signal?: AbortSignal
+): Promise<{ fullContent: string; totalTokens?: number }> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Gemini response stream unavailable");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullContent = "";
+  let totalTokens: number | undefined;
+
+  try {
+    while (true) {
+      if (signal?.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(payload);
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            fullContent += text;
+            await onChunk(text);
+          }
+          if (parsed.usageMetadata) {
+            totalTokens = parsed.usageMetadata.totalTokenCount;
+          }
+        } catch {
+          // Incomplete or non-JSON SSE event
+        }
+      }
+    }
+
+    if (buffer.trim().startsWith("data:")) {
+      const payload = buffer.trim().slice(5).trim();
+      if (payload !== "[DONE]") {
+        try {
+          const parsed = JSON.parse(payload);
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            fullContent += text;
+            await onChunk(text);
+          }
+        } catch {}
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return { fullContent, totalTokens };
+}
+
+/**
  * Multi-Tier Resilient Streaming Engine:
  * Tier 1: Omniroute local gateway (219 models, unified load balancing)
  * Tier 2: Direct Provider Native SSE (Gemini, OpenRouter, Groq, OpenAI, DeepSeek, Anthropic)
@@ -156,8 +225,12 @@ async function streamAnthropicSSE(
 export async function streamUniversalCompletion(
   options: StreamCompletionOptions
 ): Promise<StreamCompletionResult> {
-  const { model, messages, onChunk, signal, systemPrompt, agentName, prompt, history } = options;
+  const { model, messages, onChunk, signal, systemPrompt, agentName, prompt, history, images: optionImages } = options;
   const rawModel = model.trim();
+  const effectiveImages =
+    optionImages && optionImages.length > 0
+      ? optionImages
+      : messages.find((m) => m.images && m.images.length > 0)?.images;
 
   // -------------------------------------------------------------
   // Tier 1: Omniroute Gateway Streaming
@@ -209,6 +282,27 @@ export async function streamUniversalCompletion(
     extraHeaders: Record<string, string> = {}
   ): Promise<StreamCompletionResult | null> => {
     try {
+      const formattedMessages = messages.map((m) => {
+        const mImgs = m.images || (m.role === "user" ? effectiveImages : undefined);
+        if (mImgs && mImgs.length > 0) {
+          return {
+            role: m.role,
+            content: [
+              { type: "text", text: m.content },
+              ...mImgs.map((img) => ({
+                type: "image_url",
+                image_url: {
+                  url: img.data.startsWith("data:")
+                    ? img.data
+                    : `data:${img.mimeType || "image/png"};base64,${img.data}`,
+                },
+              })),
+            ],
+          };
+        }
+        return { role: m.role, content: m.content };
+      });
+
       const res = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -218,7 +312,7 @@ export async function streamUniversalCompletion(
         },
         body: JSON.stringify({
           model: targetModel,
-          messages,
+          messages: formattedMessages,
           stream: true,
         }),
         signal,
@@ -245,7 +339,7 @@ export async function streamUniversalCompletion(
     return null;
   };
 
-  // 2A. Google Gemini Direct Native Streaming
+  // 2A. Google Gemini Native & Direct Streaming
   const isGeminiModel =
     rawModel.startsWith("google/") ||
     rawModel.startsWith("gemini/") ||
@@ -255,33 +349,118 @@ export async function streamUniversalCompletion(
   if (keys.GEMINI_API_KEY && (isGeminiModel || !keys.OPENROUTER_API_KEY)) {
     let cleanGemini = rawModel
       .replace(/^google\//, "")
-      .replace(/^gemini\//, "");
+      .replace(/^gemini\//, "")
+      .replace(/:free$/, "")
+      .trim();
 
-    // Upgrade deprecated or generic model names to active high-speed gemini-3.6-flash
     if (
       cleanGemini.startsWith("auto/") ||
       cleanGemini === "gemini-2.5-flash" ||
       cleanGemini === "gemini-flash" ||
       !cleanGemini
     ) {
-      cleanGemini = "gemini-3.6-flash";
+      cleanGemini = "gemini-flash-latest";
     }
 
-    const geminiResult = await tryDirectOpenAI(
-      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-      `Bearer ${keys.GEMINI_API_KEY}`,
+    const candidateGeminiModels = [
       cleanGemini,
-      "google"
-    );
+      "gemini-flash-latest",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-flash-lite-latest",
+      "gemini-3.8-flash",
+    ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
-    if (geminiResult) return geminiResult;
+    const key = keys.GEMINI_API_KEY || keys.GOOGLE_API_KEY;
+
+    // 2A.1 High-speed native Google Generative AI SSE streaming
+    for (const targetModel of candidateGeminiModels) {
+      try {
+        const systemMsg = systemPrompt || messages.find((m) => m.role === "system")?.content;
+        const nonSystemMsgs = messages.filter((m) => m.role !== "system");
+
+        const contents = (nonSystemMsgs.length > 0 ? nonSystemMsgs : [{ role: "user" as const, content: prompt || "Hello" }]).map((m) => {
+          const parts: any[] = [{ text: m.content || "" }];
+          const mImgs = m.images || (m.role === "user" ? effectiveImages : undefined);
+          if (mImgs && mImgs.length > 0) {
+            for (const img of mImgs) {
+              const base64Data = img.data.includes(";base64,")
+                ? img.data.split(";base64,")[1]
+                : img.data;
+              parts.unshift({
+                inlineData: {
+                  mimeType: img.mimeType || "image/png",
+                  data: base64Data,
+                },
+              });
+            }
+          }
+          return {
+            role: m.role === "assistant" ? "model" : "user",
+            parts,
+          };
+        });
+
+        const requestBody: Record<string, unknown> = {
+          contents,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 8192,
+          },
+        };
+
+        if (systemMsg) {
+          requestBody.systemInstruction = {
+            parts: [{ text: systemMsg }],
+          };
+        }
+
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?alt=sse&key=${key}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+            signal,
+          }
+        );
+
+        if (res.ok) {
+          const { fullContent, totalTokens } = await streamGeminiNativeSSE(res, onChunk, signal);
+          if (fullContent.trim().length > 0) {
+            return {
+              fullContent,
+              source: "google",
+              modelUsed: targetModel,
+              totalTokens,
+            };
+          }
+        }
+      } catch (geminiNativeErr) {
+        console.warn(`[Stream Engine] Gemini native stream candidate ${targetModel} error:`, geminiNativeErr);
+      }
+    }
+
+    // 2A.2 OpenAI compatibility endpoint fallback
+    for (const targetModel of candidateGeminiModels) {
+      const geminiResult = await tryDirectOpenAI(
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        `Bearer ${key}`,
+        targetModel,
+        "google"
+      );
+      if (geminiResult) return geminiResult;
+    }
   }
 
   // 2B. OpenRouter Direct Native Streaming
   if (keys.OPENROUTER_API_KEY) {
     let cleanOR = rawModel.replace(/^openrouter\//, "");
     if (cleanOR.startsWith("auto/")) {
-      cleanOR = "liquid/lfm-2.5-2.6b:free";
+      cleanOR = (effectiveImages && effectiveImages.length > 0)
+        ? "meta-llama/llama-3.2-11b-vision-instruct:free"
+        : "liquid/lfm-2.5-2.6b:free";
     }
 
     const orResult = await tryDirectOpenAI(
@@ -334,7 +513,31 @@ export async function streamUniversalCompletion(
       const cleanAnthropic = rawModel.replace(/^anthropic\//, "");
       const anthropicMsgs = messages
         .filter((m) => m.role !== "system")
-        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+        .map((m) => {
+          const mImgs = m.images || (m.role === "user" ? effectiveImages : undefined);
+          if (mImgs && mImgs.length > 0) {
+            return {
+              role: m.role as "user" | "assistant",
+              content: [
+                { type: "text", text: m.content },
+                ...mImgs.map((img) => {
+                  const base64Data = img.data.includes(";base64,")
+                    ? img.data.split(";base64,")[1]
+                    : img.data;
+                  return {
+                    type: "image",
+                    source: {
+                      type: "base64",
+                      media_type: img.mimeType || "image/png",
+                      data: base64Data,
+                    },
+                  };
+                }),
+              ],
+            };
+          }
+          return { role: m.role as "user" | "assistant", content: m.content };
+        });
 
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -383,6 +586,7 @@ export async function streamUniversalCompletion(
     agentName,
     useVaultRAG: false,
     useEpisodicMemory: false,
+    images: effectiveImages,
   });
 
   const fullContent = fallbackRes.content || "I have received your message and processed it.";

@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       displayName,
-      avatar = "🤖",
+      avatar = "bot",
       systemPrompt = "",
       model,
       themeColor = "#6366f1",

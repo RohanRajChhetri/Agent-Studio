@@ -47,7 +47,7 @@ export class GroqProvider extends BaseLLMProvider {
 
     try {
       return await this.executeWithTimeout(async (signal) => {
-        const bodyPayload: Record<string, any> = {
+        const bodyPayload: Record<string, unknown> = {
           model: cleanModel,
           messages,
         };
@@ -80,7 +80,7 @@ export class GroqProvider extends BaseLLMProvider {
           const content = choice?.message?.content || "";
           const rawToolCalls = choice?.message?.tool_calls;
           const parsedToolCalls = Array.isArray(rawToolCalls)
-            ? rawToolCalls.map((tc: any) => {
+            ? rawToolCalls.map((tc: { id?: string; function?: { name?: string; arguments?: string } }) => {
                 let parsedArgs = {};
                 try {
                   parsedArgs = JSON.parse(tc.function?.arguments || "{}");

@@ -352,7 +352,7 @@ export async function POST(request: Request) {
       const result = await sendTelegramMessage(
         token,
         chatId,
-        "👋 Hello from Agent Studio OS! Your Telegram integration is fully operational."
+        "Hello from Agent Studio OS! Your Telegram integration is fully operational."
       );
       return NextResponse.json(result);
     }

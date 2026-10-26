@@ -43,6 +43,12 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* Sidebar Tokens */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+
   /* Typography */
   --font-sans: var(--font-sans), 'NotionInter', Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-serif: 'Lyon Text', "Source Serif Pro", Georgia, serif;
@@ -83,29 +89,41 @@
   --border: rgba(0, 0, 0, 0.08);
   --input: rgba(0, 0, 0, 0.12);
   --ring: #0075de;
+
+  /* Sidebar Light Tokens */
+  --sidebar: #f6f5f4;
+  --sidebar-foreground: #111111;
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-accent: #ebe9e6;
 }
 
 .dark {
-  /* Notion Midnight Ink / Dark Island */
-  --background: #191919;
+  /* Ultra-Deep Pure Pitch Black (OLED) */
+  --background: #000000;
   --foreground: rgba(255, 255, 255, 0.94);
-  --card: #202020;
+  --card: #050505;
   --card-foreground: rgba(255, 255, 255, 0.94);
-  --popover: #242424;
+  --popover: #0a0a0a;
   --popover-foreground: rgba(255, 255, 255, 0.94);
   --primary: #0075de;
   --primary-foreground: #ffffff;
-  --secondary: #27272a;
+  --secondary: #0d0d0d;
   --secondary-foreground: #e6f3fe;
-  --muted: #2a2a2d;
-  --muted-foreground: #9a9a9e;
-  --accent: #2e2e33;
+  --muted: #0d0d0d;
+  --muted-foreground: #8a8a8e;
+  --accent: #111111;
   --accent-foreground: #ffffff;
   --destructive: #f64932;
   --destructive-foreground: #ffffff;
-  --border: rgba(255, 255, 255, 0.09);
-  --input: rgba(255, 255, 255, 0.14);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
   --ring: #0075de;
+
+  /* Sidebar Tokens (Pure Black OLED Rail) */
+  --sidebar: #000000;
+  --sidebar-foreground: rgba(255, 255, 255, 0.94);
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-accent: #0a0a0a;
 }
 
 @layer base {
@@ -225,4 +243,14 @@
   .notion-btn-text:hover {
     background-color: var(--muted);
   }
+
+  /* Sonner Toaster Overrides matching System Tokens */
+  [data-sonner-toaster] [data-sonner-toast] {
+    background-color: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--foreground) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important;
+  }
 }
+

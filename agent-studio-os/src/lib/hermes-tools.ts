@@ -54,8 +54,9 @@ export async function scrapeWeb(url: string, toMarkdown = true): Promise<string>
 /** Execute a desktop automation action using CUA inside Hermes */
 export async function executeDesktop(actionType: string, target?: string): Promise<string> {
   const { executeCUAAction } = await import("./cua-driver");
+  type CUAActionType = Parameters<typeof executeCUAAction>[0]["type"];
   const res = await executeCUAAction({
-    type: (actionType || "screenshot") as any,
+    type: (actionType || "screenshot") as CUAActionType,
     target,
   });
   return res.output || (res.success ? "Desktop action executed successfully" : res.error || "Desktop action failed");

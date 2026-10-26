@@ -3,6 +3,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
 
 export interface ConferenceAgentItem {
   id: string;
@@ -40,8 +41,8 @@ export function ConferenceAgentInspectorModal({
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <span className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center text-2xl shadow-xs">
-                  {inspectAgent.avatar}
+                <span className="w-12 h-12 rounded-xl bg-secondary border border-border flex items-center justify-center shadow-xs">
+                  <AgentAvatar avatar={inspectAgent.avatar} className="w-6 h-6 text-primary" />
                 </span>
                 <div>
                   <h3 className="text-base font-bold text-foreground">

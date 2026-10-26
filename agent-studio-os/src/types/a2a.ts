@@ -32,9 +32,9 @@ export interface A2AMessage {
   toAgentName: string;
   type: A2AMessageType;
   taskTitle: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   status: A2ATaskStatus;
-  result?: any;
+  result?: unknown;
   error?: string;
   createdAt: string;
   completedAt?: string;
@@ -47,7 +47,7 @@ export interface A2ADelegationContract {
   delegator: string;
   delegatee: string;
   objective: string;
-  inputData: Record<string, any>;
+  inputData: Record<string, unknown>;
   expectedOutputSchema?: string;
   timeoutMs?: number;
   priority?: "low" | "medium" | "high" | "urgent";

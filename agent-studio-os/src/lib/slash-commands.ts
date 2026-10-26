@@ -240,9 +240,17 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
   },
   {
     command: "/pipeline",
-    description: "Open agent pipeline view",
+    description: "Open Agent Assembly Line Studio in Workflows",
     category: "admin",
     usage: "/pipeline",
+    requiresArgs: false,
+    handler: "pipeline",
+  },
+  {
+    command: "/assembly",
+    description: "Open Agent Assembly Line Studio in Workflows",
+    category: "admin",
+    usage: "/assembly",
     requiresArgs: false,
     handler: "pipeline",
   },
@@ -304,10 +312,10 @@ export function getCommandSuggestions(partial: string): SlashCommandDefinition[]
  */
 export function generateHelpText(): string {
   const categories: Record<SlashCommandCategory, string> = {
-    mvp: "📋 MVP / Essential",
-    core: "🤖 Core Agent & Control",
-    advanced: "🚀 Advanced & Production",
-    admin: "⚙️ Administrative",
+    mvp: "MVP / Essential",
+    core: "Core Agent & Control",
+    advanced: "Advanced & Production",
+    admin: "Administrative",
   };
 
   let help = "# Agent Studio OS — Slash Commands\n\n";
@@ -317,7 +325,7 @@ export function generateHelpText(): string {
     help += `## ${label}\n\n`;
     for (const cmd of cmds) {
       const aliases = cmd.aliases ? ` (aliases: ${cmd.aliases.join(", ")})` : "";
-      const gated = cmd.authGated ? " ⚠️" : "";
+      const gated = cmd.authGated ? " [Auth Required]" : "";
       help += `- **\`${cmd.usage}\`**${gated} — ${cmd.description}${aliases}\n`;
     }
     help += "\n";
@@ -329,12 +337,12 @@ export function generateHelpText(): string {
 /**
  * Get the category display info
  */
-export function getCategoryInfo(cat: SlashCommandCategory): { label: string; emoji: string; color: string } {
-  const map: Record<SlashCommandCategory, { label: string; emoji: string; color: string }> = {
-    mvp: { label: "Essential", emoji: "📋", color: "text-blue-500" },
-    core: { label: "Core Agent", emoji: "🤖", color: "text-purple-500" },
-    advanced: { label: "Advanced", emoji: "🚀", color: "text-amber-500" },
-    admin: { label: "Admin", emoji: "⚙️", color: "text-slate-500" },
+export function getCategoryInfo(cat: SlashCommandCategory): { label: string; icon: string; color: string } {
+  const map: Record<SlashCommandCategory, { label: string; icon: string; color: string }> = {
+    mvp: { label: "Essential", icon: "clipboard-list", color: "text-blue-500" },
+    core: { label: "Core Agent", icon: "bot", color: "text-purple-500" },
+    advanced: { label: "Advanced", icon: "rocket", color: "text-amber-500" },
+    admin: { label: "Admin", icon: "settings", color: "text-slate-500" },
   };
   return map[cat];
 }

@@ -64,7 +64,7 @@ describe("Autonomous Dashboard Action Orchestrator", () => {
         displayName: "Coder Agent",
         name: "coder",
         role: "specialist",
-        avatar: "💻",
+        avatar: "laptop",
       },
     };
 
@@ -99,7 +99,7 @@ describe("Autonomous Dashboard Action Orchestrator", () => {
       displayName: "Coder Agent",
       name: "coder",
       role: "specialist",
-      avatar: "💻",
+      avatar: "laptop",
     };
 
     (prisma.agent.findMany as any).mockResolvedValue([mockAgent]);
@@ -152,7 +152,7 @@ describe("Autonomous Dashboard Action Orchestrator", () => {
 
   it("should handle 'fleet status' by providing telemetry report", async () => {
     (prisma.agent.findMany as any).mockResolvedValue([
-      { displayName: "Executive", role: "orchestrator", avatar: "👑" },
+      { displayName: "Executive", role: "orchestrator", avatar: "crown" },
     ]);
     (prisma.task.groupBy as any).mockResolvedValue([
       { status: "in_progress", _count: { id: 2 } },
@@ -186,7 +186,7 @@ describe("Autonomous Dashboard Action Orchestrator", () => {
       description: "Harden endpoints",
       status: "backlog",
       priority: "high",
-      agent: { id: "a1", displayName: "SecOps", role: "specialist", avatar: "🛡️" },
+      agent: { id: "a1", displayName: "SecOps", role: "specialist", avatar: "shield" },
     };
 
     (prisma.task.findFirst as any).mockResolvedValue(mockTask);
@@ -216,7 +216,7 @@ describe("Autonomous Dashboard Action Orchestrator", () => {
       displayName: "Backend Specialist",
       name: "backend",
       role: "specialist",
-      avatar: "⚙️",
+      avatar: "settings",
     };
 
     const pendingTask = {
@@ -268,8 +268,135 @@ describe("Autonomous Dashboard Action Orchestrator", () => {
     expect(result.content).toContain("Executive Deliverable");
   });
 
+  it("should handle compound intent 'open youtube search for cat video and then take a screen shot of it'", async () => {
+    const { resolveLaunchTarget } = await import("@/lib/cua-driver");
+    const resolved = resolveLaunchTarget("youtube search for cat video");
+    expect(resolved.isUrl).toBe(true);
+    expect(resolved.target).toBe("https://www.youtube.com/results?search_query=cat%20video");
+
+    const result = await dispatchAutonomousAction("open youtube search for cat video and then take a screen shot of it");
+    expect(result.handled).toBe(true);
+    expect(result.actionType).toBe("desktop_action");
+    expect(result.metadata?.target).toBe("youtube search for cat video");
+    expect(result.content).toContain("Autonomous Task Executed");
+  });
+
+  it("should resolve various search queries and desktop apps correctly", async () => {
+    const { resolveLaunchTarget } = await import("@/lib/cua-driver");
+
+    const yt1 = resolveLaunchTarget("search for funny dogs on youtube");
+    expect(yt1.isUrl).toBe(true);
+    expect(yt1.target).toContain("https://www.youtube.com/results?search_query=funny%20dogs");
+
+    const g1 = resolveLaunchTarget("google search for latest news");
+    expect(g1.isUrl).toBe(true);
+    expect(g1.target).toContain("https://www.google.com/search?q=latest%20news");
+
+    const calc = resolveLaunchTarget("calculator");
+    expect(calc.isUrl).toBe(false);
+    expect(calc.target).toBe("calc");
+
+    const notepad = resolveLaunchTarget("notepad");
+    expect(notepad.isUrl).toBe(false);
+    expect(notepad.target).toBe("notepad");
+
+    const navYt = resolveLaunchTarget("navigate to youtube");
+    expect(navYt.isUrl).toBe(true);
+    expect(navYt.target).toBe("https://www.youtube.com");
+
+    const goToGh = resolveLaunchTarget("go to github");
+    expect(goToGh.isUrl).toBe(true);
+    expect(goToGh.target).toBe("https://github.com");
+  });
+
+  it("should handle 'open youtube wait 2 seconds and take a screen shot' by waiting 2 seconds instead of searching for wait", async () => {
+    const { resolveLaunchTarget } = await import("@/lib/cua-driver");
+    const { parseDesktopCompoundInstruction } = await import("@/lib/autonomous-action-dispatcher");
+
+    const parsed = parseDesktopCompoundInstruction("open youtube wait 2 seconds and take a screen shot");
+    expect(parsed.isCompound).toBe(true);
+    expect(parsed.target).toBe("youtube");
+    expect(parsed.hasExplicitWait).toBe(true);
+    expect(parsed.waitMs).toBe(2000);
+    expect(parsed.hasScreenshot).toBe(true);
+
+    const resolved = resolveLaunchTarget(parsed.target!);
+    expect(resolved.isUrl).toBe(true);
+    expect(resolved.target).toBe("https://www.youtube.com");
+    expect(resolved.target).not.toContain("search_query");
+
+    const result = await dispatchAutonomousAction("open youtube wait 2 seconds and take a screen shot");
+    expect(result.handled).toBe(true);
+    expect(result.actionType).toBe("desktop_action");
+    expect(result.metadata?.target).toBe("youtube");
+    expect(result.metadata?.hasExplicitWait).toBe(true);
+    expect(result.metadata?.waitTime).toBe(2000);
+    expect(result.metadata?.hasScreenshot).toBe(true);
+    expect(result.content).toContain("YouTube");
+    expect(result.content).toContain("Waited 2000ms");
+    expect(result.content).not.toContain("YouTube search for");
+  });
+
+  it("should resolve 'youtube wait 2 seconds' to YouTube homepage URL, not search results", async () => {
+    const { resolveLaunchTarget } = await import("@/lib/cua-driver");
+    const resolved = resolveLaunchTarget("youtube wait 2 seconds");
+    expect(resolved.isUrl).toBe(true);
+    expect(resolved.target).toBe("https://www.youtube.com");
+    expect(resolved.target).not.toContain("search_query");
+    expect(resolved.displayTitle).toBe("YouTube");
+    expect(resolved.extractedWaitMs).toBe(2000);
+  });
+
+  it("should handle 'navigate to youtube' intent autonomously without Windows shell errors", async () => {
+    const result = await dispatchAutonomousAction("navigate to youtube");
+    expect(result.handled).toBe(true);
+    expect(result.actionType).toBe("desktop_action");
+    expect(result.content).toContain("Autonomous Task Executed");
+  });
+
+  it("should handle 'take a screenshot form the destop operator page' as a desktop screenshot action", async () => {
+    const result = await dispatchAutonomousAction("take a screenshot form the destop operator page");
+    expect(result.handled).toBe(true);
+    expect(result.actionType).toBe("desktop_action");
+    expect(result.content).toContain("Desktop Screenshot Captured");
+
+    const { executeAutonomousDesktopTask } = await import("@/lib/autonomous-desktop-loop");
+    const loopResult = await executeAutonomousDesktopTask("take a screenshot form the destop operator page");
+    expect(loopResult.success).toBe(true);
+    expect(loopResult.finalScreenshotUrl).toBeDefined();
+    expect(loopResult.stepsExecuted).toBeGreaterThanOrEqual(1);
+  });
+
   it("should return handled: false for pure conversation, letting standard router take over", async () => {
     const result = await dispatchAutonomousAction("hello how are you doing today?");
     expect(result.handled).toBe(false);
+  });
+
+  it("should NOT intercept conversational questions containing file attachments as kanban tasks", async () => {
+    const mockTask = {
+      id: "task-bhutan",
+      title: "Research Bhutan's Gross National Happiness Framework",
+      status: "backlog",
+      priority: "medium",
+    };
+    (prisma.task.findFirst as any).mockResolvedValue(mockTask);
+
+    const promptWithAttachment =
+      "can you tell me about this tesst\n\n--- File Attachment: completed test.htm (text/html) ---\n```\n<li class='task-item'>completed task on board</li>\n```";
+
+    const result = await dispatchAutonomousAction(promptWithAttachment);
+
+    expect(result.handled).toBe(false);
+    expect(result.content).toBe("");
+  });
+
+  it("should return a clear notice and not execute random tasks when a specific task is not found", async () => {
+    (prisma.task.findFirst as any).mockResolvedValue(null);
+
+    const result = await dispatchAutonomousAction("execute task: NonExistentFeatureXYZ");
+
+    expect(result.handled).toBe(true);
+    expect(result.content).toContain("Kanban Execution Notice");
+    expect(result.content).not.toContain("Research Bhutan");
   });
 });

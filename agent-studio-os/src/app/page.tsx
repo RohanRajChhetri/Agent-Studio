@@ -17,7 +17,8 @@ import {
   DashboardChatPanel,
   type DashboardChatMessage,
 } from "@/components/dashboard/dashboard-chat-panel";
-import { useDashboardChat } from "@/context/dashboard-chat-context";
+import { AgentDesktopModal } from "@/components/dashboard/agent-desktop-modal";
+import { useDashboardChat, type DashboardAttachment } from "@/context/dashboard-chat-context";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -27,9 +28,11 @@ export default function DashboardPage() {
 
   // Command input state
   const [prompt, setPrompt] = useState("");
+  const [attachments, setAttachments] = useState<DashboardAttachment[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("auto");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBrainDump, setShowBrainDump] = useState(false);
+  const [showDesktopViewer, setShowDesktopViewer] = useState(false);
 
   // Global Persistent Chat State from Context (persists across page changes)
   const {
@@ -115,13 +118,13 @@ export default function DashboardPage() {
     } else if (cmd === "/voice") {
       window.dispatchEvent(new CustomEvent("open-voice-cockpit"));
       setPrompt("");
-    } else if (cmd === "/cost" || cmd === "/usage" || cmd === "/telemetry") {
-      window.dispatchEvent(new CustomEvent("open-cost-tracker"));
+    } else if (cmd === "/cost" || cmd === "/usage" || cmd === "/telemetry" || cmd === "/analytics") {
+      router.push("/settings?tab=analytics");
       setPrompt("");
     } else if (cmd === "/packs") {
       router.push("/agents?packs=true");
     } else if (cmd === "/pipeline") {
-      router.push("/agents?tab=pipeline");
+      router.push("/workflows?tab=pipeline");
     } else if (cmd === "/memory" || cmd === "/vault") {
       router.push("/memory");
     } else if (cmd === "/code") {
@@ -253,7 +256,7 @@ export default function DashboardPage() {
   // Handle Command Submission with full slash command system
   const handleCommandSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
+    if (!prompt.trim() && attachments.length === 0) return;
 
     const rawPrompt = prompt.trim();
 
@@ -370,8 +373,10 @@ export default function DashboardPage() {
         }
         
         // Admin Commands
-        case "usage": {
-          window.dispatchEvent(new CustomEvent("open-cost-tracker"));
+        case "usage":
+        case "analytics":
+        case "cost": {
+          router.push("/settings?tab=analytics");
           return;
         }
         case "profile": {
@@ -407,7 +412,7 @@ export default function DashboardPage() {
           return;
         }
         case "pipeline": {
-          router.push("/agents?tab=pipeline");
+          router.push("/workflows?tab=pipeline");
           return;
         }
         default:
@@ -416,8 +421,10 @@ export default function DashboardPage() {
     }
 
     // Standard Chat with agent right on dashboard
+    const attachedToSend = [...attachments];
     setPrompt("");
-    await sendChatMessage(rawPrompt);
+    setAttachments([]);
+    await sendChatMessage(rawPrompt, undefined, attachedToSend);
   };
 
   const handleFollowUpSubmit = async (e: React.FormEvent) => {
@@ -528,6 +535,8 @@ export default function DashboardPage() {
           <DashboardCommandBar
             prompt={prompt}
             setPrompt={setPrompt}
+            attachments={attachments}
+            setAttachments={setAttachments}
             selectedAgentId={selectedAgentId}
             setSelectedAgentId={setSelectedAgentId}
             agents={agents}
@@ -540,6 +549,7 @@ export default function DashboardPage() {
             onSendToKanban={handleSendToKanban}
             onSelectSlashCommand={handleSelectSlashCommand}
             onOpenBrainDump={() => setShowBrainDump(true)}
+            onOpenDesktop={() => setShowDesktopViewer(true)}
           />
         </motion.div>
 
@@ -549,6 +559,12 @@ export default function DashboardPage() {
           onClose={() => setShowBrainDump(false)}
           agents={agents}
           onTasksCreated={loadData}
+        />
+
+        {/* 6. Agent Desktop Live Viewer Modal */}
+        <AgentDesktopModal
+          isOpen={showDesktopViewer}
+          onClose={() => setShowDesktopViewer(false)}
         />
       </motion.div>
     </div>

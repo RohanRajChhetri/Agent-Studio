@@ -33,12 +33,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "Run your entire startup with an autonomous executive team",
     description: "Designed for solo founders and small teams to handle strategic planning, engineering, copywriting, and operational velocity.",
     badge: "Most Popular",
-    icon: "🚀",
+    icon: "rocket",
     agents: [
       {
         name: "atlas",
         displayName: "Atlas",
-        avatar: "👑",
+        avatar: "crown",
         role: "orchestrator",
         department: "Executive",
         description: "Chief of Staff & Strategic Planner — breaks complex business goals into tactical execution sprints.",
@@ -51,7 +51,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "devcore",
         displayName: "DevCore",
-        avatar: "💻",
+        avatar: "code",
         role: "specialist",
         department: "Engineering",
         description: "Full-Stack Senior Software Engineer — architect, code reviewer, and bug solver.",
@@ -64,7 +64,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "nova",
         displayName: "Nova",
-        avatar: "⚡",
+        avatar: "zap",
         role: "specialist",
         department: "Growth",
         description: "Growth Marketer & High-Converting Copywriter — landing pages, launch emails, and viral copy.",
@@ -77,7 +77,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "ledger",
         displayName: "Ledger",
-        avatar: "📊",
+        avatar: "chart",
         role: "worker",
         department: "Operations",
         description: "Finance & Operations Copilot — monitors unit economics, API spend, and metrics.",
@@ -95,12 +95,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "Accelerate literature reviews, paper synthesis, and peer critiques",
     description: "Built for researchers, analysts, and students to synthesize papers, review logic, and generate LaTeX citations.",
     badge: "Research",
-    icon: "🔬",
+    icon: "microscope",
     agents: [
       {
         name: "hypatia",
         displayName: "Hypatia",
-        avatar: "📚",
+        avatar: "book",
         role: "orchestrator",
         department: "Research",
         description: "Principal Research Director — manages research questions, literature reviews, and syntheses.",
@@ -113,7 +113,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "socrates",
         displayName: "Socrates",
-        avatar: "🏛️",
+        avatar: "building",
         role: "specialist",
         department: "Peer Review",
         description: "Critical Peer Reviewer — stress-tests arguments, methodology, and identifies edge cases.",
@@ -126,7 +126,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "archimedes",
         displayName: "Archimedes",
-        avatar: "📐",
+        avatar: "ruler",
         role: "worker",
         department: "Analytics",
         description: "Quantitative Data Analyst — verifies empirical findings, tables, and mathematical formulas.",
@@ -144,12 +144,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "Turn ideas into viral threads, long-form newsletters, and video scripts",
     description: "Designed for content creators, authors, and newsletter writers to maintain a relentless, high-quality publishing cadence.",
     badge: "Creative",
-    icon: "✍️",
+    icon: "pen",
     agents: [
       {
         name: "virgil",
         displayName: "Virgil",
-        avatar: "🎨",
+        avatar: "palette",
         role: "orchestrator",
         department: "Creative Direction",
         description: "Creative Director — manages multi-channel content calendar, hooks, and editorial themes.",
@@ -162,7 +162,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "echo",
         displayName: "Echo",
-        avatar: "📢",
+        avatar: "megaphone",
         role: "specialist",
         department: "Social Media",
         description: "Viral Social & Short-Form Ghostwriter — creates scroll-stopping X/LinkedIn threads and hooks.",
@@ -175,7 +175,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "penman",
         displayName: "Penman",
-        avatar: "✒️",
+        avatar: "feather",
         role: "specialist",
         department: "Long-Form",
         description: "In-Depth Essayist & Newsletter Writer — writes thoughtful, authoritative articles and guides.",
@@ -193,12 +193,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "Automate CI/CD pipelines, container orchestration, and zero-downtime reliability",
     description: "Built for cloud engineers and technical architects needing automated Kubernetes manifests, Terraform recipes, Docker hardening, and alert triage.",
     badge: "Infrastructure",
-    icon: "🛡️",
+    icon: "shield",
     agents: [
       {
         name: "sentinel",
         displayName: "Sentinel",
-        avatar: "🛡️",
+        avatar: "shield",
         role: "orchestrator",
         department: "SRE & Infrastructure",
         description: "Site Reliability Director — coordinates deployment strategies, disaster recovery runbooks, and cloud SLAs.",
@@ -211,7 +211,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "kubex",
         displayName: "Kubex",
-        avatar: "☸️",
+        avatar: "server",
         role: "specialist",
         department: "Containers & K8s",
         description: "Kubernetes & Container Specialist — crafts optimized Dockerfiles, Helm charts, and Pod autoscaling policies.",
@@ -224,7 +224,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "cipher",
         displayName: "Cipher",
-        avatar: "🔐",
+        avatar: "lock",
         role: "specialist",
         department: "SecOps",
         description: "Security Operations & IAM Hardener — audits secret exposure, least-privilege policies, and CVE vulnerabilities.",
@@ -237,7 +237,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "ping",
         displayName: "Ping",
-        avatar: "📈",
+        avatar: "trending-up",
         role: "worker",
         department: "Observability",
         description: "Telemetry & Metrics Engineer — configures Prometheus metrics, Grafana dashboards, and synthetic monitors.",
@@ -255,12 +255,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "High-velocity outbound prospecting, pitch personalization, and objection playbooks",
     description: "Equips commercial leaders and founders with autonomous ICP research, hyper-personalized cold outreach sequences, and enterprise objection handling.",
     badge: "Revenue",
-    icon: "🎯",
+    icon: "target",
     agents: [
       {
         name: "vanguard",
         displayName: "Vanguard",
-        avatar: "🎖️",
+        avatar: "award",
         role: "orchestrator",
         department: "Revenue Strategy",
         description: "VP of Sales & GTM Strategist — designs sales cadences, qualification criteria (MEDDPICC), and pipeline velocity.",
@@ -273,7 +273,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "argus",
         displayName: "Argus",
-        avatar: "🔍",
+        avatar: "search",
         role: "specialist",
         department: "Account Intelligence",
         description: "B2B Lead & Account Researcher — mines executive intent signals, company tech stacks, and buyer trigger events.",
@@ -286,7 +286,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "slick",
         displayName: "Slick",
-        avatar: "💼",
+        avatar: "briefcase",
         role: "specialist",
         department: "Outbound Copy",
         description: "Cold Pitch & Objection Closer — writes personalized, sub-100 word cold emails and competitive battlecards.",
@@ -304,12 +304,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "Turn customer problems into PRDs, design systems, and component specs",
     description: "Empowers product managers and designers to rapidly draft comprehensive PRDs, synthesize user feedback, formulate RICE roadmaps, and build accessible UI tokens.",
     badge: "Product",
-    icon: "✨",
+    icon: "sparkles",
     agents: [
       {
         name: "axiom",
         displayName: "Axiom",
-        avatar: "🧭",
+        avatar: "compass",
         role: "orchestrator",
         department: "Product Management",
         description: "Principal Product Manager — drafts PRDs, defines acceptance criteria, and prioritizes feature roadmaps.",
@@ -322,7 +322,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "pixel",
         displayName: "Pixel",
-        avatar: "📐",
+        avatar: "ruler",
         role: "specialist",
         department: "UI/UX & Design Systems",
         description: "Design Systems Lead — structures design tokens, WCAG 2.1 AA accessibility specs, and responsive component states.",
@@ -335,7 +335,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "empathy",
         displayName: "Empathy",
-        avatar: "💬",
+        avatar: "chat",
         role: "specialist",
         department: "User Research",
         description: "User Research & Sentiment Analyst — aggregates user interview transcripts, customer churn reasons, and UX friction points.",
@@ -353,12 +353,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "End-to-end integration tests, edge-case generation, and regression resilience",
     description: "Dedicated quality engineering fleet that inspects APIs, generates edge-case test vectors, drafts Vitest/Playwright suites, and catches boundary bugs before production.",
     badge: "Quality",
-    icon: "🧪",
+    icon: "flask",
     agents: [
       {
         name: "oracle",
         displayName: "Oracle",
-        avatar: "🔮",
+        avatar: "sparkles",
         role: "orchestrator",
         department: "QA Architecture",
         description: "QA Director & Test Strategist — designs test plans, smoke test matrixes, and quality gating criteria.",
@@ -371,7 +371,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "assertx",
         displayName: "AssertX",
-        avatar: "🧪",
+        avatar: "flask",
         role: "specialist",
         department: "Automated Testing",
         description: "Senior Automation Test Engineer — writes runnable Vitest, Jest, and Playwright integration suites.",
@@ -384,7 +384,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "chaos",
         displayName: "Chaos",
-        avatar: "💥",
+        avatar: "zap",
         role: "worker",
         department: "Edge Cases & Fuzzing",
         description: "Edge Case & Security Fuzzer — devises unusual unicode inputs, race conditions, and boundary payloads.",
@@ -402,12 +402,12 @@ export const AGENT_PACKS: AgentPack[] = [
     tagline: "Contract risk analysis, GDPR/SOC2 compliance mapping, and policy drafting",
     description: "Accelerates governance and legal operations: analyzes SaaS master service agreements, audits data processing clauses, and produces audit-ready compliance checklists.",
     badge: "Compliance",
-    icon: "⚖️",
+    icon: "scale",
     agents: [
       {
         name: "justitia",
         displayName: "Justitia",
-        avatar: "⚖️",
+        avatar: "scale",
         role: "orchestrator",
         department: "Legal Counsel",
         description: "General Counsel & Governance Director — classifies contractual liabilities, intellectual property protections, and regulatory obligations.",
@@ -420,7 +420,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "priva",
         displayName: "Priva",
-        avatar: "🔒",
+        avatar: "lock",
         role: "specialist",
         department: "Data Privacy & Security",
         description: "Data Privacy & Compliance Auditor — guides GDPR, CCPA, and SOC2 Type II compliance controls.",
@@ -433,7 +433,7 @@ export const AGENT_PACKS: AgentPack[] = [
       {
         name: "pact",
         displayName: "Pact",
-        avatar: "📜",
+        avatar: "scroll",
         role: "specialist",
         department: "Commercial Contracts",
         description: "Contract & MSA Specialist — redlines terms of service, SLA commitments, and mutual NDAs.",

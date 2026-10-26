@@ -16,6 +16,8 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
+
 
 interface AgentPreset {
   name: string;
@@ -159,7 +161,9 @@ export function AgentPacksModal({
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xl">{pack.icon}</span>
+                        <span className="p-1.5 rounded-lg bg-card border border-border text-primary flex items-center justify-center">
+                          <AgentAvatar avatar={pack.icon} className="w-4 h-4" />
+                        </span>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-secondary border border-border font-bold">
                           {pack.badge}
                         </span>
@@ -181,7 +185,9 @@ export function AgentPacksModal({
                   <div className="space-y-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-2xl">{activePack.icon}</span>
+                        <span className="p-2 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center">
+                          <AgentAvatar avatar={activePack.icon} className="w-5 h-5" />
+                        </span>
                         <h4 className="text-base font-bold text-foreground">
                           {activePack.title}
                         </h4>
@@ -205,8 +211,8 @@ export function AgentPacksModal({
                             key={ag.name}
                             className="p-2.5 rounded-xl border border-border bg-secondary/30 flex items-start gap-2.5 text-xs"
                           >
-                            <span className="text-xl p-1 rounded-lg bg-card border border-border shrink-0">
-                              {ag.avatar}
+                            <span className="p-2 rounded-lg bg-card border border-border text-primary shrink-0 flex items-center justify-center">
+                              <AgentAvatar avatar={ag.avatar} className="w-4 h-4" />
                             </span>
                             <div className="min-w-0 flex-1 space-y-0.5">
                               <div className="flex items-center gap-2 flex-wrap">

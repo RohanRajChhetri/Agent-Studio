@@ -12,6 +12,8 @@ import {
   deleteProjectEntry,
   duplicateProjectEntry,
   exportProjectZip,
+  renameWorkspaceProject,
+  deleteWorkspaceProject,
 } from "@/lib/project-filesystem";
 import { getAuthUserId, PRIMARY_LEGACY_USER_ID } from "@/lib/user-auth";
 
@@ -99,9 +101,30 @@ export async function POST(request: Request) {
       return NextResponse.json(res);
     }
 
+    // 1b. Rename workspace project folder
+    if (action === "rename_project") {
+      const from = body.oldName || oldPath || name;
+      const to = body.newName || newPath;
+      if (!from || !to) {
+        return NextResponse.json({ error: "oldName and newName are required to rename project" }, { status: 400 });
+      }
+      const res = await renameWorkspaceProject(from, to);
+      return NextResponse.json(res);
+    }
+
+    // 1c. Delete workspace project folder
+    if (action === "delete_project") {
+      const proj = body.project || name || targetPath || oldPath;
+      if (!proj) {
+        return NextResponse.json({ error: "Project name is required to delete project" }, { status: 400 });
+      }
+      const res = await deleteWorkspaceProject(proj);
+      return NextResponse.json(res);
+    }
+
     // 2. Batch create/write multiple files in a project
     if (action === "batch_create" || action === "write_files") {
-      const proj = projectPath || targetPath || "agent-workspace/default-project";
+      const proj = projectPath || targetPath || "agent-workspace/workspace";
       if (!Array.isArray(files) || files.length === 0) {
         return NextResponse.json({ error: "Files array is required" }, { status: 400 });
       }
@@ -115,6 +138,13 @@ export async function POST(request: Request) {
       const destination = newPath;
       if (!source || !destination) {
         return NextResponse.json({ error: "oldPath and newPath are required for rename" }, { status: 400 });
+      }
+      // If renaming top-level project inside agent-workspace
+      if (source.startsWith("agent-workspace/") && destination.startsWith("agent-workspace/")) {
+        const from = source.replace("agent-workspace/", "");
+        const to = destination.replace("agent-workspace/", "");
+        const res = await renameWorkspaceProject(from, to);
+        return NextResponse.json(res);
       }
       const res = await renameProjectEntry(source, destination);
       return NextResponse.json(res);
@@ -132,9 +162,15 @@ export async function POST(request: Request) {
 
     // 5. Delete file or folder via POST action
     if (action === "delete") {
-      const pathToDelete = targetPath || oldPath;
+      const pathToDelete = targetPath || oldPath || name;
       if (!pathToDelete) {
         return NextResponse.json({ error: "Target path is required for delete" }, { status: 400 });
+      }
+      // If deleting top-level project inside agent-workspace
+      if (pathToDelete.startsWith("agent-workspace/")) {
+        const proj = pathToDelete.replace("agent-workspace/", "");
+        const res = await deleteWorkspaceProject(proj);
+        return NextResponse.json(res);
       }
       const res = await deleteProjectEntry(pathToDelete);
       return NextResponse.json(res);
@@ -177,9 +213,21 @@ export async function DELETE(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const targetPath = searchParams.get("path");
+    const projectName = searchParams.get("project") || searchParams.get("name");
+
+    if (projectName) {
+      const res = await deleteWorkspaceProject(projectName);
+      return NextResponse.json(res);
+    }
 
     if (!targetPath) {
-      return NextResponse.json({ error: "Target path is required" }, { status: 400 });
+      return NextResponse.json({ error: "Target path or project name is required" }, { status: 400 });
+    }
+
+    if (targetPath.startsWith("agent-workspace/")) {
+      const pName = targetPath.replace("agent-workspace/", "");
+      const res = await deleteWorkspaceProject(pName);
+      return NextResponse.json(res);
     }
 
     const res = await deleteProjectEntry(targetPath);

@@ -53,11 +53,15 @@ import {
   PanelLeftOpen,
   Zap,
   ListTodo,
+  Eye,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { AgentProfile, ChatSession } from "@/types";
 import { HermesTerminalModal } from "@/components/agents/hermes-terminal-modal";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
+
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -224,6 +228,8 @@ function ChatContent() {
 
   // Attachments & Voice Memo Recording State
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [isDraggingOverPage, setIsDraggingOverPage] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -232,15 +238,14 @@ function ChatContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Handle File & Audio Upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  // Process files from input, paste, or drag-and-drop
+  const processFiles = (files: File[]) => {
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file) => {
+    files.forEach((file) => {
       const isAudio = file.type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(file.name);
-      const isImage = file.type.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(file.name);
-      const isCode = /\.(ts|tsx|js|jsx|py|html|css|json|yaml|yml|sh|bash|sql|rs|go|c|cpp|md)$/i.test(file.name);
+      const isImage = file.type.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp|svg|bmp|ico)$/i.test(file.name);
+      const isCode = /\.(ts|tsx|js|jsx|py|html|htm|css|json|yaml|yml|sh|bash|sql|rs|go|c|cpp|md|txt|xml)$/i.test(file.name);
       const isData = /\.(csv|tsv|json|xlsx|parquet)$/i.test(file.name);
 
       let type: ChatAttachment["type"] = "document";
@@ -285,7 +290,13 @@ function ChatContent() {
         reader.readAsText(file);
       }
     });
+  };
 
+  // Handle File & Audio Upload via File Input
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      processFiles(Array.from(e.target.files));
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -895,7 +906,7 @@ function ChatContent() {
     const userTopicMsg: ChatMessage = {
       id: "topic-" + Date.now(),
       role: "user",
-      content: `🏛️ **Roundtable Debate Topic**: ${topic}`,
+      content: `**Roundtable Debate Topic**: ${topic}`,
     };
     setMessages((prev) => [...prev, userTopicMsg]);
 
@@ -1023,7 +1034,7 @@ function ChatContent() {
         id: "asst-" + Date.now(),
         role: "assistant",
         content: [
-          "### 🛠️ Agent Studio OS — Available Slash Commands & Tools",
+          "### Agent Studio OS — Available Slash Commands & Tools",
           "",
           "| Command | Description | Syntax / Usage |",
           "|---|---|---|",
@@ -1134,7 +1145,18 @@ function ChatContent() {
           return `[Attached Voice/Audio Note: "${att.name}" (${(att.size / 1024).toFixed(1)} KB)]`;
         }
         if (att.content && (att.type === "document" || att.type === "code" || att.type === "data")) {
-          return `\n--- File Attachment: ${att.name} (${att.mimeType}) ---\n\`\`\`\n${att.content}\n\`\`\``;
+          const MAX_TEXT_LEN = 80000;
+          let fileText = att.content;
+          let truncationNotice = "";
+          if (fileText.length > MAX_TEXT_LEN) {
+            const truncatedKB = Math.round((fileText.length - MAX_TEXT_LEN) / 1024);
+            fileText = fileText.slice(0, MAX_TEXT_LEN);
+            truncationNotice = `\n... [Note: Remaining ${truncatedKB} KB truncated to fit context limits]`;
+          }
+          return `\n--- File Attachment: ${att.name} (${att.mimeType || "text/plain"}) ---\n\`\`\`\n${fileText}${truncationNotice}\n\`\`\``;
+        }
+        if (att.type === "image") {
+          return `[Attached Image: "${att.name}" (${(att.size / 1024).toFixed(1)} KB) - Image data forwarded for visual inspection]`;
         }
         return `[Attached File: "${att.name}" (${(att.size / 1024).toFixed(1)} KB, type: ${att.type})]`;
       });
@@ -1155,6 +1177,7 @@ function ChatContent() {
           agentId: selectedAgent?.id,
           sessionId: activeSessionId,
           useVaultRAG: vaultGrounding,
+          attachments: attachedToSend,
         }),
       });
 
@@ -1256,7 +1279,7 @@ function ChatContent() {
             m.id === asstMsgId && !m.content
               ? {
                   ...m,
-                  content: "⚠️ I encountered an interruption while generating a reply. Please verify your selected model in Settings or try re-sending.",
+                  content: "I encountered an interruption while generating a reply. Please verify your selected model in Settings or try re-sending.",
                 }
               : m
           )
@@ -1270,7 +1293,7 @@ function ChatContent() {
           m.id === asstMsgId && !m.content
             ? {
                 ...m,
-                content: `⚠️ Error generating response: ${errMsg}. Please check your model keys in Settings.`,
+                content: `Error generating response: ${errMsg}. Please check your model keys in Settings.`,
               }
             : m
         )
@@ -1308,10 +1331,24 @@ function ChatContent() {
     let promptPayload = rawInput;
     if (attachedToSend.length > 0) {
       const summaryParts = attachedToSend.map((att) => {
-        if (att.content && (att.type === "document" || att.type === "code" || att.type === "data")) {
-          return `\n--- File Attachment: ${att.name} (${att.mimeType}) ---\n\`\`\`\n${att.content}\n\`\`\``;
+        if (att.type === "audio") {
+          return `[Attached Voice/Audio Note: "${att.name}" (${(att.size / 1024).toFixed(1)} KB)]`;
         }
-        return `[Attached File: "${att.name}"]`;
+        if (att.content && (att.type === "document" || att.type === "code" || att.type === "data")) {
+          const MAX_TEXT_LEN = 80000;
+          let fileText = att.content;
+          let truncationNotice = "";
+          if (fileText.length > MAX_TEXT_LEN) {
+            const truncatedKB = Math.round((fileText.length - MAX_TEXT_LEN) / 1024);
+            fileText = fileText.slice(0, MAX_TEXT_LEN);
+            truncationNotice = `\n... [Note: Remaining ${truncatedKB} KB truncated to fit context limits]`;
+          }
+          return `\n--- File Attachment: ${att.name} (${att.mimeType || "text/plain"}) ---\n\`\`\`\n${fileText}${truncationNotice}\n\`\`\``;
+        }
+        if (att.type === "image") {
+          return `[Attached Image: "${att.name}" (${(att.size / 1024).toFixed(1)} KB) - Image data forwarded for visual inspection]`;
+        }
+        return `[Attached File: "${att.name}" (${(att.size / 1024).toFixed(1)} KB, type: ${att.type})]`;
       });
       promptPayload = rawInput ? `${rawInput}\n\n${summaryParts.join("\n\n")}` : summaryParts.join("\n\n");
     }
@@ -1327,6 +1364,7 @@ function ChatContent() {
           agentName: selectedAgent?.name,
           agentId: selectedAgent?.id,
           useVaultRAG: vaultGrounding,
+          attachments: attachedToSend,
         }),
       });
 
@@ -1374,7 +1412,7 @@ function ChatContent() {
         setMessagesB((prev) =>
           prev.map((m) =>
             m.id === asstMsgId && !m.content
-              ? { ...m, content: "⚠️ Interruption occurred while generating reply." }
+              ? { ...m, content: "Interruption occurred while generating reply." }
               : m
           )
         );
@@ -1383,7 +1421,7 @@ function ChatContent() {
       const errMsg = error instanceof Error ? error.message : "Model B stream failed";
       setMessagesB((prev) =>
         prev.map((m) =>
-          m.id === asstMsgId && !m.content ? { ...m, content: `⚠️ Error: ${errMsg}` } : m
+          m.id === asstMsgId && !m.content ? { ...m, content: `Error: ${errMsg}` } : m
         )
       );
     } finally {
@@ -1422,7 +1460,7 @@ function ChatContent() {
     const userTopicMsg: ChatMessage = {
       id: "topic-" + Date.now(),
       role: "user",
-      content: `🏛️ **Roundtable Debate Topic**: ${topic}`,
+      content: `**Roundtable Debate Topic**: ${topic}`,
     };
     setMessages((prev) => [...prev, userTopicMsg]);
 
@@ -1541,11 +1579,20 @@ function ChatContent() {
               key={att.id}
               className="p-2.5 rounded-xl border border-border bg-secondary/50 backdrop-blur-sm space-y-1.5 max-w-sm"
             >
-              <div className="flex items-center gap-2">
+              <div
+                className={`flex items-center gap-2 ${
+                  att.type === "image" && att.content ? "cursor-pointer hover:opacity-85" : ""
+                }`}
+                onClick={() => {
+                  if (att.type === "image" && att.content) {
+                    setPreviewImage({ url: att.content, name: att.name });
+                  }
+                }}
+              >
                 {att.type === "audio" ? (
                   <Music className="w-4 h-4 text-muted-foreground shrink-0" />
                 ) : att.type === "image" ? (
-                  <ImageIcon className="w-4 h-4 text-foreground shrink-0" />
+                  <ImageIcon className="w-4 h-4 text-primary shrink-0" />
                 ) : att.type === "code" ? (
                   <FileCode className="w-4 h-4 text-foreground shrink-0" />
                 ) : att.type === "data" ? (
@@ -1565,13 +1612,21 @@ function ChatContent() {
                 </div>
               )}
 
-              {att.type === "image" && (
-                <div className="pt-1 max-w-[260px]">
+              {att.type === "image" && att.content && (
+                <div
+                  onClick={() => setPreviewImage({ url: att.content, name: att.name })}
+                  className="pt-1 max-w-[260px] relative group cursor-pointer overflow-hidden rounded-lg border border-border bg-black/5 dark:bg-black/30"
+                  title={`Click to preview ${att.name}`}
+                >
                   <img
                     src={att.content}
                     alt={att.name}
-                    className="rounded-lg max-h-48 object-cover border border-border"
+                    className="rounded-lg max-h-48 object-contain transition-transform group-hover:scale-105 duration-200"
                   />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-medium gap-1 rounded-lg">
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View</span>
+                  </div>
                 </div>
               )}
 
@@ -1733,7 +1788,35 @@ function ChatContent() {
       />
 
       {/* Main Conversation Stream */}
-      <div className="flex-1 min-w-0 flex flex-col h-full min-h-0 overflow-hidden relative bg-card">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOverPage(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOverPage(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOverPage(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            processFiles(Array.from(e.dataTransfer.files));
+          }
+        }}
+        className="flex-1 min-w-0 flex flex-col h-full min-h-0 overflow-hidden relative bg-card"
+      >
+        {/* Full-Page Drag & Drop Overlay */}
+        {isDraggingOverPage && (
+          <div className="absolute inset-0 z-50 bg-primary/10 border-2 border-dashed border-primary backdrop-blur-xs flex flex-col items-center justify-center gap-2 pointer-events-none animate-in fade-in duration-150">
+            <Upload className="w-10 h-10 text-primary animate-bounce" />
+            <span className="text-sm font-semibold text-primary">Drop files or images anywhere to attach</span>
+            <span className="text-xs text-muted-foreground">Supports images, documents, code, logs, and data files</span>
+          </div>
+        )}
         {/* Unified Sleek Header */}
         <ChatHeader
           selectedAgent={selectedAgent}
@@ -2073,13 +2156,13 @@ function ChatContent() {
                 <div className="flex flex-col items-center justify-center min-h-[75%] text-center space-y-5 py-10 px-4 max-w-2xl mx-auto">
                   <div className="relative">
                     <div
-                      className="w-16 h-16 rounded-lg flex items-center justify-center text-3xl border shadow-2xl relative z-10"
+                      className="w-16 h-16 rounded-xl flex items-center justify-center text-primary border shadow-2xl relative z-10"
                       style={{
                         borderColor: `${selectedAgent?.themeColor || "#6366f1"}40`,
                         backgroundColor: `${selectedAgent?.themeColor || "#6366f1"}15`,
                       }}
                     >
-                      {selectedAgent?.avatar || "🤖"}
+                      <AgentAvatar avatar={selectedAgent?.avatar} className="w-8 h-8 text-primary" />
                     </div>
                     <div
                       className="absolute inset-0 blur-2xl opacity-40 rounded-md"
@@ -2109,8 +2192,10 @@ function ChatContent() {
 
                   {/* Minimalist, Clean Hint without preset clutter */}
                   <div className="pt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground select-none">
-                    <span>💡 Type your message below, click</span>
-                    <span className="font-semibold text-foreground px-2 py-0.5 rounded-lg bg-secondary border border-border">🎙️ Mic</span>
+                    <span>Type your message below, click</span>
+                    <span className="font-semibold text-foreground px-2 py-0.5 rounded-lg bg-secondary border border-border inline-flex items-center gap-1">
+                      <Mic className="w-3 h-3 text-primary" /> Mic
+                    </span>
                     <span>to dictate, or</span>
                     <span className="font-semibold text-foreground px-2 py-0.5 rounded-lg bg-secondary border border-border font-mono">/</span>
                     <span>for quick commands.</span>
@@ -2128,8 +2213,8 @@ function ChatContent() {
                       }`}
                     >
                       {msg.role === "assistant" && (
-                        <div className="w-7 h-7 rounded-lg bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/20 flex items-center justify-center shrink-0 mt-0.5 text-sm">
-                          {selectedAgent?.avatar || "🤖"}
+                        <div className="w-7 h-7 rounded-lg bg-[#e6f3fe] text-[#0075de] border border-[#0075de]/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <AgentAvatar avatar={selectedAgent?.avatar} className="w-4 h-4 text-[#0075de]" />
                         </div>
                       )}
 
@@ -2346,8 +2431,9 @@ function ChatContent() {
                   </button>
                 </div>
               </div>
-              <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline">
-                ⚡ Side-by-side concurrent streams
+              <span className="text-[10px] text-muted-foreground font-mono hidden sm:inline-flex items-center gap-1">
+                <Zap className="w-3 h-3 text-amber-500" />
+                <span>Side-by-side concurrent streams</span>
               </span>
             </div>
           )}
@@ -2388,6 +2474,8 @@ function ChatContent() {
             attachments={attachments}
             onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
             onFileUpload={handleFileUpload}
+            onFilesSelected={processFiles}
+            onPreviewImage={setPreviewImage}
             isRecordingAudio={isRecordingAudio}
             recordingDuration={recordingDuration}
             onStartAudioRecording={startAudioRecording}
@@ -2433,6 +2521,39 @@ function ChatContent() {
         model={model}
         onOpenTerminal={() => setTerminalOpen(true)}
       />
+
+      {/* Full Screen Image Lightbox Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] bg-card border border-border rounded-2xl shadow-2xl p-3 flex flex-col gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 px-1 border-b border-border/70">
+              <span className="text-xs font-semibold text-foreground truncate max-w-md">
+                {previewImage.name}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="p-1 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-2 flex items-center justify-center min-h-[200px]">
+              <img
+                src={previewImage.url}
+                alt={previewImage.name}
+                className="max-h-[75vh] max-w-full object-contain rounded-xl shadow-md"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

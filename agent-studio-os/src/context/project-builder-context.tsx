@@ -38,10 +38,15 @@ interface ProjectBuilderContextType {
   activeProject: string;
   setActiveProject: (name: string) => void;
   getProjectMessages: (projectName: string) => CodeMessage[];
+  loadProjectMessagesFromDisk: (projectName: string) => Promise<CodeMessage[]>;
   setProjectMessages: (
     projectName: string,
     updater: CodeMessage[] | ((prev: CodeMessage[]) => CodeMessage[])
   ) => void;
+  renameProjectMessages: (oldName: string, newName: string) => void;
+  allMessagesMap: Record<string, CodeMessage[]>;
+  clearProjectMessages: (projectName: string) => void;
+  deleteProjectMessages: (projectName: string) => void;
   startGeneration: (params: {
     prompt: string;
     projectName: string;
@@ -50,6 +55,7 @@ interface ProjectBuilderContextType {
     currentFilePath?: string;
     currentCode?: string;
     model?: string;
+    persona?: string;
     engine?: "claude-code" | "cloud-architect" | "auto";
     history?: Array<{ role: "user" | "assistant"; content: string }>;
   }) => Promise<{ success: boolean; data?: any; error?: string }>;
@@ -65,7 +71,7 @@ const STORAGE_ACTIVE_PROJECT_KEY = "agent_os_selected_project";
 
 export function ProjectBuilderProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [activeProject, setActiveProjectState] = useState<string>("default-project");
+  const [activeProject, setActiveProjectState] = useState<string>("");
   const [generatingProjects, setGeneratingProjects] = useState<Record<string, GeneratingProjectStatus>>({});
   const [latestResult, setLatestResult] = useState<any | null>(null);
   const [isTrackerVisible, setIsTrackerVisible] = useState<boolean>(false);
@@ -144,18 +150,110 @@ export function ProjectBuilderProvider({ children }: { children: React.ReactNode
     [messagesMap]
   );
 
+  const loadProjectMessagesFromDisk = useCallback(
+    async (projectName: string): Promise<CodeMessage[]> => {
+      const clean = (projectName || "").trim();
+      if (!clean) return [];
+
+      const inMemory = messagesMapRef.current[clean];
+      if (inMemory && inMemory.length > 0) {
+        return inMemory;
+      }
+
+      try {
+        const chatFilePath = `agent-workspace/${clean}/.project-chat.json`;
+        const res = await fetch(`/api/filesystem?action=read&path=${encodeURIComponent(chatFilePath)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.content) {
+            const parsed = JSON.parse(data.content);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMessagesMap((prev) => {
+                const updated = { ...prev, [clean]: parsed };
+                messagesMapRef.current = updated;
+                persistMessages(updated);
+                return updated;
+              });
+              return parsed;
+            }
+          }
+        }
+      } catch (err) {
+        // Silently continue
+      }
+      return [];
+    },
+    [persistMessages]
+  );
+
   const setProjectMessages = useCallback(
     (
       projectName: string,
       updater: CodeMessage[] | ((prev: CodeMessage[]) => CodeMessage[])
     ) => {
+      const clean = (projectName || "").trim();
+      if (!clean) return;
+
       setMessagesMap((prev) => {
-        const current = prev[projectName] || [];
+        const current = prev[clean] || [];
         const next = typeof updater === "function" ? updater(current) : updater;
-        const updatedMap = { ...prev, [projectName]: next };
+        const updatedMap = { ...prev, [clean]: next };
         messagesMapRef.current = updatedMap;
         persistMessages(updatedMap);
+
+        // Mirror to project folder on disk as backup
+        if (typeof window !== "undefined") {
+          fetch("/api/filesystem", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "write",
+              path: `agent-workspace/${clean}/.project-chat.json`,
+              content: JSON.stringify(next, null, 2),
+            }),
+          }).catch(() => {});
+        }
+
         return updatedMap;
+      });
+    },
+    [persistMessages]
+  );
+
+  const renameProjectMessages = useCallback(
+    (oldName: string, newName: string) => {
+      setMessagesMap((prev) => {
+        const updated = { ...prev };
+        if (updated[oldName]) {
+          updated[newName] = updated[oldName];
+          delete updated[oldName];
+        }
+        messagesMapRef.current = updated;
+        persistMessages(updated);
+        return updated;
+      });
+      if (activeProject === oldName) {
+        setActiveProject(newName);
+      }
+    },
+    [activeProject, persistMessages, setActiveProject]
+  );
+
+  const clearProjectMessages = useCallback(
+    (projectName: string) => {
+      setProjectMessages(projectName, []);
+    },
+    [setProjectMessages]
+  );
+
+  const deleteProjectMessages = useCallback(
+    (projectName: string) => {
+      setMessagesMap((prev) => {
+        const updated = { ...prev };
+        delete updated[projectName];
+        messagesMapRef.current = updated;
+        persistMessages(updated);
+        return updated;
       });
     },
     [persistMessages]
@@ -214,7 +312,7 @@ export function ProjectBuilderProvider({ children }: { children: React.ReactNode
 
                 const createdFiles = data.job.result?.createdFiles || [];
                 toast.success(
-                  `✨ Created ${createdFiles.length} files in "${projectName}"!`,
+                  `Created ${createdFiles.length} files in "${projectName}"!`,
                   {
                     action: {
                       label: "Open Project",
@@ -278,11 +376,12 @@ export function ProjectBuilderProvider({ children }: { children: React.ReactNode
       currentFilePath?: string;
       currentCode?: string;
       model?: string;
+      persona?: string;
       engine?: "claude-code" | "cloud-architect" | "auto";
       history?: Array<{ role: "user" | "assistant"; content: string }>;
     }): Promise<{ success: boolean; data?: any; error?: string }> => {
       const cleanPrompt = params.prompt.trim();
-      const projName = params.projectName.trim() || "default-project";
+      const projName = params.projectName.trim() || activeProject || "workspace";
       if (!cleanPrompt) {
         return { success: false, error: "Empty prompt" };
       }
@@ -320,6 +419,7 @@ export function ProjectBuilderProvider({ children }: { children: React.ReactNode
             currentFilePath: params.currentFilePath,
             currentCode: params.currentCode,
             model: params.model || "auto/best-coding",
+            persona: params.persona || "default",
             engine: params.engine || "claude-code",
             history: params.history,
           }),
@@ -348,7 +448,7 @@ export function ProjectBuilderProvider({ children }: { children: React.ReactNode
         // Global success notification with direct action button
         const fileCount = data.createdFiles?.length || 0;
         toast.success(
-          `✨ Agent finished building "${projName}"! (${fileCount} ${
+          `Agent finished building "${projName}"! (${fileCount} ${
             fileCount === 1 ? "file" : "files"
           } created)`,
           {
@@ -408,7 +508,12 @@ export function ProjectBuilderProvider({ children }: { children: React.ReactNode
         activeProject,
         setActiveProject,
         getProjectMessages,
+        loadProjectMessagesFromDisk,
         setProjectMessages,
+        renameProjectMessages,
+        allMessagesMap: messagesMap,
+        clearProjectMessages,
+        deleteProjectMessages,
         startGeneration,
         latestResult,
         dismissTracker,

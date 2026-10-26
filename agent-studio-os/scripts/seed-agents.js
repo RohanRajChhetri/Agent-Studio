@@ -11,7 +11,7 @@ async function main() {
     {
       name: "athena",
       displayName: "Athena (Research)",
-      avatar: "🔬",
+      avatar: "microscope",
       description: "Deep research, document analysis, and synthesis",
       systemPrompt:
         "You are Athena, an elite AI research specialist. You provide structured, cited analysis, synthesize data, and summarize findings with clarity.",
@@ -21,7 +21,7 @@ async function main() {
     {
       name: "mercury",
       displayName: "Mercury (Copywriter)",
-      avatar: "✍️",
+      avatar: "pen",
       description: "Copywriting, pitches, and communication strategy",
       systemPrompt:
         "You are Mercury, an expert marketing strategist and copywriter. You write punchy, persuasive copy and campaign frameworks.",

@@ -28,6 +28,8 @@ import { toast } from "sonner";
 import type { TaskItem, SubtaskItem } from "@/types";
 import { PRIORITY_COLORS, PRIORITY_BADGE_CLASSES } from "@/types";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
+
 
 interface TaskDrawerProps {
   task: TaskItem | null;
@@ -737,8 +739,8 @@ export function TaskDrawer({
                 </h5>
                 {task.agent ? (
                   <div className="flex items-center gap-3">
-                    <div className="text-2xl p-2 rounded-xl bg-secondary border border-border">
-                      {task.agent.avatar || "🤖"}
+                    <div className="p-2.5 rounded-xl bg-secondary border border-border text-primary flex items-center justify-center">
+                      <AgentAvatar avatar={task.agent.avatar} className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <span className="text-xs font-bold text-foreground block truncate">
@@ -827,8 +829,8 @@ export function TaskDrawer({
                               {st.title}
                             </span>
                             {st.agentName && (
-                              <span className="text-[10px] text-foreground/75 dark:text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded font-medium shrink-0 flex items-center gap-1">
-                                <span>{st.agentAvatar || "🤖"}</span>
+                              <span className="text-[10px] text-foreground/75 dark:text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded font-medium shrink-0 flex items-center gap-1.5">
+                                <AgentAvatar avatar={st.agentAvatar} className="w-3 h-3 text-primary shrink-0" />
                                 <span className="truncate max-w-[85px]">{st.agentName}</span>
                               </span>
                             )}

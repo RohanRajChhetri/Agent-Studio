@@ -30,6 +30,8 @@ import {
 import Link from "next/link";
 import { toast } from "sonner";
 import type { AgentProfile } from "@/types";
+import { AgentAvatar } from "@/components/ui/agent-avatar";
+
 
 interface AgentHierarchyViewProps {
   agents: AgentProfile[];
@@ -45,8 +47,8 @@ const ROLE_CONFIG: Record<
 > = {
   orchestrator: {
     label: "Orchestrator",
-    badgeClass: "bg-[#e6f3fe] text-[#0075de] border-[#0075de]/30",
-    borderClass: "border-[#0075de]/40 hover:border-[#0075de]",
+    badgeClass: "bg-primary/10 text-primary border-primary/30",
+    borderClass: "border-primary/40 hover:border-primary",
     icon: Crown,
   },
   manager: {
@@ -692,8 +694,8 @@ export function AgentHierarchyView({
                         <GripVertical className="w-3.5 h-3.5" />
                       </div>
 
-                      <div className="w-8 h-8 rounded-lg bg-secondary/80 border border-border flex items-center justify-center text-base shrink-0">
-                        {agent.avatar || "🤖"}
+                      <div className="w-8 h-8 rounded-lg bg-secondary/80 border border-border flex items-center justify-center text-primary shrink-0">
+                        <AgentAvatar avatar={agent.avatar} className="w-4 h-4" />
                       </div>
 
                       <div className="min-w-0 flex-1">
@@ -927,8 +929,8 @@ function RecursiveTreeNode({
               </div>
             )}
 
-            <span className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-base shrink-0 border border-border">
-              {agent.avatar || "🤖"}
+            <span className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-primary shrink-0 border border-border">
+              <AgentAvatar avatar={agent.avatar} className="w-4 h-4" />
             </span>
 
             <div className="min-w-0">

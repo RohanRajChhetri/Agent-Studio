@@ -5,17 +5,11 @@ import { exec, spawn } from "child_process";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
+import { getActiveVaultPath } from "./storage-config";
 
-/** Get the vault path from env or default */
+/** Get the vault path from dynamic config, env, or default */
 export function getVaultPath(): string {
-  return (
-    process.env.OBSIDIAN_VAULT_PATH ||
-    path.join(
-      process.env.USERPROFILE || process.env.HOME || "",
-      "agent-studio",
-      "memory"
-    )
-  );
+  return getActiveVaultPath();
 }
 
 /** Check if Obsidian is installed on Windows */

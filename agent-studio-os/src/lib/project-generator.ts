@@ -7,6 +7,7 @@ import {
   type FileTreeNode,
 } from "./project-filesystem";
 import { executeChatCompletion, normalizeModelName } from "./llm-router";
+import type { LLMMessage } from "./router-types";
 import { parseToolCalls } from "./agentic-tool-loop";
 import {
   runClaudeCodeProjectBuild,
@@ -74,6 +75,13 @@ export function extractProjectFiles(
 
   if (!text || typeof text !== "string") return files;
 
+  // Auto-close unclosed code block if truncated at EOF or missing final closing fence
+  let normalizedText = text.trim();
+  const ticksCount = (normalizedText.match(/```/g) || []).length;
+  if (ticksCount % 2 !== 0) {
+    normalizedText += "\n```";
+  }
+
   const addFile = (relPath: string, rawContent: string) => {
     const cleanPath = sanitizeProjectRelativePath(relPath);
     if (!cleanPath || cleanPath.includes("..") || seenPaths.has(cleanPath)) return;
@@ -93,7 +101,7 @@ export function extractProjectFiles(
   };
 
   // 1. Tool calls extraction: [create_file(path="...", content="...")] or <tool_call>
-  const toolCalls = parseToolCalls(text);
+  const toolCalls = parseToolCalls(normalizedText);
   for (const tc of toolCalls) {
     if (
       tc.name === "create_file" ||
@@ -111,33 +119,39 @@ export function extractProjectFiles(
   }
 
   // 2. Format: ```file:path/to/file.ext or ```javascript:src/app.js or ```html:index.html
-  const fileBlockRegex = /```(?:file:|[\w-]+:)([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\n([\s\S]*?)```/g;
+  const fileBlockRegex = /```(?:file:|filename:|[\w-]+:)([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\n([\s\S]*?)```/g;
   let match;
-  while ((match = fileBlockRegex.exec(text)) !== null) {
+  while ((match = fileBlockRegex.exec(normalizedText)) !== null) {
     addFile(match[1], match[2]);
   }
 
-  // 3. Format: ```html index.html or ```typescript src/index.ts
-  const spaceBlockRegex = /```[a-zA-Z0-9_-]+\s+([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\n([\s\S]*?)```/g;
-  while ((match = spaceBlockRegex.exec(text)) !== null) {
+  // 3. Format: Direct filename in fence tag: ```index.html or ```styles.css or ```app.js
+  const directNameRegex = /```([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]{1,6})\n([\s\S]*?)```/g;
+  while ((match = directNameRegex.exec(normalizedText)) !== null) {
     addFile(match[1], match[2]);
   }
 
-  // 4. Format: ### File: `path/to/file.ext` or ### `path/to/file.ext` or **path/to/file.ext**:
+  // 4. Format: ```html index.html or ```typescript src/index.ts or ```html file="index.html"
+  const spaceBlockRegex = /```[a-zA-Z0-9_-]+\s+(?:file=)?["']?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)["']?\n([\s\S]*?)```/g;
+  while ((match = spaceBlockRegex.exec(normalizedText)) !== null) {
+    addFile(match[1], match[2]);
+  }
+
+  // 5. Format: ### File: `path/to/file.ext` or **path/to/file.ext**: or File: `path/to/file.ext`
   const headerFileRegex =
-    /(?:###?\s*(?:File:\s*|Filename:\s*)?`?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)`?|\*\*([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\*\*:?)\s*[\r\n]+(?:[^\n`]*[\r\n]+)?```(?:\w+)?\n([\s\S]*?)```/g;
-  while ((match = headerFileRegex.exec(text)) !== null) {
-    const rawPath = match[1] || match[2];
-    const content = match[3];
+    /(?:###?\s*(?:File:\s*|Filename:\s*)?`?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)`?|\*\*(?:File:\s*)?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\*\*:?|(?:File|Filename):\s*`?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)`?)\s*[\r\n]+(?:[^\n`]*[\r\n]+)?```(?:\w+)?\n([\s\S]*?)```/gi;
+  while ((match = headerFileRegex.exec(normalizedText)) !== null) {
+    const rawPath = match[1] || match[2] || match[3];
+    const content = match[4];
     if (rawPath && content) {
       addFile(rawPath, content);
     }
   }
 
-  // 5. In-block comments: <!-- index.html --> or // app.js or /* styles.css */ or # main.py
+  // 6. In-block comments: <!-- index.html --> or // app.js or /* styles.css */ or # main.py
   const commentFileRegex =
-    /```(?:\w+)?\n(?:\s*(?:<!--|\/\/|\/\*|#)\s*([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\s*(?:-->|\*\/)?[\r\n]+)([\s\S]*?)```/g;
-  while ((match = commentFileRegex.exec(text)) !== null) {
+    /```(?:\w+)?\n(?:\s*(?:<!--|\/\/|\/\*|#)\s*(?:file:\s*)?([a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9]+)\s*(?:-->|\*\/)?[\r\n]+)([\s\S]*?)```/g;
+  while ((match = commentFileRegex.exec(normalizedText)) !== null) {
     const rawPath = match[1];
     const content = match[2];
     if (rawPath && content) {
@@ -145,36 +159,85 @@ export function extractProjectFiles(
     }
   }
 
-  // 6. Intelligent Fallback: If only 1 code block was produced and no files parsed yet
+  // 7. Comprehensive Fallback: Parse all generic code blocks if no explicit file headers were matched
   if (files.length === 0) {
-    const singleCodeMatch = text.match(/```(?:\w+)?\n([\s\S]*?)```/);
-    if (singleCodeMatch && singleCodeMatch[1].trim().length > 0) {
-      const codeSnippet = singleCodeMatch[1].trim();
+    const genericBlockRegex = /```([a-zA-Z0-9_-]+)?\n([\s\S]*?)```/g;
+    let bMatch;
+    let codeBlockIdx = 1;
 
-      let inferredPath = defaultFallbackPath || "index.html";
-      // Heuristic detection based on content
-      if (codeSnippet.includes("<!DOCTYPE html") || codeSnippet.includes("<html")) {
+    while ((bMatch = genericBlockRegex.exec(normalizedText)) !== null) {
+      const lang = (bMatch[1] || "").toLowerCase().trim();
+      const codeSnippet = bMatch[2].trim();
+      if (!codeSnippet) continue;
+
+      let inferredPath = "";
+      if (
+        lang === "html" ||
+        codeSnippet.includes("<!DOCTYPE html") ||
+        codeSnippet.includes("<html") ||
+        codeSnippet.includes("<body") ||
+        codeSnippet.includes("<div")
+      ) {
         inferredPath = "index.html";
       } else if (
-        (codeSnippet.includes("{") && codeSnippet.includes("margin:") && codeSnippet.includes("padding:")) ||
-        codeSnippet.includes(":root {") ||
-        codeSnippet.includes("@media")
+        lang === "css" ||
+        (codeSnippet.includes("{") &&
+          (codeSnippet.includes("margin:") ||
+            codeSnippet.includes("padding:") ||
+            codeSnippet.includes("color:") ||
+            codeSnippet.includes("background:") ||
+            codeSnippet.includes("display:")))
       ) {
         inferredPath = "styles.css";
-      } else if (codeSnippet.startsWith("{") && codeSnippet.includes('"name":')) {
-        inferredPath = "package.json";
       } else if (
-        codeSnippet.includes("function") ||
+        lang === "javascript" ||
+        lang === "js" ||
+        codeSnippet.includes("function ") ||
         codeSnippet.includes("const ") ||
-        codeSnippet.includes("document.") ||
-        codeSnippet.includes("window.")
+        codeSnippet.includes("let ") ||
+        codeSnippet.includes("addEventListener") ||
+        codeSnippet.includes("document.")
       ) {
-        inferredPath = "app.js";
-      } else if (codeSnippet.startsWith("# ") || codeSnippet.includes("## Overview")) {
+        inferredPath = "script.js";
+      } else if (lang === "typescript" || lang === "ts") {
+        inferredPath = "app.ts";
+      } else if (
+        lang === "python" ||
+        lang === "py" ||
+        codeSnippet.includes("def ") ||
+        codeSnippet.includes("import ")
+      ) {
+        inferredPath = "main.py";
+      } else if (
+        lang === "json" ||
+        (codeSnippet.startsWith("{") && codeSnippet.endsWith("}"))
+      ) {
+        inferredPath = codeSnippet.includes('"name":') ? "package.json" : "data.json";
+      } else if (lang === "markdown" || lang === "md") {
         inferredPath = "README.md";
+      } else {
+        inferredPath = defaultFallbackPath || `file-${codeBlockIdx}.txt`;
+        codeBlockIdx++;
+      }
+
+      // Avoid overwriting if same inferred path already added
+      if (seenPaths.has(inferredPath)) {
+        inferredPath = inferredPath.replace(/\.([a-z]+)$/i, `-${codeBlockIdx}.$1`);
+        codeBlockIdx++;
       }
 
       addFile(inferredPath, codeSnippet);
+    }
+  }
+
+  // 8. Final Safety: Check if entire text contains raw HTML without backticks
+  if (files.length === 0) {
+    if (
+      normalizedText.includes("<!DOCTYPE html") ||
+      (normalizedText.includes("<html") && normalizedText.includes("</html>")) ||
+      (normalizedText.includes("<body") && normalizedText.includes("</body>"))
+    ) {
+      addFile("index.html", normalizedText);
     }
   }
 
@@ -192,6 +255,41 @@ export function extractProjectFiles(
   return files;
 }
 
+function getPersonaSystemDirective(personaId?: string): string {
+  switch (personaId?.toLowerCase()) {
+    case "uiux":
+    case "frontend":
+      return `
+SPECIALIZED ROLE DIRECTIVE: UI/UX & Design Architect
+- Prioritize world-class visual aesthetics, rich dark mode / harmonious palettes, glassmorphism, responsive ergonomics, and smooth CSS micro-animations.
+- Use polished typography, modern CSS variables, Lucide icons, and zero bland browser defaults.
+- Ensure the user is wowed at first glance with vibrant visual cues, hover effects, and responsive layout polish.`;
+    case "qa":
+    case "auditor":
+      return `
+SPECIALIZED ROLE DIRECTIVE: QA & Security Auditor
+- Prioritize extreme resilience, defensive edge-case handling, input validation, and zero unhandled errors.
+- Ensure every user input is validated, empty states are clean and descriptive, and potential failure modes have friendly fallbacks.`;
+    case "fast":
+    case "coder":
+      return `
+SPECIALIZED ROLE DIRECTIVE: Rapid Prototype Coder
+- Prioritize high-speed delivery of direct, runnable code with zero boilerplate or fluff.
+- Implement the requested features cleanly and directly for immediate testing.`;
+    case "backend":
+    case "api":
+      return `
+SPECIALIZED ROLE DIRECTIVE: API & Data Engineer
+- Prioritize robust state modeling, data schemas, structured JSON persistence, local storage sync, and mock backend contracts.`;
+    case "architect":
+    case "main":
+    default:
+      return `
+SPECIALIZED ROLE DIRECTIVE: Lead Software Architect
+- Provide a balanced, scalable, end-to-end architecture with clean component boundaries, robust state management, and production-grade stability.`;
+  }
+}
+
 /**
  * Builds a comprehensive, multi-file project inside a workspace project folder.
  */
@@ -203,6 +301,7 @@ export async function buildProjectWithAgent(params: {
   currentFilePath?: string;
   currentCode?: string;
   model?: string;
+  persona?: string;
   engine?: "claude-code" | "cloud-architect" | "auto";
   history?: Array<{ role: "user" | "assistant"; content: string }>;
 }): Promise<{
@@ -216,7 +315,7 @@ export async function buildProjectWithAgent(params: {
   engine?: string;
 }> {
   const startTime = Date.now();
-  const projectName = (params.projectName || "default-project").trim();
+  const projectName = (params.projectName || "workspace").trim();
   const projectBasePath = params.projectPath || `agent-workspace/${projectName}`;
 
   // Ensure workspace project folder exists
@@ -225,9 +324,10 @@ export async function buildProjectWithAgent(params: {
   // 1. First-class: Execute Native Anthropic Claude Code CLI if available and not explicitly disabled
   if (params.engine !== "cloud-architect" && isClaudeCodeAvailable()) {
     try {
-      console.log(`[ProjectGenerator] Invoking Claude Code CLI for project "${projectName}"...`);
+      console.log(`[ProjectGenerator] Invoking Claude Code CLI for project "${projectName}" (persona: ${params.persona || "default"})...`);
+      const personaGuidance = params.persona ? `[Active Persona: ${params.persona}] ` : "";
       const claudeResult = await runClaudeCodeProjectBuild({
-        prompt: params.prompt,
+        prompt: `${personaGuidance}${params.prompt}`,
         projectName,
         projectPath: projectBasePath,
         targetFolder: params.targetFolder,
@@ -240,10 +340,11 @@ export async function buildProjectWithAgent(params: {
       if (claudeResult.success && claudeResult.createdFiles.length > 0) {
         return claudeResult;
       }
-    } catch (claudeErr: any) {
+    } catch (claudeErr: unknown) {
+      const message = claudeErr instanceof Error ? claudeErr.message : String(claudeErr);
       console.warn(
         "[ProjectGenerator] Claude Code CLI run error, engaging Cloud Architect fallback:",
-        claudeErr.message
+        message
       );
     }
   }
@@ -284,10 +385,11 @@ export async function buildProjectWithAgent(params: {
 
   // Target subfolder guidance
   const folderScope = params.targetFolder ? `\nTarget Subfolder to add files: "${params.targetFolder}"` : "";
+  const personaDirective = getPersonaSystemDirective(params.persona);
 
   // Prepare elite Claude-grade system prompt with complete project context
-  const systemPrompt = `You are an elite Lead Software Architect & Autonomous Project Builder in Agent Studio OS.
-You specialize in designing, creating, and completely implementing entire multi-file software projects, web applications, components, tools, and scripts.
+  const systemPrompt = `You are an elite Autonomous Project Builder in Agent Studio OS.
+${personaDirective}
 
 WORKING PROJECT FOLDER: "${projectName}" (${projectBasePath})${folderScope}
 EXISTING FILES IN THIS PROJECT (${existingFiles.length} files):
@@ -299,22 +401,12 @@ ACTIVE FILE OPEN IN EDITOR: "${params.currentFilePath || "index.html"}"
 ${params.currentCode ? `ACTIVE FILE CURRENT CODE:\n\`\`\`${detectLanguageFromPath(params.currentFilePath || "index.html")}\n${params.currentCode}\n\`\`\`` : ""}
 
 AUTONOMOUS PROJECT BUILDER DIRECTIVES:
-1. FULL IMPLEMENTATIONS ONLY: Always output 100% complete, fully implemented, runnable production code. NEVER use placeholders like "// TODO", "// implement here", or truncate any section.
-2. INTELLIGENT PROJECT EDITING & REVISIONS:
-   - When updating or adding features to an existing project, preserve working architecture and conventions.
-   - Output the complete content for every file you create or modify.
-   - Do NOT emit files that do not require any changes. Any file you do not emit will remain untouched on disk.
-3. MULTI-RUNTIME & STACK SUPPORT:
-   - Web Applications (HTML/CSS/JS): Modern semantic HTML5, beautiful responsive styling (Tailwind CSS or clean CSS variables), rich micro-interactions, robust logic, and interactive state management.
-   - React / TypeScript Apps: If asked for React or components, write clean, self-contained, modern React code (hooks, modular components).
-   - Python Scripts & Automation: Provide complete, runnable Python code with clear entrypoints (\`if __name__ == "__main__":\`), error handling, and helpful terminal feedback.
-   - Node.js APIs & Tools: Provide clean, idiomatic Node.js or Express code with structured routes and clear error handling.
-4. MULTI-FILE CODE BLOCKS FORMAT:
-   For EVERY file you create or update, format it with a clear header and tagged code block:
-   \`\`\`file:path/to/file.ext
-   [Complete production-ready code]
-   \`\`\`
-   Example:
+1. AUTONOMOUS FILE WRITING — WRITE COMPLETE CODE DIRECTLY INTO FILES:
+   You are an autonomous engineering engine that writes files directly to the user's workspace on disk.
+   You MUST write all code into concrete project files using the \`\`\`file:filename.ext syntax.
+   NEVER write generic markdown code blocks or tell the user to manually copy/paste code into their editor.
+   Every single file you emit will be automatically saved directly to disk and rendered live in the user's sandbox canvas!
+   For example, for a web app, dashboard, or calculator, emit:
    \`\`\`file:index.html
    <!DOCTYPE html>
    ...
@@ -322,27 +414,31 @@ AUTONOMOUS PROJECT BUILDER DIRECTIVES:
    \`\`\`file:styles.css
    ...
    \`\`\`
-   \`\`\`file:app.js
+   \`\`\`file:script.js
    ...
    \`\`\`
-   \`\`\`file:main.py
-   ...
-   \`\`\`
-   \`\`\`file:README.md
-   ...
-   \`\`\`
-5. ARTICULATE ARCHITECTURE BREAKDOWN:
-   Provide an articulate, highly thorough explanation including:
-   - 🚀 **Architecture & Features**: Summary of what was created or upgraded.
-   - 📁 **Files Modified/Created**: Breakdown of each file's purpose and how they connect.
-   - 🎯 **How to Run & Test**: Clear, actionable instructions.`;
+2. FULL IMPLEMENTATIONS ONLY: Always output 100% complete, fully implemented, runnable production code. NEVER use placeholders like "// TODO", "// implement here", or truncate any section.
+3. INTELLIGENT PROJECT EDITING & REVISIONS:
+   - When updating or adding features to an existing project, preserve working architecture and conventions.
+   - Output the complete content for every file you create or modify.
+   - Do NOT emit files that do not require any changes. Any file you do not emit will remain untouched on disk.
+4. MULTI-RUNTIME & STACK SUPPORT:
+   - Web Applications (HTML/CSS/JS): Modern semantic HTML5, beautiful responsive styling (Tailwind CSS or clean CSS variables), rich micro-interactions, robust logic, and interactive state management. If referencing CSS/JS in HTML, use relative links like \`<link rel="stylesheet" href="styles.css">\` and \`<script src="script.js"></script>\`.
+   - React / TypeScript Apps: If asked for React or components, write clean, self-contained, modern React code (hooks, modular components).
+   - Python Scripts & Automation: Provide complete, runnable Python code with clear entrypoints (\`if __name__ == "__main__":\`), error handling, and helpful terminal feedback.
+   - Node.js APIs & Tools: Provide clean, idiomatic Node.js or Express code with structured routes and clear error handling.
+5. CONVERSATIONAL SUMMARY:
+   Provide an articulate, clean summary explaining what was built:
+   - **Architecture & Features**: Summary of what was created or upgraded.
+   - **Files Created/Modified**: Purpose of each file.
+   - **How to Interact**: Clear notes on how to test the app in the live preview.`;
 
   const modelToUse = normalizeModelName(params.model || "auto/best-coding");
 
   // Call completion engine
   const completion = await executeChatCompletion({
     prompt: params.prompt,
-    history: params.history as any,
+    history: params.history as LLMMessage[] | undefined,
     model: modelToUse,
     systemPrompt,
     agentName: "Autonomous Project Architect",

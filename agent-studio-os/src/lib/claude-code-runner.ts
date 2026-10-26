@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs/promises";
 import fsSync from "fs";
 import {
-  createProjectFile,
   listProjectDirectory,
   type FileTreeNode,
 } from "./project-filesystem";
@@ -188,10 +187,14 @@ MANDATORY INSTRUCTIONS:
       }
     });
 
-    child.on("close", async (code) => {
+    child.on("close", async (_code) => {
       if (isSettled) return;
       isSettled = true;
       clearTimeout(timeout);
+
+      if (stderr.trim()) {
+        console.warn("[ClaudeCodeRunner] stderr:", stderr.trim());
+      }
 
       try {
         // 1. Extract files from Claude's markdown output blocks

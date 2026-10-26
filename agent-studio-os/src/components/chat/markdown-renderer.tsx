@@ -69,9 +69,7 @@ function CalloutBlock({ type, content, isUser }: { type: string; content: string
   return (
     <div
       className={`my-2.5 p-3 rounded-xl border text-xs leading-relaxed ${
-        isUser
-          ? "border-white/20 bg-white/10 text-white"
-          : isTip
+        isTip
           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-950 dark:text-emerald-200"
           : isWarning
           ? "border-amber-500/30 bg-amber-500/10 text-amber-950 dark:text-amber-200"
@@ -119,7 +117,7 @@ function sanitizeToolCallContent(text: string): string {
         .replace(/\\'/g, "'")
         .replace(/\\"/g, '"');
 
-      return `${unescaped}\n\n### 📄 Deliverable Ready for Download\n\n- **File**: \`${fileName}\`\n- **Direct Download**: [Download ${fileName}](/downloads/${encodeURIComponent(fileName)})\n\n> You can open this file directly in Microsoft Word, Google Docs, or any text editor.`;
+      return `${unescaped}\n\n### Deliverable Ready for Download\n\n- **File**: \`${fileName}\`\n- **Direct Download**: [Download ${fileName}](/downloads/${encodeURIComponent(fileName)})\n\n> You can open this file directly in Microsoft Word, Google Docs, or any text editor.`;
     }
   }
 
@@ -227,32 +225,28 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
         elements.push(
           <div
             key={`table-${i}`}
-            className={`my-3 overflow-x-auto rounded-xl border ${
-              isUser
-                ? "border-white/20 bg-white/10 backdrop-blur-xl shadow-md"
-                : "border-border bg-card/70 backdrop-blur-xl shadow-md"
-            }`}
+            className="my-3 overflow-x-auto rounded-xl border border-border bg-card/70 backdrop-blur-xl shadow-xs"
           >
             <table className="w-full text-xs text-left border-collapse">
-              <thead className={`${isUser ? "bg-white/15 border-b border-white/20 text-[10.5px] uppercase font-semibold text-white/90" : "bg-secondary/80 border-b border-border text-[10.5px] uppercase font-semibold text-muted-foreground"}`}>
+              <thead className="bg-secondary/80 border-b border-border text-[10.5px] uppercase font-semibold text-muted-foreground">
                 <tr>
                   {headerRow.map((cell, cIdx) => (
-                    <th key={cIdx} className={`px-3.5 py-2.5 border-r last:border-r-0 ${isUser ? "border-white/15" : "border-border"}`}>
+                    <th key={cIdx} className="px-3.5 py-2.5 border-r border-border last:border-r-0">
                       {renderInlineFormatting(cell, isUser)}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className={`divide-y ${isUser ? "divide-white/10 text-white" : "divide-white/[0.04] text-muted-foreground"}`}>
+              <tbody className="divide-y divide-border text-foreground">
                 {bodyRows.map((row, rIdx) => (
                   <tr
                     key={rIdx}
-                    className={isUser ? "hover:bg-white/10 transition-colors" : "hover:bg-secondary/50 transition-colors"}
+                    className="hover:bg-secondary/50 transition-colors"
                   >
                     {row.map((cell, cIdx) => (
                       <td
                         key={cIdx}
-                        className={`px-3.5 py-2 border-r last:border-r-0 leading-relaxed ${isUser ? "border-white/15" : "border-border"}`}
+                        className="px-3.5 py-2 border-r border-border last:border-r-0 leading-relaxed"
                       >
                         {renderInlineFormatting(cell, isUser)}
                       </td>
@@ -270,7 +264,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
     // 5. Headers
     if (trimmed.startsWith("#### ")) {
       elements.push(
-        <h4 key={`h4-${i}`} className={`text-xs font-bold mt-2.5 mb-1 tracking-tight ${isUser ? "text-white" : "text-foreground"}`}>
+        <h4 key={`h4-${i}`} className="text-xs font-bold mt-2.5 mb-1 tracking-tight text-foreground">
           {renderInlineFormatting(trimmed.slice(5), isUser)}
         </h4>
       );
@@ -279,8 +273,8 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
     }
     if (trimmed.startsWith("### ")) {
       elements.push(
-        <h3 key={`h3-${i}`} className={`text-xs font-bold mt-3 mb-1 tracking-tight flex items-center gap-1.5 ${isUser ? "text-white" : "text-foreground"}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${isUser ? "bg-white" : "bg-primary"}`} />
+        <h3 key={`h3-${i}`} className="text-xs font-bold mt-3 mb-1 tracking-tight flex items-center gap-1.5 text-foreground">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
           <span>{renderInlineFormatting(trimmed.slice(4), isUser)}</span>
         </h3>
       );
@@ -289,8 +283,8 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
     }
     if (trimmed.startsWith("## ")) {
       elements.push(
-        <h2 key={`h2-${i}`} className={`text-sm font-bold mt-3.5 mb-1.5 tracking-tight flex items-center gap-2 ${isUser ? "text-white" : "text-foreground"}`}>
-          <span className={`w-2 h-2 rounded-full ${isUser ? "bg-white" : "bg-primary/90"}`} />
+        <h2 key={`h2-${i}`} className="text-sm font-bold mt-3.5 mb-1.5 tracking-tight flex items-center gap-2 text-foreground">
+          <span className="w-2 h-2 rounded-full bg-primary/90" />
           <span>{renderInlineFormatting(trimmed.slice(3), isUser)}</span>
         </h2>
       );
@@ -299,7 +293,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
     }
     if (trimmed.startsWith("# ")) {
       elements.push(
-        <h1 key={`h1-${i}`} className={`text-base font-extrabold mt-4 mb-2 pb-1 tracking-tight ${isUser ? "text-white" : "text-foreground"}`}>
+        <h1 key={`h1-${i}`} className="text-base font-extrabold mt-4 mb-2 pb-1 tracking-tight text-foreground">
           {renderInlineFormatting(trimmed.slice(2), isUser)}
         </h1>
       );
@@ -332,11 +326,7 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
         elements.push(
           <blockquote
             key={`quote-${i}`}
-            className={`border-l-2 pl-3 py-1.5 my-2 rounded-r-lg italic text-xs leading-relaxed ${
-              isUser
-                ? "border-white/40 bg-white/10 text-white/90"
-                : "border-primary/70 bg-primary/5 text-muted-foreground"
-            }`}
+            className="border-l-2 pl-3 py-1.5 my-2 rounded-r-lg italic text-xs leading-relaxed border-primary/70 bg-primary/5 text-foreground"
           >
             {renderInlineFormatting(quoteText, isUser)}
           </blockquote>
@@ -355,8 +345,8 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
       elements.push(
         <ul key={`ul-${i}`} className="my-1.5 space-y-1 pl-1">
           {listItems.map((item, lIdx) => (
-            <li key={lIdx} className={`flex items-start gap-2 text-xs leading-relaxed ${isUser ? "text-white" : "text-foreground"}`}>
-              <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isUser ? "bg-white/80" : "bg-primary/80"}`} />
+            <li key={lIdx} className="flex items-start gap-2 text-xs leading-relaxed text-foreground">
+              <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-primary/80" />
               <span className="flex-1">{renderInlineFormatting(item, isUser)}</span>
             </li>
           ))}
@@ -375,8 +365,8 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
       elements.push(
         <ol key={`ol-${i}`} className="my-1.5 space-y-1 pl-1">
           {listItems.map((item, lIdx) => (
-            <li key={lIdx} className={`flex items-start gap-2 text-xs leading-relaxed ${isUser ? "text-white" : "text-foreground"}`}>
-              <span className={`font-mono font-bold text-[11px] shrink-0 mt-0.5 min-w-[16px] ${isUser ? "text-white" : "text-foreground"}`}>
+            <li key={lIdx} className="flex items-start gap-2 text-xs leading-relaxed text-foreground">
+              <span className="font-mono font-bold text-[11px] shrink-0 mt-0.5 min-w-[16px] text-foreground">
                 {lIdx + 1}.
               </span>
               <span className="flex-1">{renderInlineFormatting(item, isUser)}</span>
@@ -389,14 +379,14 @@ export function MarkdownRenderer({ content, isUser = false, className }: Markdow
 
     // 9. Standard Paragraph
     elements.push(
-      <p key={`p-${i}`} className={`my-1 text-xs leading-relaxed break-words [overflow-wrap:anywhere] ${isUser ? "text-white" : "text-foreground"}`}>
+      <p key={`p-${i}`} className="my-1 text-xs leading-relaxed break-words [overflow-wrap:anywhere] text-foreground">
         {renderInlineFormatting(trimmed, isUser)}
       </p>
     );
     i++;
   }
 
-  return <div className={className || `space-y-0.5 text-xs break-words [overflow-wrap:anywhere] max-w-full overflow-hidden ${isUser ? "text-white" : "text-foreground"}`}>{elements}</div>;
+  return <div className={className || "space-y-0.5 text-xs break-words [overflow-wrap:anywhere] max-w-full overflow-hidden text-foreground"}>{elements}</div>;
 }
 
 /**
@@ -432,11 +422,7 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
         <Link
           key={key}
           href={`/memory?note=${encodeURIComponent(noteTitle)}`}
-          className={
-            isUser
-              ? "inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-white/20 text-white border border-white/30 hover:bg-white/30 transition-colors font-mono text-[10.5px] font-medium"
-              : "inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors font-mono text-[10.5px] font-medium"
-          }
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors font-mono text-[10.5px] font-medium"
           title={`View Obsidian Vault Note: [[${noteTitle}]]`}
         >
           <BookOpen className="w-2.5 h-2.5 shrink-0" />
@@ -473,7 +459,7 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
               }`}
               title={`Download ${rawFileName}`}
             >
-              <div className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 ${
+              <span className={`p-1.5 rounded-lg flex items-center justify-center shrink-0 ${
                 isPdf
                   ? "bg-rose-500/20 text-rose-500"
                   : isDoc
@@ -483,15 +469,15 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
                   : "bg-primary/20 text-primary"
               }`}>
                 <Download className="w-3.5 h-3.5 group-hover:translate-y-0.5 transition-transform" />
-              </div>
-              <div className="flex flex-col text-left">
+              </span>
+              <span className="flex flex-col text-left">
                 <span className="font-semibold text-xs tracking-tight">
                   {label}
                 </span>
                 <span className="text-[9.5px] opacity-75 font-mono uppercase tracking-wider">
                   {ext ? `.${ext.toUpperCase()} Deliverable` : "File"} • Click to Download
                 </span>
-              </div>
+              </span>
             </a>
           );
         } else if (isInternal) {
@@ -499,11 +485,7 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
             <Link
               key={key}
               href={url}
-              className={
-                isUser
-                  ? "font-semibold underline underline-offset-2 text-white hover:text-white/80 transition-colors"
-                  : "font-semibold text-primary underline underline-offset-2 hover:text-primary/80 transition-colors"
-              }
+              className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80 transition-colors"
             >
               {label}
             </Link>
@@ -515,11 +497,7 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className={
-                isUser
-                  ? "font-semibold underline underline-offset-2 text-white hover:text-white/80 transition-colors inline-flex items-center gap-0.5"
-                  : "font-semibold text-primary underline underline-offset-2 hover:text-primary/80 transition-colors inline-flex items-center gap-0.5"
-              }
+              className="font-semibold text-primary underline underline-offset-2 hover:text-primary/80 transition-colors inline-flex items-center gap-0.5"
             >
               <span>{label}</span>
               <ExternalLink className="w-2.5 h-2.5 inline opacity-70" />
@@ -534,18 +512,14 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
       parts.push(
         <code
           key={key}
-          className={
-            isUser
-              ? "px-1.5 py-0.5 mx-0.5 rounded bg-white/20 border border-white/25 text-white font-mono text-[11px] font-semibold break-all"
-              : "px-1.5 py-0.5 mx-0.5 rounded bg-secondary border border-border text-foreground font-mono text-[11px] font-semibold break-all"
-          }
+          className="px-1.5 py-0.5 mx-0.5 rounded bg-secondary/80 border border-border text-foreground font-mono text-[11px] font-semibold break-all"
         >
           {codeText}
         </code>
       );
     } else if (token.startsWith("**") && token.endsWith("**")) {
       parts.push(
-        <strong key={key} className={`font-bold ${isUser ? "text-white" : "text-foreground"}`}>
+        <strong key={key} className="font-bold text-foreground">
           {token.slice(2, -2)}
         </strong>
       );
@@ -554,7 +528,7 @@ function renderInlineFormatting(text: string, isUser = false): React.ReactNode {
       (token.startsWith("_") && token.endsWith("_"))
     ) {
       parts.push(
-        <em key={key} className={`italic ${isUser ? "text-white/85" : "text-muted-foreground"}`}>
+        <em key={key} className="italic text-foreground/85 dark:text-foreground/90">
           {token.slice(1, -1)}
         </em>
       );

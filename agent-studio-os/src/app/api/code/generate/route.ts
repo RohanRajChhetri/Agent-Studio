@@ -55,12 +55,13 @@ export async function POST(request: Request) {
     const body = await request.json();
     const {
       prompt,
-      projectName = "default-project",
+      projectName = "workspace",
       projectPath,
       targetFolder,
       currentFilePath,
       currentCode,
       model,
+      persona,
       engine,
       history,
       async: isAsync = false,
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
       currentFilePath,
       currentCode,
       model,
+      persona,
       engine,
       history,
     });
