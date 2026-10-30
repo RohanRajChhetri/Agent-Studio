@@ -198,9 +198,9 @@ function FileTreeNode({
 
         {isEffectivelyExpanded && file.children && (
           <div>
-            {file.children.map((child) => (
+            {file.children.map((child, idx) => (
               <FileTreeNode
-                key={child.relativePath}
+                key={child.relativePath || `child-${child.name}-${depth}-${idx}`}
                 file={child}
                 depth={depth + 1}
                 selectedPath={selectedPath}
@@ -989,6 +989,7 @@ Start writing notes, research findings, or agent context here. You can cross-ref
             <AnimatePresence>
               {isSelectMode && (
                 <motion.div
+                  key="batch-select-action-bar"
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
@@ -1048,9 +1049,9 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                   {searchQuery ? `No matching notes or folders found` : `No notes found in vault`}
                 </div>
               ) : (
-                filteredFiles.map((file) => (
+                filteredFiles.map((file, idx) => (
                   <FileTreeNode
-                    key={file.relativePath}
+                    key={file.relativePath || `file-${file.name}-${idx}`}
                     file={file}
                     depth={0}
                     selectedPath={selectedPath}
@@ -1172,7 +1173,13 @@ Start writing notes, research findings, or agent context here. You can cross-ref
       {/* New Folder Modal */}
       <AnimatePresence>
         {showFolderModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <motion.div
+            key="new-folder-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1239,12 +1246,20 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* Rename Modal */}
+      {/* Rename Modal */}
+      <AnimatePresence>
         {showRenameModal && renameTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <motion.div
+            key="rename-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1308,12 +1323,20 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
         {showDeleteModal && deleteTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <motion.div
+            key="delete-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1379,12 +1402,20 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* New Note Modal */}
+      {/* New Note Modal */}
+      <AnimatePresence>
         {showNewModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <motion.div
+            key="new-note-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1471,12 +1502,20 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
+      </AnimatePresence>
 
-        {/* Knowledge Synchronization Modal */}
+      {/* Knowledge Synchronization Modal */}
+      <AnimatePresence>
         {showSyncModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <motion.div
+            key="sync-modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1590,18 +1629,18 @@ Start writing notes, research findings, or agent context here. You can cross-ref
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
-
-        {/* Vault Batch Delete Confirmation Modal */}
-        <VaultBatchDeleteModal
-          isOpen={showBatchDeleteModal}
-          onClose={() => setShowBatchDeleteModal(false)}
-          onConfirm={handleConfirmBatchDelete}
-          isDeleting={batchDeleting}
-          selectedItems={selectedBatchItems}
-        />
       </AnimatePresence>
+
+      {/* Vault Batch Delete Confirmation Modal */}
+      <VaultBatchDeleteModal
+        isOpen={showBatchDeleteModal}
+        onClose={() => setShowBatchDeleteModal(false)}
+        onConfirm={handleConfirmBatchDelete}
+        isDeleting={batchDeleting}
+        selectedItems={selectedBatchItems}
+      />
     </div>
   );
 }

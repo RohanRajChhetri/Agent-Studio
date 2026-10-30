@@ -196,7 +196,7 @@ export function MemoryEmptyDashboard({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {recentNotes.map((note) => {
+            {recentNotes.map((note, idx) => {
               const formattedTime = note.modifiedAt
                 ? new Date(note.modifiedAt).toLocaleDateString(undefined, {
                     month: "short",
@@ -206,7 +206,7 @@ export function MemoryEmptyDashboard({
 
               return (
                 <div
-                  key={note.relativePath}
+                  key={note.relativePath || `note-${note.name}-${idx}`}
                   onClick={() => {
                     playClickSound();
                     onSelectNote(note.relativePath);

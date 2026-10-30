@@ -25,21 +25,27 @@ export function VaultBatchDeleteModal({
   isDeleting,
   selectedItems,
 }: VaultBatchDeleteModalProps) {
-  if (!isOpen) return null;
-
   const folderCount = selectedItems.filter((i) => i.isFolder).length;
   const noteCount = selectedItems.filter((i) => !i.isFolder).length;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
+      {isOpen && (
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={{ duration: 0.15 }}
-          className="w-full max-w-lg rounded-2xl border border-destructive/30 bg-card p-6 shadow-2xl space-y-4"
+          key="vault-batch-delete-modal-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4"
         >
+          <motion.div
+            key="vault-batch-delete-modal-dialog"
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ duration: 0.15 }}
+            className="w-full max-w-lg rounded-2xl border border-destructive/30 bg-card p-6 shadow-2xl space-y-4"
+          >
           {/* Header */}
           <div className="flex items-start justify-between border-b border-border pb-3.5">
             <div className="flex items-center gap-3">
@@ -147,7 +153,8 @@ export function VaultBatchDeleteModal({
             </button>
           </div>
         </motion.div>
-      </div>
-    </AnimatePresence>
-  );
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
 }

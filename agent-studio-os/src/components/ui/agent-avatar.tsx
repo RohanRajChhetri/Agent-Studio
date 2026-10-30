@@ -283,6 +283,6 @@ export function AgentAvatar({
   className = "w-3.5 h-3.5",
   fallbackIcon = Bot,
 }: AgentAvatarProps) {
-  const IconComponent = getAgentIcon(avatar, fallbackIcon);
-  return <IconComponent className={className} />;
+  const icon = getAgentIcon(avatar, fallbackIcon);
+  return React.createElement(icon, { className });
 }

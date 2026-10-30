@@ -6,6 +6,7 @@
     "dev": "npm --prefix agent-studio-os run dev",
     "build": "npm --prefix agent-studio-os run build",
     "start": "npm --prefix agent-studio-os run start",
-    "lint": "npm --prefix agent-studio-os run lint"
+    "lint": "npm --prefix agent-studio-os run lint",
+    "test": "npm --prefix agent-studio-os run test"
   }
 }

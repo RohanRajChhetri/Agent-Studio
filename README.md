@@ -9,11 +9,12 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript&logoColor=white)
 ![Prisma](https://img.shields.io/badge/Prisma-6.9.0-2D3748?style=for-the-badge&logo=prisma)
 ![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4.0-38bdf8?style=for-the-badge&logo=tailwind-css)
+![Vitest](https://img.shields.io/badge/Tests-210%20Passed-brightgreen?style=for-the-badge&logo=vitest)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
 **The Production-Grade Autonomous AI Workforce Platform & Operating System for Business Automation, Engineering, and Intelligence.**
 
-[Key Features](#-key-features) • [System Architecture](#-system-architecture) • [Feature Directory](#-comprehensive-feature-directory) • [Quickstart](#-quickstart-guide) • [API Reference](#-api-endpoints-reference) • [Slash Commands](#-slash-commands-reference) • [Configuration](#-environment-variables-reference)
+[Key Features](#-key-features) • [System Architecture](#-system-architecture) • [Feature Directory](#-comprehensive-feature-directory) • [Quickstart](#-quickstart-guide) • [Testing](#-testing--quality-assurance) • [API Reference](#-api-endpoints-reference) • [Slash Commands](#-slash-commands-reference) • [Configuration](#-environment-variables-reference)
 
 </div>
 
@@ -333,58 +334,95 @@ Agents equipped with the autonomous tool loop have access to a rich suite of bui
   omniroute
   ```
 
-### Installation
+### Installation & Setup
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/your-username/agent-studio-os.git
-   cd agent-studio-os
-   ```
+You can run Agent Studio OS either directly from the **repository root** or from within the **`agent-studio-os/`** subfolder:
 
-2. **Install Node.js dependencies**:
-   ```bash
-   # From root or agent-studio-os directory
-   cd agent-studio-os
-   npm install
-   ```
+#### 1. Clone & Install Dependencies
+```bash
+git clone https://github.com/your-username/agent-studio-os.git
+cd "Agent Os"
 
-3. **Install Python dependencies (for Scrapling Stealth Scraping)**:
-   ```bash
-   # In the root repository
-   pip install -r requirements.txt
-   ```
+# Install application dependencies
+cd agent-studio-os && npm install && cd ..
 
-4. **Initialize the SQLite Database**:
-   ```bash
-   npx prisma db push
-   ```
+# (Optional) Install Python dependencies for the Scrapling stealth crawler
+pip install -r requirements.txt
+```
 
-5. **Configure Environment Variables**:
-   Create a `.env.local` file inside `agent-studio-os/`:
-   ```env
-   # Omniroute Primary Brain Gateway
-   OMNIROUTE_URL="http://127.0.0.1:20128"
-   OMNIROUTE_API_KEY=""
+#### 2. Initialize the SQLite Database
+```bash
+# Push schema and generate Prisma client
+cd agent-studio-os
+npx prisma db push
+npx prisma generate
 
-   # Direct Cloud Provider API Keys (At least one recommended)
-   GEMINI_API_KEY="AIzaSy..."
-   ANTHROPIC_API_KEY="sk-ant-..."
-   OPENAI_API_KEY="sk-..."
-   GROQ_API_KEY="gsk_..."
-   DEEPSEEK_API_KEY="sk-..."
-   OPENROUTER_API_KEY="sk-or-v1-..."
+# (Optional) Seed default agent fleet
+node scripts/seed-agents.js
+cd ..
+```
 
-   # Optional: Clerk Authentication (Self-hosted fallback available)
-   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=""
-   CLERK_SECRET_KEY=""
-   ```
+#### 3. Configure Environment Variables
+Create a `.env.local` file inside `agent-studio-os/` (or copy from `agent-studio-os/.env.example`):
+```env
+# Omniroute Primary Brain Gateway (Optional)
+OMNIROUTE_URL="http://127.0.0.1:20128"
+OMNIROUTE_API_KEY=""
 
-6. **Start the Development Server**:
-   ```bash
-   npm run dev
-   ```
+# Direct Cloud Provider Keys (Configure at least one)
+GEMINI_API_KEY="AIzaSy..."
+ANTHROPIC_API_KEY="sk-ant-..."
+OPENAI_API_KEY="sk-..."
+GROQ_API_KEY="gsk_..."
+DEEPSEEK_API_KEY="sk-..."
+OPENROUTER_API_KEY="sk-or-v1-..."
 
-7. Open [http://localhost:3000](http://localhost:3000) in your browser to launch Agent Studio OS.
+# Optional: Clerk Auth (Guest/local mode used automatically if omitted)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=""
+CLERK_SECRET_KEY=""
+```
+
+#### 4. Run the Automated Test Suite
+```bash
+# Run 210 passing automated tests directly from root
+npm test
+```
+
+#### 5. Launch the Application
+```bash
+# Start Next.js development server (from root or agent-studio-os)
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser to enter the Agent Studio OS cockpit.
+
+---
+
+## 🧪 Testing & Quality Assurance
+
+Agent Studio OS includes an extensive automated test suite built with **Vitest**, verifying safety guardrails, agentic loops, and multi-tier routing:
+
+```bash
+# Run all 35 test suites
+npm test
+
+# Run tests with coverage metrics
+npm --prefix agent-studio-os run coverage
+
+# Run code style & static analysis
+npm run lint
+
+# Run strict TypeScript compiler verification (0 errors)
+cd agent-studio-os && npx tsc --noEmit
+```
+
+### Verified Test Domains:
+- **Autonomous Tool Loops:** Multi-turn tool execution, output aggregation, and self-healing error recovery.
+- **Computer-Using Agent (CUA):** Compound desktop actions, natural-language UI automation, mouse/keyboard events, and window management.
+- **DAG Workflow Engine:** Cycle detection (`wouldCreateCycle`), topological dependency sorting, and approval gates.
+- **Brain Routing & Fallbacks:** Cascading failover latency benchmarks and multi-provider degraded state handling.
+- **Organizational Memory & RAG:** Obsidian wikilink extraction, markdown persistence, and local semantic search context injection.
+- **Safety Guardrails:** Path traversal blocking, dangerous command sanitization, and sandboxed file isolation.
 
 ---
 
